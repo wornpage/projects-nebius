@@ -123,14 +123,14 @@ async function requestWithNebius(config, state, operation, system, validator, { 
       });
       if (!response.ok) {
         await response.body?.cancel();
-        fail(response.status === 429 ? 429 : 502, 'nebius_request_failed', 'Nebius could not complete the request. No task was changed.');
+        fail(response.status === 429 ? 429 : 502, 'nebius_request_failed', `Nebius returned HTTP ${response.status}. No task was changed.`);
       }
       return validator(await boundedJson(response, responseLimit));
     })()]);
   } catch (error) {
     if (error instanceof InferenceError) throw error;
     if (controller.signal.aborted) fail(504, 'inference_timeout', 'Nebius did not finish in time. Reload the preview before trying again.');
-    fail(502, 'nebius_request_failed', 'Nebius could not complete the request. No task was changed.');
+    fail(502, 'nebius_request_failed', 'The connection to Nebius failed. No task was changed.');
   } finally { clearTimeout(timer); }
 }
 
