@@ -222,9 +222,9 @@ service worker excludes all Nebius APIs from caching.
 
 The default Worker configuration disables inference and public routing. The
 named `demo` environment uses a separate `projects-nebius` Worker, the configured
-workers.dev origin, the Nano/Super model pair, and a five-call daily ceiling.
+workers.dev origin, the Nano/Super model pair, and a daily ceiling of 20 model calls.
 Sandbox execution is enabled in that environment with a pinned Node 24 image
-and a one-run daily limit. It must not reuse the frozen WebMCP
+and a daily limit of 3 task runs. It must not reuse the frozen WebMCP
 deployment. Configure your own Worker name and origin before deploying a fork.
 
 Build and inspect a deployment bundle with:

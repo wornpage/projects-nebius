@@ -161,6 +161,13 @@ tool, successful generated checks or interactive result is claimed. Failure
 messages are now preserved and displayed, and future validation failures
 identify the page, worker or check-file requirement without relaxing it.
 
-The five-call and one-run daily limits were restored after the authorized
-attempts. See [current runtime evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
-Formal Projects Acceptance still requires connector reauthentication.
+The original five-call and one-run limits were restored after those attempts.
+The owner subsequently raised the hosted allowance to 20 model calls and
+3 task runs per UTC day. Existing daily counts were retained; per-run limits
+remain two model calls, 8,000 output tokens per call, and two 30-second Sandbox
+executions. See [current runtime evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
+
+Projects Acceptance is reconnected and the runtime and product reviews are
+recorded. Its separate Jev preview returned `inference_not_authorized`, so no
+new automated assessment ran. Independent review recommendations do not supply
+the GitHub evidence required for formal handoff acceptance.

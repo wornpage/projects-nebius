@@ -80,7 +80,7 @@ enables it; the local defaults keep it off. A Token Factory key with Sandbox
 access can supply both credential bindings. [Execution setup and boundaries](NEBIUS_EXECUTION.md) describes the
 contract, image requirements, cancellation and seven-day server retention.
 Sandbox connectivity is proven; generated-tool behavior still needs a completed
-run. The demo normally permits five model calls and one task run per UTC day;
+run. The demo permits 20 model calls and 3 task runs per UTC day;
 failed attempts count. Workspace backups include run
 access keys and any saved results; treat them as private workspace data.
 

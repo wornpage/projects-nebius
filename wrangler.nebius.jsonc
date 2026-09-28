@@ -45,8 +45,8 @@
         "NEBIUS_ALLOWED_ORIGIN": "https://projects-nebius.ayivx-do-lmf-982.workers.dev",
         "NEBIUS_MODEL_ROUTINE": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
         "NEBIUS_MODEL_REASONING": "nvidia/nemotron-3-super-120b-a12b",
-        "NEBIUS_DAILY_CALL_LIMIT": "5",
-        "NEBIUS_DAILY_RUN_LIMIT": "1",
+        "NEBIUS_DAILY_CALL_LIMIT": "20",
+        "NEBIUS_DAILY_RUN_LIMIT": "3",
         "NEBIUS_SANDBOX_PROJECT_ID": "aiproject-e00mcyad4azy8zxv74",
         "NEBIUS_SANDBOX_NODE_IMAGE_UUID": "f9ac0575-e7bd-3a81-bfa4-7d7f7a92b89c"
       }

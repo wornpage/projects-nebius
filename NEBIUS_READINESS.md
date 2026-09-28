@@ -9,7 +9,8 @@
 | Sandbox execution | One operator-written Node diagnostic: SUCCESS, exit 0, Node v24.21.0, UID/GID 1000, writable `/tmp`, networking off | This diagnostic does not prove a generated tool |
 | Tool building | Two authorized model calls across two retained attempts; both stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
 | Public delivery | Separate hosted Worker and MIT source are published; Devpost entry is submitted | Final demonstration video and judging-period capacity |
-| Projects Acceptance | Exact connector returned UNAUTHORIZED and requires reauthentication | No new formal acceptance receipt |
+| Hosted capacity | Owner raised the allowance to 20 model calls and 3 task runs per UTC day | Existing attempts still count; remaining capacity is not yet shown in the UI |
+| Projects Acceptance | Reconnected; runtime and product reviews recorded with independent recommendations | Jev preview refused with `inference_not_authorized`; no new automated assessment or formal acceptance receipt |
 
 The first build (`28ac5dbc-7ffc-4b7e-83cf-3ba85cf51bf6`) stopped during generation.
 Its specific error was lost by a double-formatting bug. The second
@@ -48,6 +49,36 @@ Sandbox segment were updated; no new video was recorded in this pass.
 The sections below retain earlier milestone observations. This current-status
 section supersedes their access, hosting, publication and pending-run statements.
 
+## Review and capacity update — September 28, 2026
+
+The owner requested a larger demo allowance. A configuration-only deployment,
+Worker version `20204e58-dff1-496d-add6-3a80ae1f2cd3`, now permits 20 shared
+model calls and 3 task runs per UTC day. Cloudflare reports this version at
+100% of the configured deployment. Its Worker script etag and static assets
+match the preceding version. No daily counters were reset and no model call or
+Sandbox execution was used to confirm the new bindings.
+
+Two scoped source reviews at commit `2055df7` now have independent local accept
+recommendations after rework. They found a mismatch between the generated
+worker's initialization contract and the preview message, lost structured
+failure details and usage on output rejection, and incomplete continuity for
+Nebius proposals. The project-update footer and approval-count headline also
+need clearer wording. These are source findings, not reconstructed causes of
+the two historical failures.
+
+The next runtime milestone is to align initialization, retain useful failure
+metadata and observed usage, qualify a known-good tool through the existing
+validation/preview/Sandbox boundary, then obtain one complete live result.
+That qualification fixture has not been added or run. Existing Sandbox network
+and credential isolation remains required; a JavaScript capability allowlist
+would be additional contract hardening, not proof of safe arbitrary execution.
+
+Projects Acceptance reads and writes now work. The exact connection's
+`preview_text_evaluation` was refused with `inference_not_authorized`; no
+`evaluate_text` call or Jev result followed. Formal handoff acceptance also
+still requires independent GitHub runner/reviewer evidence. The source review,
+capacity deployment, generated-tool outcome and formal acceptance are separate.
+
 ## Sandbox access update — September 28, 2026
 
 The existing Token Factory API key authenticated `GET /sandboxes/v1/whoami`
@@ -63,8 +94,9 @@ the existing one-run daily limit, and the unchanged five-call daily inference
 limit. The shared task-ID validator also accepts project-created task IDs.
 Svelte checking reported zero errors and warnings and the frontend build passed.
 These observations establish setup readiness; the first generated tool,
-executed checks and interactive result still require a real run. The requested
-Projects Acceptance connector currently requires reauthentication.
+executed checks and interactive result still require a real run. At that setup
+checkpoint, Projects Acceptance required reauthentication; the connection was
+restored in the later review described above.
 
 Worker version `d1176bd9-6c48-4761-bcb9-910cd75f46da` was deployed with the
 Sandbox credential stored as a secret. The hosted `/api/nebius/runs/config`
@@ -318,7 +350,7 @@ or a fresh-machine installation. Their exact revisions remain in the lockfile.
 | Live model quality | Two ad-hoc routine responses observed; 0 of the separate 6 planned evaluation cases completed |
 | Exact model/JSON compatibility | Nano guidance succeeded; Super tool files were rejected before execution; planning/replanning/evidence-review quality is not yet qualified |
 | Measured latency and cost comparison | Pending actual calls; no fabricated estimates or benchmark claims |
-| Hosted demo and judge access | Hosted app is public; normal limits are five model calls and one task run per UTC day; judging-period capacity still needs a decision |
+| Hosted demo and judge access | Hosted app is public; owner-approved limits are 20 model calls and 3 task runs per UTC day; remaining-capacity visibility is still pending |
 | Public submission repository | Published at wornpage/projects-nebius under MIT, separately from the private fork |
 | Submission video | Devpost has a video; the newer live-guidance recording and final Sandbox footage have not replaced it |
 | Formal hosted acceptance | No independent hosted run/review receipt asserted |
