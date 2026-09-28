@@ -157,8 +157,11 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
       body: JSON.stringify({
         model: config.model,
         messages: [{ role: 'system', content: repair ? REPAIR_SYSTEM : SYSTEM }, { role: 'user', content: JSON.stringify(state) }],
-        response_format: FILES_RESPONSE_FORMAT, temperature: 0.1, max_tokens: RUN_LIMITS.maxOutputTokens, stream: false,
-        chat_template_kwargs: { enable_thinking: false },
+        response_format: FILES_RESPONSE_FORMAT, temperature: 1.0, top_p: 0.95,
+        max_tokens: RUN_LIMITS.maxOutputTokens, stream: false,
+        // NVIDIA's documented sampling profile and low-effort reasoning for code.
+        // Keep the existing output ceiling and validate only the final content.
+        chat_template_kwargs: { enable_thinking: true, low_effort: true },
       }),
     });
     if (!response.ok) {
