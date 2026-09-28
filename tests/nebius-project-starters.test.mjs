@@ -4,18 +4,19 @@ import { readFileSync } from 'node:fs';
 import { PROJECT_STARTERS, getProjectStarter } from '../svelte-frontend/src/lib/nebius-project-starters.mjs';
 import { validatePlanInput, validateProjectPlan } from '../svelte-frontend/src/lib/nebius-plan-contract.mjs';
 
-test('three human-written starters have useful validated three-task plans and explicit missing facts', () => {
-  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.id), ['website-release', 'workshop', 'customer-handoff']);
-  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.label), ['Website release', 'Workshop', 'Customer handoff']);
+test('human-written starters have useful validated plans and explicit open questions', () => {
+  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.id), ['release-packet-checker', 'website-release', 'workshop', 'customer-handoff']);
+  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.label), ['Release-packet checker', 'Website release', 'Workshop', 'Customer handoff']);
   for (const starter of PROJECT_STARTERS) {
     assert.deepEqual(Object.keys(starter).sort(), ['brief', 'id', 'label', 'plan']);
     assert.equal(validatePlanInput({ brief: starter.brief }).brief, starter.brief);
     assert.deepEqual(validateProjectPlan(starter.plan), starter.plan);
-    assert.equal(starter.plan.tasks.length, 3);
-    assert.equal(new Set(starter.plan.tasks.map(task => task.id)).size, 3);
+    const taskCount = starter.id === 'release-packet-checker' ? 2 : 3;
+    assert.equal(starter.plan.tasks.length, taskCount);
+    assert.equal(new Set(starter.plan.tasks.map(task => task.id)).size, taskCount);
     assert.equal(starter.plan.tasks[0].dependsOn, null);
     assert.equal(starter.plan.tasks[1].dependsOn, starter.plan.tasks[0].id);
-    assert.equal(starter.plan.tasks[2].dependsOn, starter.plan.tasks[1].id);
+    if (taskCount === 3) assert.equal(starter.plan.tasks[2].dependsOn, starter.plan.tasks[1].id);
     assert.ok(starter.plan.missingInformation.length > 0);
     assert.ok(starter.plan.missingInformation.every(fact => fact.endsWith('?')));
     for (const task of starter.plan.tasks) {

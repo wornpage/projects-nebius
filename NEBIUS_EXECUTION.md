@@ -13,6 +13,31 @@ public WebMCP repository remains frozen; private Projects backend logic is not
 an input. Live model/sandbox quality remains unverified until provider
 execution is performed and its results are reviewed.
 
+## Release-packet checker example
+
+In **Work → New project**, choose **Release-packet checker example**, review the
+editable plan, and approve its creation. Open the first task's **Build tool**
+section to inspect the exact saved requirements and configured limits.
+
+The first task carries the examples in its completion criteria, so they are
+included in the five task fields sent to Nebius. The second task records the
+human review of the actual output. Both begin as proposed work.
+
+| Synthetic input | Expected result |
+| --- | --- |
+| `{"candidate":"demo-42","health":"missing","review":"pending","rollback":""}` | 3 gaps: Health must be passing; Review must be approved; Rollback step is required |
+| `{"candidate":"demo-42","health":"passing","review":"approved","rollback":"Restore demo-41"}` | 0 gaps: Ready for human review |
+
+The proposed tool accepts a JSON object with exactly these four string fields.
+Malformed input shows an error. It should provide buttons to load either
+example, a JSON editor and a Check packet button, all keyboard accessible.
+Readiness is based only on supplied text; the tool does not probe a live service
+or approve a release.
+
+Retain the generated files, observed Sandbox output and actual preview results
+when a live run is performed. These expected outcomes are not a record of a
+successful generated tool. Existing daily and per-run limits still apply.
+
 ## Shared boundary
 
 The source of limits and validation is `nebius-execution-contract.mjs`.

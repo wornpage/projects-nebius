@@ -69,6 +69,13 @@ model observations; synthetic test responses are not model-quality evidence.
 
 ## Run a task and review its tool
 
+For a concrete starting point, choose **Work → New project → Release-packet
+checker example**. Review and create its two-task plan, then open **Build the
+release-packet checker**. Its saved requirements include two synthetic inputs:
+an incomplete packet should show three gaps; the corrected packet should show
+**0 gaps: Ready for human review**. The example is a human-written specification;
+the generated files and observed results appear only after a real run.
+
 Open an active, unblocked task's **Next step → Build tool → Run this task**. The
 first execution milestone produces a small browser tool, runs agent-authored
 checks in a Token Factory Sandbox, and allows one repair. Open **Review** to

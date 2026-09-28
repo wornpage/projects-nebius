@@ -8,6 +8,19 @@ function freeze(value) {
 // Human-written examples describe proposed work; they contain no observed results.
 export const PROJECT_STARTERS = freeze([
   {
+    id: 'release-packet-checker', label: 'Release-packet checker',
+    brief: 'Build a small browser tool for checking supplied release packets. Give it an incomplete synthetic packet and a corrected packet, with visibly different outputs. Use the first task to generate the files and run isolated checks, then review the actual tool. Readiness here means ready for human review; no release is approved or deployed by the tool.',
+    plan: { title: 'Build a release-packet checker', summary: 'Turn one concrete task into a browser tool, then compare incomplete and corrected inputs in its preview.',
+      tasks: [
+        { id: 'build-checker', title: 'Build the release-packet checker', purpose: "Build a small release-packet checker with a JSON textarea, Check packet button, clearly labelled outputs and buttons to load both synthetic examples. Require a JSON object with exactly candidate, health, review and rollback string fields; candidate must contain non-whitespace text. Health values: missing, failing or passing. Review values: pending, rejected or approved. Health must be passing, review approved and rollback nonblank for zero gaps. Show the number of gaps and each reason. Invalid JSON or invalid fields must show a useful input error and never show readiness. The tool evaluates supplied text only; it does not contact services, verify evidence or approve a release.",
+          nextStep: 'Open Build tool, review these requirements and run settings, then ask Nebius to generate the checker and execute its Node assertions in Sandbox.',
+          doneWhen: "Incomplete input {\"candidate\":\"demo-42\",\"health\":\"missing\",\"review\":\"pending\",\"rollback\":\"\"} must show \"3 gaps: Health must be passing; Review must be approved; Rollback step is required\". Complete input {\"candidate\":\"demo-42\",\"health\":\"passing\",\"review\":\"approved\",\"rollback\":\"Restore demo-41\"} must show \"0 gaps: Ready for human review\". Include meaningful Node assertions for both examples and invalid input. The generated files and actual Sandbox check output are available in Review. Zero gaps means ready for a person to review, never approval.", dependsOn: null },
+        { id: 'review-checker', title: 'Review both packet examples', purpose: 'Check whether the generated browser tool makes the difference between incomplete and complete supplied packets clear. Use the two synthetic examples from the build task. Record actual output and any missing behavior.',
+          nextStep: 'Open the build task in Review, load each example in its tool preview, and compare the actual output with the saved criteria.',
+          doneWhen: 'The incomplete packet visibly reports its three gaps; the corrected packet shows zero gaps and Ready for human review. Invalid input shows an error. The observed output and any remaining changes are recorded for a human decision.', dependsOn: 'build-checker' }
+      ], missingInformation: ['Do the actual generated checks cover both examples and invalid input?', 'Does the actual preview display the expected differences and remain keyboard usable?'] }
+  },
+  {
     id: 'website-release', label: 'Website release',
     brief: 'Prepare a small website release. Confirm the audience and release goal, update the page, then review the proposed release before publishing. The audience, page location and approval requirements still need confirmation. Do not invent owners, dates or completed results.',
     plan: { title: 'Prepare a website release', summary: 'Clarify the release goal, update the page and review it before deciding whether to publish.',
