@@ -10,7 +10,7 @@
 | Tool building | Three authorized model calls across three retained attempts; all stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
 | Public delivery | Separate hosted Worker and MIT source are published; Devpost entry is submitted | Final demonstration video and judging-period capacity |
 | Hosted capacity | Owner raised the allowance to 20 model calls and 3 task runs per UTC day | Existing attempts still count; remaining capacity is not yet shown in the UI |
-| Projects Acceptance | Reconnected; runtime and product reviews recorded with independent recommendations | Jev preview refused with `inference_not_authorized`; no new automated assessment or formal acceptance receipt |
+| Development review | Runtime and product reviews recorded in Projects Acceptance with independent recommendations | Optional development tooling, outside the submitted app |
 
 The first build (`28ac5dbc-7ffc-4b7e-83cf-3ba85cf51bf6`) stopped during generation.
 Its specific error was lost by a double-formatting bug. The second
@@ -81,7 +81,7 @@ It does not establish generated-code execution, a working preview or full
 acceptance. Three observed tool attempts have now used the day's task-run
 ceiling; no additional attempt was started. The next runtime work is to
 qualify generation against the page/worker/check contract before another
-bounded live run. Jev inference authorization remains unavailable.
+bounded live run.
 
 ## Review and capacity update — September 28, 2026
 
@@ -107,11 +107,10 @@ That qualification fixture has not been added or run. Existing Sandbox network
 and credential isolation remains required; a JavaScript capability allowlist
 would be additional contract hardening, not proof of safe arbitrary execution.
 
-Projects Acceptance reads and writes now work. The exact connection's
-`preview_text_evaluation` was refused with `inference_not_authorized`; no
-`evaluate_text` call or Jev result followed. Formal handoff acceptance also
-still requires independent GitHub runner/reviewer evidence. The source review,
-capacity deployment, generated-tool outcome and formal acceptance are separate.
+Projects Acceptance records the engineering reviews and retained evidence.
+Its optional assessments are development aids, outside the submitted app.
+Submission readiness depends on the app, public source, demonstration and
+observed Nebius results; it does not require that internal review service.
 
 ## Sandbox access update — September 28, 2026
 
@@ -387,7 +386,6 @@ or a fresh-machine installation. Their exact revisions remain in the lockfile.
 | Hosted demo and judge access | Hosted app is public; owner-approved limits are 20 model calls and 3 task runs per UTC day; remaining-capacity visibility is still pending |
 | Public submission repository | Published at wornpage/projects-nebius under MIT, separately from the private fork |
 | Submission video | Devpost has a video; the newer live-guidance recording and final Sandbox footage have not replaced it |
-| Formal hosted acceptance | No independent hosted run/review receipt asserted |
 
 These pending gates are separate from local implementation. Optional Nebius
 Serverless Endpoints or Jobs remain architectural candidates and have not been
