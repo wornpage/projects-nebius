@@ -288,7 +288,7 @@
 
 	{#if eligibilityError}<p class="task-run-blocked" role="status">{eligibilityError}</p>{/if}
 	{#if notice}<WornAlert tone="warning">{notice}</WornAlert>{/if}
-	{#if error}<WornAlert tone="danger">{error}</WornAlert>{/if}
+	{#if error || record?.error}<WornAlert tone="danger">{error || record?.error}</WornAlert>{/if}
 	{#if reference}
 		<div class="task-run-progress" aria-live="polite">
 			<span>Run {reference.id}</span>

@@ -179,7 +179,7 @@ export async function handleNebiusRuns(request, env) {
 }
 
 function safeMessage(error, fallback) {
-  const message = error instanceof Error && typeof error.message === 'string' ? error.message : fallback;
+  const message = typeof error === 'string' ? error : error instanceof Error && typeof error.message === 'string' ? error.message : fallback;
   return message.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 500) || fallback;
 }
 
