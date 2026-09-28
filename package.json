@@ -8,7 +8,7 @@
   "scripts": {
     "build:nebius": "node scripts/build-nebius.mjs",
     "dev:nebius": "npm run build:nebius && wrangler dev --config wrangler.nebius.jsonc --ip 127.0.0.1 --port 8787",
-    "test:nebius": "node --test tests/nebius-api.test.mjs tests/nebius-client.test.mjs tests/nebius-plan.test.mjs tests/nebius-project-state.test.mjs tests/nebius-plan-client.test.mjs tests/nebius-replan.test.mjs tests/nebius-replan-state.test.mjs tests/nebius-replan-client.test.mjs tests/nebius-routing.test.mjs tests/nebius-project-starters.test.mjs tests/nebius-project-progress.test.mjs tests/nebius-project-completion.test.mjs",
+    "test:nebius": "node --test tests/nebius-api.test.mjs tests/nebius-client.test.mjs tests/nebius-plan.test.mjs tests/nebius-project-state.test.mjs tests/nebius-plan-client.test.mjs tests/nebius-replan.test.mjs tests/nebius-replan-state.test.mjs tests/nebius-replan-client.test.mjs tests/nebius-routing.test.mjs tests/nebius-project-starters.test.mjs tests/nebius-project-progress.test.mjs tests/nebius-project-completion.test.mjs tests/nebius-sandbox.test.mjs",
     "test:nebius:browser": "node scripts/nebius-browser-smoke.mjs",
     "test:nebius:projects": "node scripts/nebius-project-browser-smoke.mjs",
     "test:nebius:offline": "node scripts/offline-browser-smoke.mjs --nebius",

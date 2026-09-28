@@ -10,6 +10,7 @@ const lib = new URL('../svelte-frontend/src/lib/', import.meta.url);
 const require = createRequire(new URL('../svelte-frontend/package.json', import.meta.url));
 const ts = require('typescript');
 const dependencies = Object.fromEntries(await Promise.all([
+	'nebius-contract.mjs', 'nebius-execution-contract.mjs',
 	'canonical-text.mjs', 'browser-state-envelope.mjs', 'workflow-rules.mjs',
 	'pending-next-action.mjs', 'batch-actions.mjs', 'nebius-project-state.mjs', 'nebius-replan-state.mjs', 'nebius-replan-contract.mjs'
 ].map(async (name) => [name, await import(new URL(name, lib))])));

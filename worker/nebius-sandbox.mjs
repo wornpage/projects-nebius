@@ -11,7 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const MAX_RESPONSE_BYTES = 786432;
 // This instruments generated checks inside the existing Nebius container.
 // node:vm is not the security boundary; container isolation remains required.
-const CHECK_RUNNER = String.raw`'use strict';
+export const CHECK_RUNNER = String.raw`'use strict';
 const fs = require('node:fs');
 const vm = require('node:vm');
 const realAssert = require('node:assert');
