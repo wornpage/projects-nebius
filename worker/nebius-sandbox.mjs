@@ -99,7 +99,8 @@ export async function spawnSandbox(config, files, { fetcher = globalThis.fetch, 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetcher(`${BASE_URL}/instances`, { method: 'POST', redirect: 'error', signal: controller.signal,
+    // Manual mode is supported by Workers; only the expected status is accepted.
+    const response = await fetcher(`${BASE_URL}/instances`, { method: 'POST', redirect: 'manual', signal: controller.signal,
       headers: { ...headers(config), 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (response.status !== 201) {
       await response.body?.cancel();
@@ -137,7 +138,7 @@ export async function readSandboxOperation(config, operationId, { fetcher = glob
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetcher(`${BASE_URL}/operations/${operationId}`, { method: 'GET', redirect: 'error', signal: controller.signal, headers: headers(config) });
+    const response = await fetcher(`${BASE_URL}/operations/${operationId}`, { method: 'GET', redirect: 'manual', signal: controller.signal, headers: headers(config) });
     if (!response.ok) { await response.body?.cancel(); fail('sandbox_status_unavailable', 'The isolated runner status is temporarily unavailable.'); }
     const raw = await boundedJson(response);
     if (!isRecord(raw) || typeof raw.uuid !== 'string' || raw.uuid.toLowerCase() !== operationId || raw.kind !== 'instance'
@@ -168,7 +169,7 @@ export async function cancelSandboxOperation(config, operationId, { fetcher = gl
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetcher(`${BASE_URL}/operations/${operationId}`, { method: 'DELETE', redirect: 'error', signal: controller.signal, headers: headers(config) });
+    const response = await fetcher(`${BASE_URL}/operations/${operationId}`, { method: 'DELETE', redirect: 'manual', signal: controller.signal, headers: headers(config) });
     await response.body?.cancel();
     if (response.status === 202) return true;
     if ([404, 409].includes(response.status)) return false;

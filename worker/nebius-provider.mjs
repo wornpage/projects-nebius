@@ -55,6 +55,12 @@ async function boundedJson(response, responseLimit = RESPONSE_LIMIT) {
 
 function validateModelEnvelope(raw, model) {
   const choice = raw?.choices?.[0];
+  if (choice?.finish_reason === 'length') {
+    fail(502, 'invalid_model_output', 'Nebius reached the output token limit before completing its response.');
+  }
+  if (isRecord(raw) && typeof raw.model === 'string' && raw.model !== model) {
+    fail(502, 'invalid_model_output', 'Nebius returned a different model than requested.');
+  }
   if (!isRecord(raw) || raw.model !== model || !Array.isArray(raw.choices) || raw.choices.length !== 1
     || choice?.finish_reason !== 'stop' || choice.message?.role !== 'assistant'
     || (choice.message.tool_calls != null && (!Array.isArray(choice.message.tool_calls) || choice.message.tool_calls.length > 0)) || choice.message.function_call
@@ -72,7 +78,11 @@ export function validateSuggestion(raw, model, state) {
   try { suggestion = JSON.parse(content); }
   catch { fail(502, 'invalid_model_output', 'Nebius did not return a structured suggestion.'); }
   try { suggestion = validateSuggestionText(suggestion, state); }
-  catch { fail(502, 'invalid_model_output', 'Nebius returned an invalid task-change suggestion.'); }
+  catch (error) {
+    // Contract errors are fixed local messages; never return provider content.
+    fail(502, 'invalid_model_output', error instanceof TypeError
+      ? `Nebius suggestion rejected: ${error.message}` : 'Nebius returned an invalid task-change suggestion.');
+  }
   return { model: raw.model, suggestion, usage };
 }
 
@@ -102,8 +112,39 @@ export function validateReplan(raw, model, state) {
   return { model: raw.model, replan, usage };
 }
 
+function suggestionResponseFormat(state) {
+  // Keep grammar keywords portable; validateSuggestionText enforces the full contract.
+  const boundedText = maxLength => ({ type: 'string', minLength: 1, maxLength });
+  const basis = Object.keys(state.pack).filter(field => state.pack[field].trim());
+  basis.push('currentStatus');
+  if (state.update.trim()) basis.push('update');
+  state.context.forEach((_, index) => basis.push(`context:${index}`));
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: 'task_change_v1', strict: true,
+      schema: {
+        type: 'object', additionalProperties: false,
+        required: ['changes', 'reason', 'basis', 'missingInformation'],
+        properties: {
+          changes: {
+            type: 'object', additionalProperties: false, required: ['nextStep'],
+            properties: {
+              nextStep: boundedText(200), blocker: boundedText(200),
+              ...(state.currentStatus === 'done' ? {} : { status: { type: 'string', enum: ['draft', 'active', 'blocked'] } }),
+            },
+          },
+          reason: boundedText(1000),
+          basis: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'string', enum: basis } },
+          missingInformation: { type: 'array', maxItems: 3, items: boundedText(200) },
+        },
+      },
+    },
+  };
+}
+
 // One request, no tools, no fallback provider, no retry and no task mutations.
-async function requestWithNebius(config, state, operation, system, validator, { fetcher = globalThis.fetch, timeoutMs = 15000 } = {}, responseLimit = RESPONSE_LIMIT) {
+async function requestWithNebius(config, state, operation, system, validator, { fetcher = globalThis.fetch, timeoutMs = 45000 } = {}, responseLimit = RESPONSE_LIMIT) {
   const controller = new AbortController();
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -114,16 +155,30 @@ async function requestWithNebius(config, state, operation, system, validator, { 
   });
   try {
     return await Promise.race([timeout, (async () => {
+      // Workers supports manual redirects; the status check below rejects them.
       const response = await fetcher(TOKEN_FACTORY_URL, {
-        method: 'POST', redirect: 'error', signal: controller.signal,
+        method: 'POST', redirect: 'manual', signal: controller.signal,
         headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({ model: config.model, messages: [
           { role: 'system', content: system }, { role: 'user', content: JSON.stringify(state) },
-        ], response_format: { type: 'json_object' }, temperature: 0.2, max_tokens: OPERATION_PROFILES[operation].maxOutputTokens, stream: false }),
+        ], response_format: operation === 'suggest-next-step' ? suggestionResponseFormat(state) : { type: 'json_object' },
+        temperature: 0.2, max_tokens: OPERATION_PROFILES[operation].maxOutputTokens, stream: false,
+        // Routine guidance needs a final JSON answer within its small allowance.
+        ...(operation === 'suggest-next-step' ? { chat_template_kwargs: { enable_thinking: false } } : {}),
+        }),
       });
       if (!response.ok) {
-        await response.body?.cancel();
-        fail(response.status === 429 ? 429 : 502, 'nebius_request_failed', `Nebius returned HTTP ${response.status}. No task was changed.`);
+        let rejectedSettings = [];
+        if (response.status === 400) {
+          try {
+            const error = (await boundedJson(response))?.error;
+            const detail = typeof error?.message === 'string' ? error.message : '';
+            rejectedSettings = ['response_format', 'json_schema', 'strict', 'required', 'additionalProperties', 'uniqueItems', 'pattern', 'minLength', 'maxLength', 'minItems', 'maxItems', 'chat_template_kwargs']
+              .filter(setting => detail.includes(setting));
+          } catch { /* Keep the HTTP diagnosis when the error body is unavailable. */ }
+        } else await response.body?.cancel();
+        const detail = rejectedSettings.length ? ` Provider error mentions: ${rejectedSettings.join(', ')}.` : '';
+        fail(response.status === 429 ? 429 : 502, 'nebius_request_failed', `Nebius returned HTTP ${response.status}.${detail} No task was changed.`);
       }
       return validator(await boundedJson(response, responseLimit));
     })()]);

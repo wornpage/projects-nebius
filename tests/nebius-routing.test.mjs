@@ -63,8 +63,8 @@ for (const operation of operations) {
     const h = harness(t), config = await (await h.config(`?operation=${operation}`)).json(), response = await h.post(operation), value = await response.json();
     assert.equal(response.status, 200); assert.equal(value.applied, false); assert.equal(value.model, config.requestedModel); assert.equal(value.requestedModel, config.requestedModel); assert.equal(value.promptVersion, versions[operation]);
     assert.equal(h.calls, 1); assert.equal(h.reservations, 1); assert.equal(h.admissions, 1); assert.equal(h.bucket, 'token-factory-daily');
-    assert.equal(h.sent[0].body.max_tokens, config.maxOutputTokens); assert.equal(h.sent[0].body.model, config.requestedModel); assert.equal(h.sent[0].url, TOKEN_FACTORY_URL); assert.equal(h.sent[0].options.redirect, 'error');
-    assert.equal(h.sent[0].body.tools, undefined); assert.equal(h.sent[0].body.stream, false); assert.deepEqual(h.sent[0].body.response_format, { type: 'json_object' });
+    assert.equal(h.sent[0].body.max_tokens, config.maxOutputTokens); assert.equal(h.sent[0].body.model, config.requestedModel); assert.equal(h.sent[0].url, TOKEN_FACTORY_URL); assert.equal(h.sent[0].options.redirect, 'manual');
+    assert.equal(h.sent[0].body.tools, undefined); assert.equal(h.sent[0].body.stream, false); assert.equal(h.sent[0].body.response_format.type, operation === 'suggest-next-step' ? 'json_schema' : 'json_object');
   });
   test(`${operation} rejects wrong-role or stale requested model before budget/inference`, async t => {
     const h = harness(t), wrongRole = OPERATION_PROFILES[operation].modelRole === 'routine' ? 'reasoning' : 'routine';

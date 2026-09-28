@@ -109,7 +109,7 @@ test('replan submits exact canonical context once with bounded allowance and ret
   const h = harness(t), input = h.body(), response = await h.send(input), body = await response.json();
   assert.equal(response.status, 200); assert.deepEqual(body.replan, replan()); assert.equal(body.applied, false); assert.equal(body.model, model); assert.equal(body.requestedModel, model); assert.equal(body.promptVersion, REPLAN_VERSION);
   assert.deepEqual(body.usage, { input_tokens: 40, output_tokens: 100 }); assert.equal(typeof body.requestId, 'string'); assert.equal(h.calls, 1); assert.equal(h.reservations, 1); assert.equal(h.bucket, 'token-factory-daily');
-  assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.equal(h.sent.url, TOKEN_FACTORY_URL); assert.equal(h.sent.options.redirect, 'error');
+  assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.equal(h.sent.url, TOKEN_FACTORY_URL); assert.equal(h.sent.options.redirect, 'manual');
   const sent = JSON.parse(h.sent.options.body); assert.deepEqual(JSON.parse(sent.messages[1].content), { snapshot: input.snapshot, update: input.update }); assert.equal(sent.max_tokens, 4000); assert.equal(sent.stream, false); assert.equal(sent.tools, undefined); assert.equal(sent.messages.length, 2); assert.match(sent.messages[0].content, /untrusted/); assert.match(sent.messages[0].content, /project-replan.v1/);
 });
 test('input/consent/model/method/body refusals precede provider and budget use', async t => {

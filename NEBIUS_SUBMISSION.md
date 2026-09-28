@@ -34,12 +34,13 @@ generates a small browser tool, runs model-authored checks, and allows one repai
 The result returns to the workspace for an isolated preview, source inspection
 and evidence review. A run never marks the task done or publishes its output.
 
-**Current evidence boundary:** Live Sandbox execution is awaiting provider beta
-access. Model authentication and available model IDs have been confirmed; a
-successful end-to-end inference result has not yet been recorded. Hosted
-suggestion attempts on September 28 returned a provider connection failure
-before a usable response. Do not label an illustrative workflow, keyboard
-rehearsal or simulated tutorial as a successful live AI run.
+**Current evidence boundary:** A hosted Nano next-step suggestion completed on
+September 28 after repairing Worker redirect handling and structured output.
+The provider reported 537 input tokens and 139 output tokens; the suggestion
+remained unsaved. See NEBIUS_READINESS.md for the bounded observation. Planning,
+review and live Sandbox execution remain unverified; Sandbox beta access is
+pending. The earlier keyboard rehearsal and simulated tutorial do not show a
+successful live AI run.
 
 ## How we built it
 
@@ -78,7 +79,8 @@ on output quality, latency and Sandbox execution only after observing real runs.
 - Final Nebius demonstration video: still outstanding; keep it under three
   minutes. A silent keyboard rehearsal was recorded on September 28, ending
   before Apply. It does not demonstrate successful inference or Sandbox execution.
-- Successful live inference and Sandbox evidence: outstanding.
+- Live routine inference: one successful hosted suggestion recorded. Broader
+  model evaluation and Sandbox evidence remain outstanding.
 - Devpost: [submitted entry](https://devpost.com/software/wornpage-projects-nebius-edition),
   confirmed by the submission-success message on September 28, 2026.
 

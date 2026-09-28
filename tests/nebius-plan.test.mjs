@@ -85,7 +85,7 @@ test('consented plan makes one bounded provider call and returns an unsaved vali
   assert.equal(body.model, model); assert.equal(body.requestedModel, model); assert.equal(body.promptVersion, PLAN_VERSION);
   assert.deepEqual(body.usage, { input_tokens: 30, output_tokens: 100 }); assert.equal(typeof body.requestId, 'string');
   assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.equal(h.calls, 1); assert.equal(h.reservations, 1);
-  assert.equal(h.bucket, 'token-factory-daily'); assert.equal(h.sent.url, TOKEN_FACTORY_URL); assert.equal(h.sent.options.redirect, 'error');
+  assert.equal(h.bucket, 'token-factory-daily'); assert.equal(h.sent.url, TOKEN_FACTORY_URL); assert.equal(h.sent.options.redirect, 'manual');
   const sent = JSON.parse(h.sent.options.body);
   assert.deepEqual(JSON.parse(sent.messages[1].content), { brief: input.brief }); assert.equal(sent.messages.length, 2);
   assert.match(sent.messages[0].content, /project-plan.v1/); assert.match(sent.messages[0].content, /untrusted/);

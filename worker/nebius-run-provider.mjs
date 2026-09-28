@@ -85,8 +85,9 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const state = repair ? { input, previousFiles: repair.files, observedCheck: repair.check } : { input };
   try {
+    // Keep credentials on the fixed origin and reject redirects below.
     const response = await fetcher(TOKEN_FACTORY_URL, {
-      method: 'POST', redirect: 'error', signal: controller.signal,
+      method: 'POST', redirect: 'manual', signal: controller.signal,
       headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({
         model: config.model,

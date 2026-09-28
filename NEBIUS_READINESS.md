@@ -20,11 +20,40 @@ and [track design](NEBIUS_TRACK_DESIGN.md).
 | Nemotron model strategy | Separate routine/reasoning roles, verified official model/JSON documentation, exact configured model in each preview | Nano/Super candidates; Ultra requires deliberate owner selection and live comparison |
 | Usage and spend controls | Shared daily/IP admission, bounded inputs/output tokens, one call per request, provider-reported token usage | Call/token caps are not a dollar budget; failed requests can still cost money |
 | Independent review | Separate workers and reviewers; concrete local handoffs and rework recorded in Projects Acceptance | No hosted GitHub acceptance is claimed |
-| Reproducible source | Public source manifest, pinned dependencies, MIT license, setup/build/check commands in NEBIUS.md | A separate public snapshot is prepared without private Git history |
+| Reproducible source | Public source manifest, pinned dependencies, MIT license, setup/build/check commands in NEBIUS.md | Separate public repository published with fresh history |
 | Private/public boundaries | Fresh demo modules, existing public UI dependencies, no private Projects backend port | Frozen WebMCP repository and its deployment are separate |
-| Reviewable delivery | Local commits, documentation and loopback preview with inference disabled | No deployment or publication performed |
+| Reviewable delivery | Separate public repository and hosted Worker; live routine inference observed | Broader model evaluation, Sandbox execution and formal acceptance remain outstanding |
 
 ## Local verification
+
+### Hosted inference repair — September 28, 2026
+
+The original connection failures were caused by `redirect: 'error'`, which the
+installed Workers runtime rejects before sending HTTP. All five Token Factory
+and Sandbox fetch sites now use `manual` and reject redirect responses through
+their existing status checks. The same runtime reached the unauthenticated
+Token Factory model endpoint with manual mode and received the expected HTTP 401.
+
+After the connection repair, a hosted suggestion failed envelope validation;
+disabling Nano thinking produced a complete but invalid suggestion. A strict
+JSON schema was then added. Its initial request exceeded the 15-second deadline;
+another returned HTTP 400. Removing `uniqueItems` and `pattern` from the provider
+schema, retaining full local validation, and allowing a bounded 45 seconds
+produced a valid live response. The exact cause of the earlier envelope and
+schema rejection was not captured; those causes must not be overstated.
+
+Observed success: HTTP 200, request `82549970-6ccf-4dfe-a4d4-e42342f06082`, model
+`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`, 537 input tokens and 139 output tokens.
+The browser showed **Suggestion ready. Nothing has been saved.** The proposed
+next step retained the sample's health-probe requirement and listed missing
+health, review and rollback evidence. No suggestion was applied.
+
+The owner authorized three additional requests beyond the five-call ceiling.
+All three were used; the ceiling was restored to five after success. Final
+Worker version: `02755cac-505f-4f23-a89b-771ac06e1ae2`. Failed attempts remain
+counted; further calls wait for the next UTC daily reset. Syntax and whitespace
+checks completed; no test suite was run. This proves one routine suggestion,
+not planning, evidence review, Sandbox execution or formal Projects Acceptance.
 
 ### Public source and initial hosted demo
 

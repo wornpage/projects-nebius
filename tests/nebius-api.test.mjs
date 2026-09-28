@@ -57,11 +57,11 @@ test('review refuses altered criteria, missing consent and unsupported quotes be
 test('consented request sends one bounded projection to the fixed Token Factory endpoint', async t => {
   const h = harness(t), response = await h.send(), body = await response.json();
   assert.equal(response.status, 200); assert.equal(body.applied, false); assert.equal(h.calls, 1); assert.equal(h.reservations, 1);
-  assert.equal(h.sent.url, TOKEN_FACTORY_URL); assert.equal(h.sent.options.redirect, 'error');
+  assert.equal(h.sent.url, TOKEN_FACTORY_URL); assert.equal(h.sent.options.redirect, 'manual');
   assert.equal(h.sent.options.headers.authorization, 'Bearer synthetic-key');
   const sent = JSON.parse(h.sent.options.body);
   assert.deepEqual(JSON.parse(sent.messages[1].content), state);
-  assert.equal(sent.max_tokens, 1200); assert.deepEqual(sent.response_format, { type: 'json_object' });
+  assert.equal(sent.max_tokens, 1200); assert.equal(sent.response_format.type, 'json_schema');
   assert.equal(sent.tools, undefined); assert.equal(body.suggestion.changes.nextStep, 'Ask the owner to confirm the deadline.');
   assert.match(sent.messages[0].content, /task-change.v1/); assert.match(sent.messages[0].content, /clarification/);
 });
@@ -168,14 +168,14 @@ test('provider error text is redacted, is not retried, and consumes the reservat
 });
 test('provider byte limit cancels an oversized stream', async () => {
   let cancelled = false;
-  await assert.rejects(suggestWithNebius({ model, apiKey: 'synthetic' }, { pack }, { fetcher: async () => new Response(new ReadableStream({
+  await assert.rejects(suggestWithNebius({ model, apiKey: 'synthetic' }, state, { fetcher: async () => new Response(new ReadableStream({
     pull(controller) { controller.enqueue(new Uint8Array(40000)); }, cancel() { cancelled = true; },
   }), { headers: { 'content-type': 'application/json' } }) }), { code: 'invalid_model_output' });
   assert.equal(cancelled, true);
 });
 test('provider timeout aborts one stalled request', async () => {
   let signal, calls = 0;
-  await assert.rejects(suggestWithNebius({ model, apiKey: 'synthetic' }, { pack }, { timeoutMs: 10,
+  await assert.rejects(suggestWithNebius({ model, apiKey: 'synthetic' }, state, { timeoutMs: 10,
     fetcher: async (_, options) => { calls++; signal = options.signal; return new Promise(() => {}); },
   }), { code: 'inference_timeout' });
   assert.equal(signal.aborted, true); assert.equal(calls, 1);

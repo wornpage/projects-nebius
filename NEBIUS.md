@@ -194,8 +194,9 @@ configuration; failures remain counted because the provider may have billed.
 It is a request ceiling, not a precise dollar budget. These counters hold no
 task text. Configure sufficient judge access before any submission.
 
-Calls use the fixed Token Factory HTTPS endpoint, refuse redirects, have a
-15-second deadline. Task suggestion and review calls have a 32-KiB response limit
+Calls use the fixed Token Factory HTTPS endpoint, refuse redirects through
+Workers-compatible manual handling, and have a 45-second deadline. Task suggestion
+and review calls have a 32-KiB response limit
 and request at most 1,200 output tokens; project planning and replanning permit 128 KiB and
 4,000 output tokens. The proposed next step and optional blocker are each limited to 200
 characters. Proposed status is restricted to draft, active or blocked;
@@ -203,6 +204,12 @@ completion and reopening completed work are not model actions. Model proposals
 cannot set an executable button command. Saving an approved next step preserves
 other fields unless their changes were also reviewed. Existing dependencies
 cannot be silently cleared by model output.
+
+Routine suggestions explicitly disable Nemotron thinking and request a strict
+JSON schema with input-relative basis IDs. The provider schema uses core shape,
+type, enum and size constraints; local validation additionally enforces unique
+basis IDs, single-line text and consistent status/blocker changes. The other
+operations retain their existing model reasoning settings and JSON-object mode.
 Truncated responses, wrong model identity, malformed JSON, tool calls and
 invalid output are refused. The four advisory operations have no automatic
 retries, fallback model or automatic task writes. The execution path may make
