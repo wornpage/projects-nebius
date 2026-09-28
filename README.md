@@ -9,9 +9,11 @@ and limits; accepting the result remains a separate action.
 
 **[Open the hosted demo](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)**
 
-**Development status:** a public submission candidate with local build and
-source-review evidence. Live model evaluation and Sandbox execution are still
-pending. The private Projects application is not needed to run it.
+**Development status:** hosted Nano guidance is live. Sandbox access is enabled
+and a real Node 24 execution completed successfully. The first tool-building
+attempts were rejected before execution; a complete generated tool and preview
+remain in validation. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
+The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) contains
 the standalone MIT-licensed source; the earlier WebMCP entry remains separate.
 
@@ -73,10 +75,13 @@ checks in a Token Factory Sandbox, and allows one repair. Open **Review** to
 inspect the tool, its source and observed check output, then explicitly save
 run evidence. A successful run does not mark the task done.
 
-Execution has separate sandbox credentials and limits, and stays disabled by
-default. [Execution setup and boundaries](NEBIUS_EXECUTION.md) describes the
+Execution has a separate Sandbox credential binding and limits. The hosted demo
+enables it; the local defaults keep it off. A Token Factory key with Sandbox
+access can supply both credential bindings. [Execution setup and boundaries](NEBIUS_EXECUTION.md) describes the
 contract, image requirements, cancellation and seven-day server retention.
-Live model/sandbox behavior remains unverified. Workspace backups include run
+Sandbox connectivity is proven; generated-tool behavior still needs a completed
+run. The demo normally permits five model calls and one task run per UTC day;
+failed attempts count. Workspace backups include run
 access keys and any saved results; treat them as private workspace data.
 
 ## Verify locally

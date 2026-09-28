@@ -29,16 +29,16 @@ Public component reuse is prior work, not a new model or backend contribution.
 | Area | Earlier WebMCP entry | Nebius contribution | Evidence/status |
 | --- | --- | --- | --- |
 | Project planning | Individual browser-local tasks | Brief-to-plan inference, editable tasks/dependencies, atomic approval and project scope | `NebiusProjectWorkspace.svelte`, `nebius-plan-contract.mjs`, `nebius-project-state.mjs`; live planning quality pending |
-| Model inference | No Token Factory backend | Server-held credential and one bounded NVIDIA model call | `worker/nebius-provider.mjs`; live call pending |
+| Model inference | No Token Factory backend | Server-held credential and bounded NVIDIA model calls | `worker/nebius-provider.mjs`; two hosted Nano responses observed; broader evaluation pending |
 | Task input | Visible browser workspace | Preview of task fields, status, optional update and selected context with consent to send | `NebiusSuggestion.svelte`, `nebius-contract.mjs` |
-| Model output | Existing button-action editor | Validated next-step, blocker and status proposals in one change draft | `NebiusTaskEditor.svelte`, `nebius-client.mjs`; live usefulness remains unverified |
+| Model output | Existing button-action editor | Validated next-step, blocker and status proposals in one change draft | `NebiusTaskEditor.svelte`, `nebius-client.mjs`; one unchanged and one changed live proposal reviewed, neither applied |
 | Saving | Prepare and human approval for button action | One editable before-and-after draft and explicit Apply changes | Next route; no automatic save or model execution |
 | Evidence review | Existing Review queue, no Token Factory review | Selected-criterion Nebius advisory review and separate completion evidence | `NebiusEvidenceReview.svelte`, `nebius-review-contract.mjs`; synthetic API/browser checks passed, live result pending |
 | Demonstration data | Existing WebMCP garage sample | Four synthetic Projects scenarios for the Nebius edition | `data/nebius-demo-packs.json`; fresh browser session rendered all four |
 | Continuity | Browser persistence and cache-backed shell | Unsaved evidence protection, task-editor focus return, and offline task-query recovery | Keyboard journeys at 375px/1280px and generated service-worker offline checks passed locally |
-| Usage controls | Static app | IP rate limit and transactional daily call ceiling | `worker/nebius-api.mjs`, `worker/nebius-budget.mjs`; hosted verification pending |
-| Task execution | No model-driven artifact execution | Existing task authorizes browser-tool files, fixed sandbox checks, one repair and human result review | `worker/nebius-runs.mjs`, `worker/nebius-sandbox.mjs`, `NebiusTaskRun.svelte`, `NebiusRunReview.svelte`; static source review only, live runtime pending |
-| Presentation | WebMCP guide and landing | Nebius landing, direct navigation and contribution explanation | Local 375px/1280px browser journey passed; hosted review pending |
+| Usage controls | Static app | IP rate limit and transactional daily call ceiling | `worker/nebius-api.mjs`, `worker/nebius-budget.mjs`; hosted limits configured, temporary owner-approved allowances restored |
+| Task execution | No model-driven artifact execution | Existing task authorizes browser-tool files, fixed sandbox checks, one repair and human result review | Sandbox access and a Node diagnostic succeeded; two tool-building calls stopped before generated-code execution; complete artifact still pending |
+| Presentation | WebMCP guide and landing | Nebius landing, direct navigation and contribution explanation | Local 375px/1280px journeys and hosted Work/Next/Review interfaces inspected; formal acceptance remains separate |
 
 Renaming the edition is presentation work. The substantive contribution is the
 inference workflow, bounded task execution and their controls. The organizers determine whether that

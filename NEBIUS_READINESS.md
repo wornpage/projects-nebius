@@ -1,5 +1,53 @@
 # Local implementation and submission evidence
 
+## Current runtime status — September 28, 2026
+
+| Capability | Observed result | Remaining evidence |
+| --- | --- | --- |
+| Hosted next-step guidance | Two Nano responses recorded, including a changed next-step/status/blocker proposal | Broader quality evaluation; neither response was applied |
+| Sandbox access | Existing Token Factory key authenticated; Node 24 image imported | Ongoing availability is not guaranteed by a past observation |
+| Sandbox execution | One operator-written Node diagnostic: SUCCESS, exit 0, Node v24.21.0, UID/GID 1000, writable `/tmp`, networking off | This diagnostic does not prove a generated tool |
+| Tool building | Two authorized model calls across two retained attempts; both stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
+| Public delivery | Separate hosted Worker and MIT source are published; Devpost entry is submitted | Final demonstration video and judging-period capacity |
+| Projects Acceptance | Exact connector returned UNAUTHORIZED and requires reauthentication | No new formal acceptance receipt |
+
+The first build (`28ac5dbc-7ffc-4b7e-83cf-3ba85cf51bf6`) stopped during generation.
+Its specific error was lost by a double-formatting bug. The second
+(`002e5e11-2bda-4f41-bef2-dafbf21a804f`) returned files that the isolation validator
+rejected. Neither attempt reached Sandbox execution or produced an accepted
+artifact. Each reserved one model call; provider token counts were not retained
+on these failures and remain unknown. The exact rejected file condition cannot
+be reconstructed from the retained response.
+
+The separate Sandbox diagnostic operation
+`01a0e8c8-7e47-748a-b4c5-709650b91a74` completed at 16:10:51 UTC, with a ten-second
+execution ceiling and no model request. It confirms the imported image and
+Sandbox API work together. It is not represented as model-generated code.
+
+Failure reasons are now preserved and displayed in Build tool. The existing
+isolation rules remain enforced, with separate messages for page, worker and
+check-file rejection. Tool generation now requests a strict three-file schema
+with thinking disabled. The original five model calls and one task run per UTC
+day were restored after the approved attempts. The temporary allowance is not
+part of the checked-in configuration. No additional inference is authorized by
+this evidence record.
+
+The follow-up UI/copy deployment is Worker version
+`86c5457b-575a-49c7-abec-4a87cda32408`. Svelte checking reported zero errors and
+warnings; JavaScript syntax checks and the frontend build completed. The hosted
+Build tool view showed the second attempt's retained rejection reason after
+reload. No repository test suite was added or run for this pass.
+
+The Devpost public story and eight judge-facing feedback fields were updated
+and read back on September 28. The entry remains Submitted. They now distinguish
+successful Nano guidance and the Node diagnostic from the still-uncompleted
+generated tool. The existing embedded video was retained and identified as an
+earlier Projects demonstration. The current narration draft and recorder's
+Sandbox segment were updated; no new video was recorded in this pass.
+
+The sections below retain earlier milestone observations. This current-status
+section supersedes their access, hosting, publication and pending-run statements.
+
 ## Sandbox access update — September 28, 2026
 
 The existing Token Factory API key authenticated `GET /sandboxes/v1/whoami`
@@ -116,8 +164,8 @@ created version `06d0629e-05d7-45ea-8861-df1b142947e8`, observed at 100% allocat
 The landing route returned HTTP 200. Read-only configuration requests for
 next-step guidance and project planning returned the configured Nano and Super
 models. These observations establish hosting and configuration, not successful
-inference or Sandbox execution. Execution remains disabled; the hosted inference
-ceiling is five requests per UTC day.
+inference or Sandbox execution. Execution was disabled at this initial deployment;
+the hosted inference ceiling was five requests per UTC day.
 
 No live model or Sandbox call was made for this deployment, and no test suite was
 run during this publication pass. Formal Projects Acceptance, end-to-end model
@@ -138,8 +186,9 @@ completed. Independent read-only source review found no actionable issues in
 draft preservation, focus recovery, approval gates or count definitions. No test
 suites or live generation/sandbox calls were run for this UI change. Projects
 Acceptance requires reconnection, so this milestone has no Acceptance receipt.
-The local preview retains its configured Token Factory models; sandbox execution
-remains disabled while beta access is pending.
+At that UI milestone, the local preview retained its configured Token Factory
+models and Sandbox execution was disabled while access was pending. The current
+runtime-status section above records the subsequent enablement and run attempts.
 
 The current publication snapshot contains 200 manifest-listed paths. The
 configured API key and private-key markers were checked against those files;
@@ -266,12 +315,12 @@ or a fresh-machine installation. Their exact revisions remain in the lockfile.
 
 | Gate | Actual evidence collected |
 | --- | --- |
-| Live model quality | 0 of 6 planned cases run; see NEBIUS_DEMO_SCRIPT.md |
-| Exact model/JSON compatibility | Pending owner key, model selection and live calls |
+| Live model quality | Two ad-hoc routine responses observed; 0 of the separate 6 planned evaluation cases completed |
+| Exact model/JSON compatibility | Nano guidance succeeded; Super tool files were rejected before execution; planning/replanning/evidence-review quality is not yet qualified |
 | Measured latency and cost comparison | Pending actual calls; no fabricated estimates or benchmark claims |
-| Hosted demo and judge access | Not deployed by this work |
-| Public submission repository | Private fork; owner publication pending |
-| Submission video | Rehearsal script prepared; no finished public video asserted |
+| Hosted demo and judge access | Hosted app is public; normal limits are five model calls and one task run per UTC day; judging-period capacity still needs a decision |
+| Public submission repository | Published at wornpage/projects-nebius under MIT, separately from the private fork |
+| Submission video | Devpost has a video; the newer live-guidance recording and final Sandbox footage have not replaced it |
 | Formal hosted acceptance | No independent hosted run/review receipt asserted |
 
 These pending gates are separate from local implementation. Optional Nebius

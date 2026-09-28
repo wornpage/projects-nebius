@@ -34,14 +34,13 @@ generates a small browser tool, runs model-authored checks, and allows one repai
 The result returns to the workspace for an isolated preview, source inspection
 and evidence review. A run never marks the task done or publishes its output.
 
-**Current evidence boundary:** A hosted Nano next-step suggestion completed on
-September 28 after repairing Worker redirect handling and structured output.
-The provider reported 537 input tokens and 139 output tokens; the suggestion
-remained unsaved. See NEBIUS_READINESS.md for the bounded observation. Planning,
-review and live Sandbox execution remain unverified. Sandbox API access and
-the Node 24 image import were confirmed on September 28; the first real tool
-run remains outstanding. The earlier keyboard rehearsal and simulated tutorial do not show a
-successful live AI run.
+**Current evidence boundary:** Two hosted Nano suggestions were observed on
+September 28, including a changed proposal after a hypothetical release update.
+Both stayed unsaved. Sandbox API access is enabled, and a real isolated Node 24
+diagnostic succeeded with networking off. Two tool-generation attempts stopped
+before executing generated code; the second returned files rejected by the app's
+isolation rules. The first complete generated tool and interactive preview are
+still being validated. See NEBIUS_READINESS.md for the retained outcomes.
 
 ## How we built it
 
@@ -69,8 +68,13 @@ repository and deployment are separate. No private Projects backend was ported.
 The Token Factory model catalog made the Nano/Super split clear, and the API key
 successfully authenticated the model-list request. The Sandbox browser tutorial
 is a useful introduction but its responses are simulated. Agent API access
-required a beta request; API access is now confirmed. Add feedback
-on output quality, latency and Sandbox execution only after observing real runs.
+required a beta request; API access is now confirmed. The existing Token Factory
+key also authenticates Sandbox requests for the selected project. Importing an
+official Node 24 image and running a network-disabled diagnostic succeeded.
+Tool generation needs further work: model files can fail the app's worker/page/
+check contract even when structured JSON is returned. Preserving specific
+failure messages and separating runtime connectivity from artifact quality are
+necessary for a useful agent workflow.
 
 ## Assets to finish
 
@@ -78,17 +82,20 @@ on output quality, latency and Sandbox execution only after observing real runs.
 - Public repository: https://github.com/wornpage/projects-nebius, published with
   fresh history, MIT license and setup; private fork visibility is retained.
 - Final Nebius demonstration video: still outstanding; keep it under three
-  minutes. A silent keyboard rehearsal was recorded on September 28, ending
-  before Apply. It does not demonstrate successful inference or Sandbox execution.
-- Live routine inference: one successful hosted suggestion recorded. Broader
-  model evaluation and Sandbox evidence remain outstanding.
+  minutes. The latest local 87-second guidance cut includes a real request and
+  a changed, unsaved proposal. It predates Sandbox enablement and does not show
+  a successful generated tool. The older video remains on Devpost.
+- Live routine inference: two successful hosted suggestions recorded. A Node
+  Sandbox diagnostic succeeded; the complete generated-tool result and broader
+  model evaluation remain outstanding.
 - Devpost: [submitted entry](https://devpost.com/software/wornpage-projects-nebius-edition),
   confirmed by the submission-success message on September 28, 2026.
 
 ## Video outline for the available demo
 
-Target roughly 80–100 seconds. The existing 2:25 recording shows a genuine
-response but no changed task fields; retain it as supporting evidence.
+Target roughly 80–100 seconds. The latest local 87-second cut shows real
+guidance and changed task fields. Keep its original receipt and narration as
+historical evidence; use updated narration for the next take.
 
 1. Show a release task waiting for a health check.
 2. Enter an explicitly hypothetical demo update: health passed, rollback steps
@@ -96,9 +103,10 @@ response but no changed task fields; retain it as supporting evidence.
 3. Show selected inputs, make a real Token Factory request, and review the
    actual changed fields. Record this when the daily allowance permits a call;
    do not substitute a scripted proposal or force a change for the camera.
-4. Open Build tool and preview the task and run limits. Sandbox API access is
-   enabled. Record generation, isolated checks and an optional repair only
-   when those operations actually run; setup readiness is not execution proof.
+4. Open Build tool and preview the task and run limits. Sandbox API access and
+   the Node diagnostic are confirmed. The first tool-building attempts failed
+   before generated-code execution; do not present the example as a working
+   generated artifact. Record checks or a repair only when they actually occur.
 5. Close on the human decision and public repository. Record real Sandbox
    output and revise this section after a successful end-to-end run.
 

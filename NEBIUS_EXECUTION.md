@@ -151,10 +151,16 @@ configuration. The source change itself neither provisions nor deploys them.
 
 ## Verification status
 
-The source milestone is implemented. Svelte checking (zero errors/warnings),
-JavaScript syntax checks, the Nebius frontend build and Worker bundle dry run
-passed. Independent review recommends accepting the source. Live model calls,
-sandbox execution, generated preview behavior, test suites and hosted
-acceptance were not performed in this turn. See
-[the readiness record](NEBIUS_READINESS.md#task-execution-source-milestone),
-including the unresolved server handoff recording gate.
+Sandbox access is enabled in the hosted demo. On September 28, a real isolated
+Node 24 diagnostic returned exit code 0 with networking disabled, UID/GID 1000
+and writable `/tmp`. It used operator-written diagnostic code, not model output.
+
+Two model calls for a release-packet checker stopped before Sandbox execution.
+The second returned files rejected by the isolation validator. No generated
+tool, successful generated checks or interactive result is claimed. Failure
+messages are now preserved and displayed, and future validation failures
+identify the page, worker or check-file requirement without relaxing it.
+
+The five-call and one-run daily limits were restored after the authorized
+attempts. See [current runtime evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
+Formal Projects Acceptance still requires connector reauthentication.

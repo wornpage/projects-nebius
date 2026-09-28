@@ -147,7 +147,9 @@ separately enabled execution path: it uses the reasoning model, a persistent
 run record, up to two sandbox checks and one repair, then returns the artifact
 to Review. Saving its evidence and marking the task done are separate actions.
 See [NEBIUS_EXECUTION.md](NEBIUS_EXECUTION.md) for its credentials, fixed limits,
-preview isolation and retention. Its live runtime remains unverified.
+preview isolation and retention. Sandbox access and a Node 24 diagnostic are
+confirmed; a complete generated tool and interactive preview remain unverified.
+See the current status in [NEBIUS_READINESS.md](NEBIUS_READINESS.md).
 
 ## Advisory runtime and limits
 
@@ -209,7 +211,9 @@ Routine suggestions explicitly disable Nemotron thinking and request a strict
 JSON schema with input-relative basis IDs. The provider schema uses core shape,
 type, enum and size constraints; local validation additionally enforces unique
 basis IDs, single-line text and consistent status/blocker changes. The other
-operations retain their existing model reasoning settings and JSON-object mode.
+advisory operations retain their existing model reasoning settings and JSON-object
+mode. Tool generation separately requests a strict three-file schema and disables
+thinking to reserve its 8,000-token ceiling for the generated files.
 Truncated responses, wrong model identity, malformed JSON, tool calls and
 invalid output are refused. The four advisory operations have no automatic
 retries, fallback model or automatic task writes. The execution path may make
@@ -219,7 +223,8 @@ service worker excludes all Nebius APIs from caching.
 The default Worker configuration disables inference and public routing. The
 named `demo` environment uses a separate `projects-nebius` Worker, the configured
 workers.dev origin, the Nano/Super model pair, and a five-call daily ceiling.
-Sandbox execution remains disabled. It must not reuse the frozen WebMCP
+Sandbox execution is enabled in that environment with a pinned Node 24 image
+and a one-run daily limit. It must not reuse the frozen WebMCP
 deployment. Configure your own Worker name and origin before deploying a fork.
 
 Build and inspect a deployment bundle with:
