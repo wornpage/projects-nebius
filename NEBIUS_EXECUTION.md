@@ -239,9 +239,9 @@ and writable `/tmp`. It used operator-written diagnostic code, not model output.
 Four model calls across four retained tool attempts stopped before Sandbox
 execution. The fourth failed with `page_style_missing` and recorded 894 input /
 921 output tokens. The source correction removes the required-style-block gate
-after review identified it as a cosmetic requirement. At this checkpoint it has
-not yet been deployed or exercised; a fresh generated-tool result remains
-outstanding. No successful generated checks or
+after review identified it as a cosmetic requirement. The correction is deployed
+as Worker `5ad767d5-d841-4e3c-991f-e9357f8b8c00`; a fresh generated-tool result
+remains outstanding. No successful generated checks or
 interactive result is claimed. Remaining page, worker and check-file rejections
 retain their specific diagnostics.
 

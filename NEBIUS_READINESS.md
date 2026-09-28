@@ -71,13 +71,22 @@ attempts remain counted; the unused second model call within this failed run
 does not authorize another task run.
 
 Independent source review found that style-block presence is a presentation
-requirement. The source correction gives styling advice without rejecting a
-semantic page solely for lacking CSS. At this source-review checkpoint, the
-correction has not yet been deployed or exercised. Script/resource/CSS-URL restrictions, preview
+requirement. The correction gives styling advice without rejecting a semantic
+page solely for lacking CSS. Source `6deb6439f8fa9e78c59fb7ffa82ff006b999b7ec`
+is deployed as Worker version `5ad767d5-d841-4e3c-991f-e9357f8b8c00`, at 100% in
+deployment `f5dd993f-72d7-4827-ab22-26c4ae3f25cc`. Provider readback confirms
+unchanged bindings and asset/runtime configuration, including the 20-call/3-run
+limits. No fresh model call exercised this corrected version.
+Script/resource/CSS-URL restrictions, preview
 sanitization, CSP, Worker isolation and the existing repair boundary remain.
 The failed source was not retained, so it cannot be replayed or claimed to meet
 the remaining rules. A new complete tool, Sandbox result and interactive preview
 remain outstanding after the correction.
+
+The public Devpost story and four affected judge-feedback fields now report
+the fourth attempt, its exact usage and this deployed source correction. Saved
+values were read back; the entry remains Submitted with 5/5 steps done. The
+existing video was retained.
 
 ## Initialization and diagnostics update — September 28, 2026
 

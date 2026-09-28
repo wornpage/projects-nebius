@@ -41,8 +41,8 @@ diagnostic succeeded with networking off. Four tool-generation attempts stopped
 before executing generated code. The latest identified a missing style block;
 its saved record retains `page_style_missing` and 894 input / 921 output tokens.
 The source correction removes that cosmetic rejection and makes styling
-presentation guidance. Deployment and a fresh live result are still pending
-at this source-review checkpoint.
+presentation guidance. The correction is deployed; a fresh generated-tool result
+remains pending.
 The first complete generated tool and interactive preview remain outstanding.
 See NEBIUS_READINESS.md for the retained outcomes.
 
