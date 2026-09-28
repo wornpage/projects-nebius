@@ -70,12 +70,15 @@ on output quality, latency and Sandbox execution only after observing real runs.
 
 ## Assets to finish
 
-- Hosted application URL: deployment preparation in progress.
-- Public repository: preparing the separate `wornpage/projects-nebius` snapshot
-  with fresh history, MIT license and setup; private fork visibility is retained.
+- Hosted application: https://projects-nebius.ayivx-do-lmf-982.workers.dev/
+- Public repository: https://github.com/wornpage/projects-nebius, published with
+  fresh history, MIT license and setup; private fork visibility is retained.
 - Public YouTube video: owner will provide later; keep it under three minutes.
 - Successful live inference and Sandbox evidence: outstanding.
-- Devpost project URL and saved/submitted status: not yet recorded.
+- Devpost: the signed-in account has not joined this hackathon. Registration is
+  open at https://nebiusglobalaihackathon.devpost.com/register and awaits the
+  owner's personal answers and eligibility/terms confirmation. No project entry
+  has been created or submitted yet.
 
 ## Video outline for later
 

@@ -7,11 +7,13 @@ evidence assessments. The task execution milestone adds a bounded browser-tool
 build, sandbox checks and result review. You authorize a run's selected task
 and limits; accepting the result remains a separate action.
 
-**Development status:** a standalone submission candidate with local build and
+**[Open the hosted demo](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)**
+
+**Development status:** a public submission candidate with local build and
 source-review evidence. Live model evaluation and Sandbox execution are still
-pending. The private Projects application is not needed to run it. This source
-is prepared for [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius);
-the earlier WebMCP entry remains a separate project.
+pending. The private Projects application is not needed to run it.
+[wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) contains
+the standalone MIT-licensed source; the earlier WebMCP entry remains separate.
 
 ## Run without credentials
 

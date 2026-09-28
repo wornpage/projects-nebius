@@ -26,6 +26,29 @@ and [track design](NEBIUS_TRACK_DESIGN.md).
 
 ## Local verification
 
+### Public source and initial hosted demo
+
+On September 28, 2026, the standalone 200-file source snapshot was published as
+[wornpage/projects-nebius](https://github.com/wornpage/projects-nebius), with
+fresh Git history and the MIT license. The initial source commit is
+`d7bea460b605b94f82077c9a69ce651a975f810c`. Documentation follow-ups do not change
+the uploaded application code. The development fork retains private visibility.
+
+The separate `projects-nebius` Cloudflare Worker serves
+https://projects-nebius.ayivx-do-lmf-982.workers.dev/. Initial code upload version:
+`fd9f202c-e750-4a17-899c-1601901e4da5`; adding the server-held Token Factory secret
+created version `06d0629e-05d7-45ea-8861-df1b142947e8`, observed at 100% allocation.
+The landing route returned HTTP 200. Read-only configuration requests for
+next-step guidance and project planning returned the configured Nano and Super
+models. These observations establish hosting and configuration, not successful
+inference or Sandbox execution. Execution remains disabled; the hosted inference
+ceiling is five requests per UTC day.
+
+No live model or Sandbox call was made for this deployment, and no test suite was
+run during this publication pass. Formal Projects Acceptance, end-to-end model
+results and rollback qualification remain outstanding. Devpost registration and
+entry submission are separate from GitHub publication and app hosting.
+
 ### Wornpage component enhancement
 
 Next step now has a task brief and Wornpage tabs for guidance, tool building and
