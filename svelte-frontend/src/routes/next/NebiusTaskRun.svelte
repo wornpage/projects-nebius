@@ -32,6 +32,7 @@
 	let error = $state('');
 	let notice = $state('');
 	let disposed = false;
+	let actionRevision = 0;
 	let active: AbortController | null = null;
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -64,10 +65,14 @@
 		pollTimer = null;
 	}
 
-	function scheduleRefresh(runId: string, runKey: string) {
+	function isCurrentRun(packId: string, runId: string, runKey: string) {
+		return !disposed && pack.id === packId && reference?.id === runId && reference.key === runKey;
+	}
+
+	function scheduleRefresh(packId: string, runId: string, runKey: string, uncertaintyNotice?: string) {
 		clearPolling();
 		if (disposed) return;
-		pollTimer = setTimeout(() => void refreshKnownRun({ runId, runKey, quiet: true }), 1800);
+		pollTimer = setTimeout(() => void refreshKnownRun({ packId, runId, runKey, quiet: true, uncertaintyNotice }), 1800);
 	}
 
 	async function loadConfig() {
@@ -100,15 +105,16 @@
 		const savedPack = await saveExecutionRunRecord(capturedPackId, runId, runKey, value);
 		if (disposed || pack.id !== capturedPackId || savedPack.executionRun?.id !== runId) return;
 		const saved = savedPack.executionRun.record;
-		if (saved && !TERMINAL_RUN_STATUSES.includes(saved.status)) scheduleRefresh(runId, runKey);
+		if (saved && !TERMINAL_RUN_STATUSES.includes(saved.status)) scheduleRefresh(capturedPackId, runId, runKey);
 	}
 
-	async function refreshKnownRun(options: { runId?: string; runKey?: string; quiet?: boolean } = {}) {
+	async function refreshKnownRun(options: { packId?: string; runId?: string; runKey?: string; quiet?: boolean; uncertaintyNotice?: string } = {}) {
+		const capturedPackId = options.packId || pack.id;
 		const runId = options.runId || reference?.id;
 		const runKey = options.runKey || reference?.key;
-		if (!runId || !runKey || requestBusy || disposed) return;
-		const capturedPackId = pack.id;
+		if (!runId || !runKey || requestBusy || !isCurrentRun(capturedPackId, runId, runKey)) return;
 		clearPolling();
+		const capturedActionRevision = options.quiet ? actionRevision : ++actionRevision;
 		if (!options.quiet) {
 			requestBusy = true;
 			requestLabel = 'Refreshing…';
@@ -117,10 +123,16 @@
 		}
 		try {
 			const next = await readRun(runId, runKey, capturedPackId);
-			if (disposed || pack.id !== capturedPackId) return;
+			if (!isCurrentRun(capturedPackId, runId, runKey)) return;
 			await applyRecord(runId, runKey, next);
+			if (isCurrentRun(capturedPackId, runId, runKey) && actionRevision === capturedActionRevision
+				&& options.uncertaintyNotice !== undefined && notice === options.uncertaintyNotice) {
+				notice = '';
+			}
 		} catch (cause) {
-			if (!disposed) error = cause instanceof Error ? cause.message : 'The saved run could not be refreshed.';
+			if (isCurrentRun(capturedPackId, runId, runKey) && actionRevision === capturedActionRevision) {
+				error = cause instanceof Error ? cause.message : 'The saved run could not be refreshed.';
+			}
 		} finally {
 			if (!options.quiet && !disposed) {
 				requestBusy = false;
@@ -140,6 +152,7 @@
 			return;
 		}
 		const credentials = createRunCredentials();
+		actionRevision += 1;
 		requestBusy = true;
 		requestLabel = 'Starting…';
 		error = '';
@@ -163,7 +176,10 @@
 					return;
 				}
 				error = cause.message;
-			} else if (cause instanceof NebiusRunClientError && cause.uncertain) notice = cause.message;
+			} else if (cause instanceof NebiusRunClientError && cause.uncertain) {
+				notice = cause.message;
+				if (pack.id === capturedPackId) scheduleRefresh(capturedPackId, credentials.id, credentials.key, cause.message);
+			}
 			else error = cause instanceof ChallengeStateError || cause instanceof Error ? cause.message : 'The task execution could not be started.';
 		} finally {
 			if (!disposed) {
@@ -178,6 +194,7 @@
 		const capturedPackId = pack.id;
 		const { id, key } = reference;
 		const input = structuredClone(reference.input);
+		actionRevision += 1;
 		requestBusy = true;
 		requestLabel = 'Resuming…';
 		error = '';
@@ -195,7 +212,10 @@
 					return;
 				}
 				error = cause.message;
-			} else if (cause instanceof NebiusRunClientError && cause.uncertain) notice = cause.message;
+			} else if (cause instanceof NebiusRunClientError && cause.uncertain) {
+				notice = cause.message;
+				if (pack.id === capturedPackId) scheduleRefresh(capturedPackId, id, key, cause.message);
+			}
 			else error = cause instanceof Error ? cause.message : 'The saved task request could not be resumed.';
 		} finally {
 			if (!disposed) {
@@ -209,6 +229,7 @@
 		if (!reference || terminal || requestBusy) return;
 		const { id, key } = reference;
 		const capturedPackId = pack.id;
+		actionRevision += 1;
 		requestBusy = true;
 		requestLabel = 'Cancelling…';
 		error = '';
