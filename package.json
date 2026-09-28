@@ -1,0 +1,36 @@
+{
+  "name": "projects-webmcp-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Wornpage Projects demo with a preserved WebMCP baseline and a Nebius Token Factory edition.",
+  "scripts": {
+    "build:nebius": "node scripts/build-nebius.mjs",
+    "dev:nebius": "npm run build:nebius && wrangler dev --config wrangler.nebius.jsonc --ip 127.0.0.1 --port 8787",
+    "test:nebius": "node --test tests/nebius-api.test.mjs tests/nebius-client.test.mjs tests/nebius-plan.test.mjs tests/nebius-project-state.test.mjs tests/nebius-plan-client.test.mjs tests/nebius-replan.test.mjs tests/nebius-replan-state.test.mjs tests/nebius-replan-client.test.mjs tests/nebius-routing.test.mjs tests/nebius-project-starters.test.mjs tests/nebius-project-progress.test.mjs tests/nebius-project-completion.test.mjs",
+    "test:nebius:browser": "node scripts/nebius-browser-smoke.mjs",
+    "test:nebius:projects": "node scripts/nebius-project-browser-smoke.mjs",
+    "test:nebius:offline": "node scripts/offline-browser-smoke.mjs --nebius",
+    "test:nebius:runtime": "node scripts/nebius-runtime-smoke.mjs",
+    "verify:nebius": "npm run test:manifest && npm run test:nebius && npm run check && npm run build:nebius && wrangler deploy --dry-run --config wrangler.nebius.jsonc --outdir dist/nebius-worker && npm run test:nebius:runtime",
+    "build": "npm --prefix svelte-frontend run build",
+    "build:pages": "npm --prefix svelte-frontend ci --ignore-scripts && npm run build",
+    "check": "npm --prefix svelte-frontend run check",
+    "manifest:write": "node scripts/generate-public-manifest.mjs --write",
+    "preflight:recording": "node scripts/webmcp-recording-preflight.mjs",
+    "test:manifest": "node scripts/generate-public-manifest.mjs",
+    "test:social-card": "node scripts/social-card-smoke.mjs",
+    "test:artifact": "node --test scripts/webmcp-recording-preflight-contract.test.mjs scripts/static-artifact-contract.test.mjs",
+    "test:browser": "node scripts/calibrate-work-first-recording.mjs && node scripts/work-interaction-polish-smoke.mjs && node scripts/webmcp-header-responsive-smoke.mjs && node scripts/offline-browser-smoke.mjs && node scripts/portability-browser-smoke.mjs",
+    "test:webmcp": "node scripts/run-webmcp-contracts.mjs",
+    "verify": "npm run test:manifest && npm run check && npm run test:webmcp && npm run build && npm run test:social-card && npm run test:artifact"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "parse5": "8.0.1",
+    "playwright-core": "1.62.1",
+    "wrangler": "4.126.0"
+  }
+}

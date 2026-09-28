@@ -1,0 +1,41 @@
+{
+  "name": "svelte-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "node ../scripts/build-svelte-frontend.mjs",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --config ./svelte.check.config.js --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/kit": "^2.69.3",
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@types/node": "^24.0.0",
+    "svelte": "^5.56.5",
+    "svelte-check": "^4.7.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4"
+  },
+  "dependencies": {
+    "@lucide/svelte": "1.31.0",
+    "@wornpage/alert": "https://codeload.github.com/wornpage/alert/tar.gz/60df9fda3125dde560871a952a7f6e0b65e566c2",
+    "@wornpage/async-states": "https://codeload.github.com/wornpage/async-states/tar.gz/8b3c50b107c2ade4bd8bfbd0fec63730b878902f",
+    "@wornpage/binary-controls": "https://codeload.github.com/wornpage/binary-controls/tar.gz/308e9266344d7514c08de45fd4d3e43443ccf50c",
+    "@wornpage/button": "https://codeload.github.com/wornpage/button/tar.gz/fe7ff6a5e08bee7ab8d3127379c869de4c851fbc",
+    "@wornpage/command-surfaces": "https://codeload.github.com/wornpage/command-surfaces/tar.gz/07b93fdfe6d00b2615f4e45928fb84828316493b",
+    "@wornpage/data-display": "https://codeload.github.com/wornpage/data-display/tar.gz/8b19bd18503c9ab605e0888abd0c1dce64fedcad",
+    "@wornpage/dialog": "https://codeload.github.com/wornpage/dialog/tar.gz/48078bfbb405121fe6a1e138798f30542ee5da7a",
+    "@wornpage/disclosure": "https://codeload.github.com/wornpage/disclosure/tar.gz/d38eb53a7fbd9df1ae516913ab4c7092fb09cb2a",
+    "@wornpage/form-fields": "https://codeload.github.com/wornpage/form-fields/tar.gz/4f517854ec105902602148465507fd6b23790662",
+    "@wornpage/layout-surfaces": "https://codeload.github.com/wornpage/layout-surfaces/tar.gz/ab47d7df7f03829401cee6852c5e4bbe2f894bce",
+    "@wornpage/receipt": "https://codeload.github.com/wornpage/receipt/tar.gz/6710499b30a410a5e4b12aef2cbde4e3883e249f",
+    "@wornpage/segmented-control": "https://codeload.github.com/wornpage/segmented-control/tar.gz/359969974995e87259a6ac8c06224836ab49e062",
+    "@wornpage/tabs": "https://codeload.github.com/wornpage/tabs/tar.gz/3bf4c7b95edd2375a3e287e66dd9b94887c850c4",
+    "@wornpage/toast": "https://codeload.github.com/wornpage/toast/tar.gz/f8b12dbab5b5072e7a2f009ef52a9417a3cbde64"
+  },
+  "overrides": {
+    "cookie": "^0.7.2"
+  }
+}

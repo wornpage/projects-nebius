@@ -1,0 +1,17 @@
+export const PROMPT_VERSION: 'task-change.v1';
+export const UPDATE_LIMIT: 1000;
+export type NebiusCurrentStatus = 'draft' | 'active' | 'blocked' | 'done';
+export type NebiusTask = Record<'title' | 'purpose' | 'nextStep' | 'blocker' | 'doneWhen', string>;
+export const FIELD_LIMITS: Readonly<Record<keyof NebiusTask, number>>;
+export const CONTEXT_LIMITS: Readonly<{ items: 3; text: 1000 }>;
+export type NebiusContextItem = { kind: 'note' | 'source'; text: string };
+export function isRecord(value: unknown): boolean;
+export function validModelId(value: unknown): boolean;
+export function validateTask(value: unknown): NebiusTask;
+export function projectTask(pack: unknown): NebiusTask;
+export function validateSelectedContext(value: unknown): NebiusContextItem[];
+export type NebiusChanges = { nextStep: string; blocker?: string; status?: 'draft' | 'active' | 'blocked' };
+export type NebiusSuggestion = { changes: NebiusChanges; reason: string; basis: string[]; missingInformation: string[] };
+export function validateCurrentStatus(value: unknown): NebiusCurrentStatus;
+export function validateUpdate(value: unknown): string;
+export function validateSuggestionText(value: unknown, state: { pack: NebiusTask; context: NebiusContextItem[]; currentStatus: NebiusCurrentStatus; update: string }): NebiusSuggestion;

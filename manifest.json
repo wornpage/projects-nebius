@@ -1,0 +1,14 @@
+{
+  "name": "Wornpage Projects — WebMCP handoff workflow",
+  "short_name": "Projects Handoff",
+  "description": "Browser-local Projects handoffs: read visible work, narrow review, and prepare a draft while a person controls Save.",
+  "start_url": "/webmcp-challenge",
+  "display": "standalone",
+  "theme_color": "#e8ebe9",
+  "background_color": "#f3f4f3",
+  "icons": [
+    { "src": "assets/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "assets/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

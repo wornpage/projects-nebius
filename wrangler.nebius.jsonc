@@ -1,0 +1,55 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "projects-nebius-private",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": { "directory": "./dist/static-publish", "binding": "ASSETS", "run_worker_first": ["/api/nebius/*"] },
+  "durable_objects": { "bindings": [
+    { "name": "NEBIUS_BUDGET", "class_name": "NebiusBudget" },
+    { "name": "NEBIUS_RUN_BUDGET", "class_name": "NebiusRunBudget" },
+    { "name": "NEBIUS_RUNS", "class_name": "NebiusRun" }
+  ] },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["NebiusBudget"] },
+    { "tag": "v2", "new_sqlite_classes": ["NebiusRunBudget", "NebiusRun"] }
+  ],
+  "ratelimits": [{ "name": "NEBIUS_IP_RATE_LIMITER", "namespace_id": "3101", "simple": { "limit": 3, "period": 60 } }],
+  "vars": {
+    "NEBIUS_ENABLED": "false",
+    "NEBIUS_EXECUTION_ENABLED": "false",
+    "NEBIUS_ALLOWED_ORIGIN": "",
+    "NEBIUS_MODEL_ROUTINE": "",
+    "NEBIUS_MODEL_REASONING": "",
+    "NEBIUS_DAILY_CALL_LIMIT": "50",
+    "NEBIUS_DAILY_RUN_LIMIT": "10",
+    "NEBIUS_SANDBOX_PROJECT_ID": "",
+    "NEBIUS_SANDBOX_NODE_IMAGE_UUID": ""
+  },
+  "env": {
+    "demo": {
+      "name": "projects-nebius",
+      "workers_dev": true,
+      "preview_urls": false,
+      "durable_objects": { "bindings": [
+        { "name": "NEBIUS_BUDGET", "class_name": "NebiusBudget" },
+        { "name": "NEBIUS_RUN_BUDGET", "class_name": "NebiusRunBudget" },
+        { "name": "NEBIUS_RUNS", "class_name": "NebiusRun" }
+      ] },
+      "ratelimits": [{ "name": "NEBIUS_IP_RATE_LIMITER", "namespace_id": "3101", "simple": { "limit": 3, "period": 60 } }],
+      "vars": {
+        "NEBIUS_ENABLED": "true",
+        "NEBIUS_EXECUTION_ENABLED": "false",
+        "NEBIUS_ALLOWED_ORIGIN": "https://projects-nebius.ayivx-do-lmf-982.workers.dev",
+        "NEBIUS_MODEL_ROUTINE": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "NEBIUS_MODEL_REASONING": "nvidia/nemotron-3-super-120b-a12b",
+        "NEBIUS_DAILY_CALL_LIMIT": "5",
+        "NEBIUS_DAILY_RUN_LIMIT": "1",
+        "NEBIUS_SANDBOX_PROJECT_ID": "",
+        "NEBIUS_SANDBOX_NODE_IMAGE_UUID": ""
+      }
+    }
+  }
+}

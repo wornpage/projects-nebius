@@ -1,0 +1,10 @@
+export const REPLAN_VERSION: 'project-replan.v1';
+export const REPLAN_LIMITS: Readonly<{ projectId: 120; id: 200; title: 120; summary: 600; tasks: 8; taskTitle: 200; purpose: 1000; nextStep: 200; doneWhen: 1000; blocker: 200; update: 2000; reason: 400; missingInformation: 5; missingInformationText: 200 }>;
+export type ProjectSnapshotTask = { id: string; title: string; purpose: string; nextStep: string; doneWhen: string; status: 'active' | 'blocked' | 'done' | 'draft'; blocker: string; blockedBy: string | null; archived: boolean };
+export type ProjectSnapshot = { project: { id: string; title: string; summary: string }; tasks: ProjectSnapshotTask[] };
+export type ReplanInput = { snapshot: ProjectSnapshot; update: string };
+export type ProjectReplanChange = Omit<ProjectSnapshotTask, 'archived' | 'status'> & { status: 'active' | 'blocked'; reason: string };
+export type ProjectReplan = { summary: string; changes: ProjectReplanChange[]; missingInformation: string[] };
+export function validateProjectSnapshot(value: unknown): ProjectSnapshot;
+export function validateReplanInput(value: unknown): ReplanInput;
+export function validateProjectReplan(value: unknown, snapshot: ProjectSnapshot): ProjectReplan;

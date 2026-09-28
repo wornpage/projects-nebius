@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Turn project tasks into small browser tools with NVIDIA Nemotron and Nebius Token Factory Sandboxes. Generate code, run checks, repair once, and review the result in Wornpage Projects.">
+  <meta property="og:title" content="Wornpage Projects — From next step to working tool">
+  <meta property="og:description" content="Plan with Nemotron. Build and check tools in Token Factory Sandboxes. Review the source, try the result, and decide what to keep.">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#f5f3ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1512" media="(prefers-color-scheme: dark)">
+  <title>Wornpage Projects — From next step to working tool</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/landing.css">
+</head>
+<body class="lp lp-nebius">
+  <a class="lp-skip" href="#main-content">Skip to main content</a>
+  <header class="lp-nav">
+    <a class="lp-brand" href="/" aria-label="Wornpage Projects home">
+      <span class="lp-brand-mark" aria-hidden="true">W</span>
+      <span><strong>Wornpage Projects</strong><small>Nebius edition</small></span>
+    </a>
+    <nav class="lp-nav-links" aria-label="Landing page navigation">
+      <a href="#sandbox">Sandbox workflow</a>
+      <a href="/webmcp-challenge">Guide</a>
+    </nav>
+    <a class="lp-btn lp-btn-sm" href="/work">Open workspace <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main id="main-content" tabindex="-1">
+    <section class="lp-hero" aria-labelledby="nebius-title">
+      <div class="lp-hero-copy">
+        <p class="lp-kicker">NVIDIA Nemotron + Token Factory Sandboxes</p>
+        <h1 id="nebius-title">From next step<br>to working tool.</h1>
+        <p class="lp-lede">Give your project an agent that can build. Turn a task into a small browser tool, run its checks in a Nebius Sandbox, and review the result in the same workspace.</p>
+        <div class="lp-cta-row">
+          <a class="lp-btn lp-btn-primary" href="/work">Start with a project <span class="lp-arrow" aria-hidden="true">→</span></a>
+          <a class="lp-btn" href="#sandbox">See the workflow</a>
+        </div>
+        <p class="lp-fine">Plan the work. Build something useful. Keep the final say.</p>
+      </div>
+
+      <figure class="neb-preview" aria-labelledby="example-title">
+        <figcaption class="neb-preview-label"><span>Example workflow</span><span class="lp-pill lp-pill-muted">Task → tool</span></figcaption>
+        <div class="neb-example-task">
+          <span class="lp-eyebrow">From your project</span>
+          <h2 id="example-title">Workshop agenda builder</h2>
+          <p>Fit the session activities into the time available.</p>
+        </div>
+        <ol class="neb-run-path" aria-label="Example tool-building workflow">
+          <li>
+            <span class="neb-stage-number" aria-hidden="true">01</span>
+            <div><h3>Build with Nemotron</h3><p>Generate the interface, logic and checks.</p><div class="neb-files" aria-label="Generated source files"><code>index.html</code><code>app.js</code><code>checks.cjs</code></div></div>
+          </li>
+          <li>
+            <span class="neb-stage-number" aria-hidden="true">02</span>
+            <div><h3>Run in a Sandbox</h3><p>Execute checks in Nebius Token Factory. Use the output for one repair if needed.</p></div>
+          </li>
+          <li>
+            <span class="neb-stage-number" aria-hidden="true">03</span>
+            <div><h3>Bring the result back</h3><p>Try the tool, inspect the source and review the check output.</p></div>
+          </li>
+        </ol>
+        <div class="neb-review-strip"><span>Preview · source · check output</span><strong>You decide what to keep</strong></div>
+      </figure>
+    </section>
+
+    <section id="sandbox" class="lp-how" aria-labelledby="sandbox-title">
+      <div class="lp-wrap">
+        <div class="lp-section-head">
+          <span class="lp-eyebrow">One task. A complete build loop.</span>
+          <h2 id="sandbox-title">The next step can be something you can use.</h2>
+          <p>Start with a saved task and clear completion criteria. Open <strong>Next step → Build tool</strong>, review the input and limits, then let the agent work through the run.</p>
+        </div>
+        <div class="neb-workflow-grid">
+          <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">1</span><h3>Define the task</h3><p>Give the agent a purpose, a next step and a clear description of done. Preview exactly what you send.</p></article>
+          <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">2</span><h3>Generate the tool</h3><p>Nemotron writes a small browser tool from the task you chose, together with checks for its behavior.</p></article>
+          <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">3</span><h3>Run and repair</h3><p>Token Factory Sandboxes execute the checks. If they fail, the agent gets one repair and another check.</p></article>
+          <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">4</span><h3>Review the result</h3><p>Open the preview, read the code and check output, and save useful evidence back to the task.</p></article>
+        </div>
+        <div class="neb-run-limits" aria-label="Per-task execution limits">
+          <span>Per task run</span><strong>Up to 2 model calls</strong><strong>Up to 2 × 30s Sandbox runs</strong><strong>1 repair maximum</strong>
+        </div>
+        <p class="neb-review-note">The model writes the checks. You review the evidence and decide when the task is done.</p>
+      </div>
+    </section>
+
+    <section class="lp-wrap lp-section" aria-labelledby="project-title">
+      <div class="lp-section-head">
+        <span class="lp-eyebrow">Connected to the work you already have</span>
+        <h2 id="project-title">A project around every tool.</h2>
+        <p>Keep the brief, dependencies, next steps and results together. Use Nebius throughout the project, from the first plan to the final review.</p>
+      </div>
+      <div class="lp-feature-row neb-project-features">
+        <article class="lp-feature"><h3>Turn a brief into a plan</h3><p>Start with an example or ask Nemotron to outline tasks and dependencies. Edit the proposal before creating your project.</p></article>
+        <article class="lp-feature"><h3>Get unstuck</h3><p>Explain what changed. Ask for a useful next step and review proposed changes to the task.</p></article>
+        <article class="lp-feature"><h3>Review with context</h3><p>Compare supplied evidence with completion criteria. Bring tool output back into the same decision.</p></article>
+        <article class="lp-feature"><h3>Adapt as you go</h3><p>Rework the plan when priorities or dependencies change, with each proposed update ready for your approval.</p></article>
+      </div>
+    </section>
+
+    <section class="lp-wrap lp-section lp-cta-wrap" aria-labelledby="start-title">
+      <div class="lp-cta-banner">
+        <div><h2 id="start-title">What could your next task build?</h2><p>Open a project. Choose a task. Take it further.</p></div>
+        <a class="lp-btn lp-btn-oncta" href="/work">Open your workspace <span class="lp-arrow" aria-hidden="true">→</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-footer">
+    <div class="lp-wrap">
+      <small>Wornpage Projects · Powered by NVIDIA Nemotron and Nebius Token Factory</small>
+      <a href="/webmcp-challenge">Guide and workspace backups →</a>
+      <details class="neb-about"><summary>About this edition</summary><p>Built on our earlier WebMCP workspace and approval controls. The Nebius edition adds project planning, task guidance, evidence review, replanning and a Sandbox execution workflow. Your project stays in this browser; authorized runs also retain their selected task and results on the server for seven days. Download a workspace backup from the Guide to keep saved work.</p></details>
+    </div>
+  </footer>
+</body>
+</html>

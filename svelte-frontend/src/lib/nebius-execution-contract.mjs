@@ -1,0 +1,91 @@
+import { isRecord, validateTask, validateSelectedContext, validModelId } from './nebius-contract.mjs';
+
+export const RUN_VERSION = 'browser-tool.v1';
+export const RUN_LIMITS = Object.freeze({ maxModelCalls: 2, maxSandboxRuns: 2, maxOutputTokens: 8000, sandboxSeconds: 30, runSeconds: 600, maxFileBytes: 32768, maxTotalFileBytes: 65536 });
+export const RUN_FILES = Object.freeze(['index.html', 'app.js', 'checks.cjs']);
+export const RUN_STATUSES = Object.freeze(['queued', 'generating', 'checking', 'repairing', 'cancelling', 'ready', 'failed', 'cancelled', 'uncertain']);
+export const TERMINAL_RUN_STATUSES = Object.freeze(['ready', 'failed', 'cancelled', 'uncertain']);
+export const validRunId = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value);
+export const validRunKey = value => typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
+const validProviderId = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value);
+const exact = (value, keys) => isRecord(value) && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
+const text = (value, limit) => typeof value === 'string' && value.length <= limit;
+const iso = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(value) && Number.isFinite(Date.parse(value));
+const hash = value => typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
+const integer = (value, maximum) => Number.isSafeInteger(value) && value >= 0 && value <= maximum;
+const fail = message => { throw new TypeError(message); };
+
+export function validateRunInput(value) {
+  if (!exact(value, ['version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'consent'])
+    || value.version !== RUN_VERSION || value.consent !== true
+    || typeof value.packId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/u.test(value.packId)
+    || !['draft', 'active'].includes(value.currentStatus) || !validModelId(value.requestedModel)) fail('Choose an open task and review the run settings.');
+  const pack = validateTask(value.pack);
+  if (!pack.doneWhen.trim() || !pack.nextStep.trim()) fail('Add a next step and completion criteria before running this task.');
+  if (pack.blocker.trim() && pack.blocker.trim().toLowerCase() !== 'none') fail('Resolve this task’s blocker before running it.');
+  return { version: RUN_VERSION, packId: value.packId, pack, currentStatus: value.currentStatus,
+    context: validateSelectedContext(value.context), requestedModel: value.requestedModel, consent: true };
+}
+
+export function validateRunFiles(value) {
+  if (!Array.isArray(value) || value.length !== RUN_FILES.length) fail('The tool must contain its page, script and checks.');
+  let total = 0;
+  const byName = new Map();
+  for (const file of value) {
+    if (!exact(file, ['path', 'content']) || !RUN_FILES.includes(file.path) || byName.has(file.path)
+      || typeof file.content !== 'string' || !file.content.trim() || file.content.includes('\u0000')) fail('The generated files are invalid.');
+    const bytes = new TextEncoder().encode(file.content).byteLength;
+    if (bytes > RUN_LIMITS.maxFileBytes) fail('A generated file exceeds its size limit.');
+    total += bytes;
+    byName.set(file.path, { path: file.path, content: file.content });
+  }
+  if (total > RUN_LIMITS.maxTotalFileBytes) fail('The generated tool exceeds its total size limit.');
+  return RUN_FILES.map(path => byName.get(path));
+}
+
+export function validateRunRecord(value) {
+  if (!exact(value, ['id', 'version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'status', 'attempt', 'createdAt', 'updatedAt', 'events', 'files', 'checks', 'usage', 'error'])
+    || !validRunId(value.id) || !RUN_STATUSES.includes(value.status) || !integer(value.attempt, 2)
+    || !iso(value.createdAt) || !iso(value.updatedAt) || Date.parse(value.updatedAt) < Date.parse(value.createdAt)
+    || !(value.error === null || text(value.error, 500))) fail('The saved execution record is invalid.');
+  const input = validateRunInput({ version: value.version, packId: value.packId, pack: value.pack,
+    currentStatus: value.currentStatus, context: value.context, requestedModel: value.requestedModel, consent: true });
+  if (!Array.isArray(value.events) || value.events.length > 24 || value.events.some(event => !exact(event, ['at', 'message']) || !iso(event.at) || !text(event.message, 240))) fail('The execution history is invalid.');
+  if (!Array.isArray(value.files)) fail('The execution files are invalid.');
+  const files = value.files.length ? validateRunFiles(value.files) : [];
+  if (!Array.isArray(value.checks) || value.checks.length > 2 || value.checks.some((check, index) =>
+    !exact(check, ['attempt', 'operationId', 'checkpointId', 'exitCode', 'stdout', 'stderr', 'sourceDigest'])
+    || check.attempt !== index + 1 || !validProviderId(check.operationId)
+    || !(check.checkpointId === null || validProviderId(check.checkpointId))
+    || !Number.isSafeInteger(check.exitCode) || check.exitCode < 0 || check.exitCode > 255
+    || !text(check.stdout, 4096) || !text(check.stderr, 4096) || !hash(check.sourceDigest))) fail('The execution check record is invalid.');
+  if (!exact(value.usage, ['modelCalls', 'inputTokens', 'outputTokens']) || !integer(value.usage.modelCalls, 2)
+    || ![value.usage.inputTokens, value.usage.outputTokens].every(count => count === null || integer(count, 10000000))) fail('The execution usage is invalid.');
+  if (value.status === 'ready' && (!files.length || value.checks.at(-1)?.exitCode !== 0 || value.checks.at(-1)?.attempt !== value.attempt || value.error !== null)) fail('A ready result needs observed successful checks.');
+  const { consent, ...snapshot } = input;
+  return { ...value, ...snapshot, files };
+}
+
+export function isRunConfig(value) {
+  return isRecord(value) && value.available === true && value.version === RUN_VERSION && validModelId(value.requestedModel)
+    && exact(value.limits, Object.keys(RUN_LIMITS)) && Object.entries(RUN_LIMITS).every(([key, limit]) => value.limits[key] === limit);
+}
+
+export function runSnapshotFromRecord(record) {
+  const { consent, ...snapshot } = validateRunInput({ version: record.version, packId: record.packId, pack: record.pack, currentStatus: record.currentStatus,
+    context: record.context, requestedModel: record.requestedModel, consent: true });
+  return snapshot;
+}
+
+export async function runFilesDigest(files) {
+  const bytes = new TextEncoder().encode(JSON.stringify(validateRunFiles(files)));
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function validateRunIntegrity(value) {
+  const record = validateRunRecord(value);
+  if (record.status === 'ready' && await runFilesDigest(record.files) !== record.checks.at(-1).sourceDigest) {
+    fail('The generated files do not match the source that was checked.');
+  }
+  return record;
+}
