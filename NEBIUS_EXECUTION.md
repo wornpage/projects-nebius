@@ -72,7 +72,7 @@ budget; starts also use a separate configured daily run count. These are
 resource ceilings, not a dollar spending guarantee.
 
 Sandbox endpoint: `https://api.tokenfactory.nebius.com/sandboxes/v1`.
-Configure a separate sandbox IAM token, Nebius project ID and pre-imported
+Configure the Sandbox bearer-token binding, Nebius project ID and pre-imported
 Node image UUID. Never put inference or sandbox credentials in the browser,
 sandbox environment, generated files, logs or source. Sandbox networking is
 disabled. Keep execution disabled by default.
@@ -115,18 +115,25 @@ existing inference settings and exact allowed origin, configure:
 
 ```dotenv
 NEBIUS_EXECUTION_ENABLED="true"
-NEBIUS_DAILY_RUN_LIMIT="10"
+NEBIUS_DAILY_RUN_LIMIT="1"
 NEBIUS_SANDBOX_PROJECT_ID="<your Nebius project ID>"
 NEBIUS_SANDBOX_NODE_IMAGE_UUID="<pre-imported image UUID with Node.js 24>"
 NEBIUS_SANDBOX_IAM_TOKEN="<sandbox IAM bearer token>"
 ```
+
+An existing Token Factory API key can be supplied as the Sandbox bearer token
+when that key has Sandbox access for the selected project. Confirm access with
+`GET /sandboxes/v1/whoami`; the runner needs `spawn`, `list` and `cancel`, and
+image setup needs `import`. Keep the value in `.dev.vars` or a Worker secret.
+No new key is required solely because the setting is named `IAM_TOKEN`.
 
 The inference model uses `NEBIUS_MODEL_REASONING`. The fixed sandbox command
 uses `/usr/local/bin/node`; the selected image must provide that executable
 and a `/tmp` directory writable by UID/GID 1000. The trusted harness creates
 its own unique directory before writing the three fixed filenames.
 There is no automatic image import, credential exchange or fallback provider.
-Execution remains disabled in the checked-in configuration. Availability
+The default configuration keeps execution disabled; the hosted `demo`
+environment enables it with its configured secret and pinned image. Availability
 means the settings exist; it is not a successful live-provider observation.
 
 Before a hosted demo, configure the added `NEBIUS_RUNS` and

@@ -18,7 +18,7 @@ const fail = message => { throw new TypeError(message); };
 export function validateRunInput(value) {
   if (!exact(value, ['version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'consent'])
     || value.version !== RUN_VERSION || value.consent !== true
-    || typeof value.packId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/u.test(value.packId)
+    || typeof value.packId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}(?::[a-z][a-z0-9_-]{0,39})?$/u.test(value.packId)
     || !['draft', 'active'].includes(value.currentStatus) || !validModelId(value.requestedModel)) fail('Choose an open task and review the run settings.');
   const pack = validateTask(value.pack);
   if (!pack.doneWhen.trim() || !pack.nextStep.trim()) fail('Add a next step and completion criteria before running this task.');

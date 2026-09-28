@@ -38,8 +38,9 @@ and evidence review. A run never marks the task done or publishes its output.
 September 28 after repairing Worker redirect handling and structured output.
 The provider reported 537 input tokens and 139 output tokens; the suggestion
 remained unsaved. See NEBIUS_READINESS.md for the bounded observation. Planning,
-review and live Sandbox execution remain unverified; Sandbox beta access is
-pending. The earlier keyboard rehearsal and simulated tutorial do not show a
+review and live Sandbox execution remain unverified. Sandbox API access and
+the Node 24 image import were confirmed on September 28; the first real tool
+run remains outstanding. The earlier keyboard rehearsal and simulated tutorial do not show a
 successful live AI run.
 
 ## How we built it
@@ -68,7 +69,7 @@ repository and deployment are separate. No private Projects backend was ported.
 The Token Factory model catalog made the Nano/Super split clear, and the API key
 successfully authenticated the model-list request. The Sandbox browser tutorial
 is a useful introduction but its responses are simulated. Agent API access
-requires a separate beta request; that request has been submitted. Add feedback
+required a beta request; API access is now confirmed. Add feedback
 on output quality, latency and Sandbox execution only after observing real runs.
 
 ## Assets to finish
@@ -95,11 +96,11 @@ response but no changed task fields; retain it as supporting evidence.
 3. Show selected inputs, make a real Token Factory request, and review the
    actual changed fields. Record this when the daily allowance permits a call;
    do not substitute a scripted proposal or force a change for the camera.
-4. Open Build tool and show the Sandbox workflow with its execution-disabled
-   preview label. Explain that generation, isolated checks and one repair are
-   the intended execution path. Beta access remains pending.
+4. Open Build tool and preview the task and run limits. Sandbox API access is
+   enabled. Record generation, isolated checks and an optional repair only
+   when those operations actually run; setup readiness is not execution proof.
 5. Close on the human decision and public repository. Record real Sandbox
-   output and revise this section after access is enabled.
+   output and revise this section after a successful end-to-end run.
 
 ## Rules checked
 

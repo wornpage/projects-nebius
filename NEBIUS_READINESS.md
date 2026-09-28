@@ -1,5 +1,31 @@
 # Local implementation and submission evidence
 
+## Sandbox access update — September 28, 2026
+
+The existing Token Factory API key authenticated `GET /sandboxes/v1/whoami`
+with HTTP 200 and granted import, spawn, list and cancellation permissions.
+The official `docker://docker.io/library/node:24-bookworm-slim` image import
+completed successfully as operation `01a0e8b3-b083-7256-8c32-47cd805a7f60`,
+producing image `f9ac0575-e7bd-3a81-bfa4-7d7f7a92b89c`. Read-only image
+inspection confirmed `/usr/local/bin/node` and a world-writable sticky `/tmp`.
+No model call or Sandbox code execution was used for this setup.
+
+The hosted demo configuration now enables execution with that pinned image,
+the existing one-run daily limit, and the unchanged five-call daily inference
+limit. The shared task-ID validator also accepts project-created task IDs.
+Svelte checking reported zero errors and warnings and the frontend build passed.
+These observations establish setup readiness; the first generated tool,
+executed checks and interactive result still require a real run. The requested
+Projects Acceptance connector currently requires reauthentication.
+
+Worker version `d1176bd9-6c48-4761-bcb9-910cd75f46da` was deployed with the
+Sandbox credential stored as a secret. The hosted `/api/nebius/runs/config`
+returned HTTP 200 with `available: true`, the Super model, two model calls at
+most, and two 30-second Sandbox executions at most. All 200 public tracked
+files matched the private build source at deployment. The public checkout's
+build attempt lacked installed dependencies; the matching private checkout's
+frontend build completed. No test suite was run for this setup update.
+
 ## Product scope
 
 The primary entry is a project copilot for the Best Apps and Agents track:
