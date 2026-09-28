@@ -2,6 +2,7 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { fileURLToPath } from 'node:url';
 
 const here = (relative) => fileURLToPath(new URL(relative, import.meta.url));
+const nebiusEdition = process.env.PROJECTS_NEBIUS_EDITION === 'true';
 
 const staticAdapter = {
 	name: 'webmcp-challenge-static-adapter',
@@ -32,7 +33,7 @@ const config = {
 				'base-uri': ['none'],
 				'object-src': ['none'],
 				'frame-ancestors': ['none'],
-				'frame-src': ['none'],
+				'frame-src': [nebiusEdition ? 'self' : 'none'],
 				'worker-src': ['self'],
 				'script-src': ['self'],
 				'style-src': [
@@ -45,7 +46,7 @@ const config = {
 				'media-src': ['none'],
 				'manifest-src': ['self'],
 				'connect-src': ['self'],
-				'form-action': ['none']
+				'form-action': [nebiusEdition ? 'self' : 'none']
 			}
 		}
 	}

@@ -9,6 +9,70 @@ const fail = (code, message, uncertain = false) => { throw new SandboxError(code
 const BASE_URL = 'https://api.tokenfactory.nebius.com/sandboxes/v1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const MAX_RESPONSE_BYTES = 786432;
+// This instruments generated checks inside the existing Nebius container.
+// node:vm is not the security boundary; container isolation remains required.
+const CHECK_RUNNER = String.raw`'use strict';
+const fs = require('node:fs');
+const vm = require('node:vm');
+const realAssert = require('node:assert');
+let validateCalls = 0, assertionCalls = 0, assertionFailed = false;
+const harden = value => Object.freeze(Object.setPrototypeOf(value, null));
+const context = vm.createContext(Object.assign(Object.create(null), { console: undefined }), {
+  codeGeneration: { strings: false, wasm: false }
+});
+const ContextError = vm.runInContext('Error', context);
+const boundedMessage = error => String(error && error.message || error).slice(0, 800);
+const deny = message => { throw new ContextError(message); };
+function runModule(source, filename, requireValue) {
+  const moduleValue = vm.runInContext('({ exports: {} })', context);
+  context.__module = moduleValue;
+  context.__require = requireValue;
+  const wrapped = '(function(module, exports, require) { "use strict";\n' + source + '\n})(__module, __module.exports, __require);';
+  new vm.Script(wrapped, { filename }).runInContext(context, { timeout: 4000 });
+  return moduleValue.exports;
+}
+function assertFacade(target) {
+  const wrap = fn => harden((...args) => {
+    try { fn(...args); assertionCalls += 1; }
+    catch (error) { assertionFailed = true; throw new ContextError(boundedMessage(error)); }
+  });
+  const facade = wrap(target);
+  // The callable must receive properties before freezing.
+  const callable = (...args) => facade(...args);
+  Object.setPrototypeOf(callable, null);
+  for (const name of ['ok', 'equal', 'notEqual', 'deepEqual', 'notDeepEqual', 'strictEqual', 'notStrictEqual', 'deepStrictEqual', 'notDeepStrictEqual', 'throws', 'doesNotThrow', 'ifError', 'match', 'doesNotMatch', 'fail']) {
+    callable[name] = wrap(target[name].bind(target));
+  }
+  return callable;
+}
+try {
+  const app = runModule(fs.readFileSync('app.js', 'utf8'), 'app.js', harden(() => deny('app.js must not import modules.')));
+  if (typeof app.validate !== 'function') throw new Error('app.js must export a validate function.');
+  const appFacade = Object.freeze(Object.assign(Object.create(null), {
+    validate: harden((...args) => { validateCalls += 1; return app.validate(...args); })
+  }));
+  const assertions = assertFacade(realAssert);
+  const strictAssertions = assertFacade(realAssert.strict);
+  assertions.strict = strictAssertions;
+  strictAssertions.strict = strictAssertions;
+  Object.freeze(assertions);
+  Object.freeze(strictAssertions);
+  const requireCheck = harden(name => {
+    if (name === './app.js') return appFacade;
+    if (name === 'node:assert') return assertions;
+    if (name === 'node:assert/strict') return strictAssertions;
+    return deny('checks.cjs may import only ./app.js and synchronous node:assert methods.');
+  });
+  runModule(fs.readFileSync('checks.cjs', 'utf8'), 'checks.cjs', requireCheck);
+  if (assertionFailed || assertionCalls < 1 || validateCalls < 1) {
+    throw new Error('Checks must execute at least one successful Node assertion and call the exported validate function; no assertion may fail.');
+  }
+  process.stdout.write('Observed successful assertions: ' + assertionCalls + '; validate calls: ' + validateCalls + '\n');
+  process.exit(0);
+} catch (error) {
+  process.stderr.write('Generated checks failed: ' + boundedMessage(error) + '\n');
+  process.exit(1);
+}`;
 const HARNESS = String.raw`'use strict';
 const fs = require('node:fs');
 const cp = require('node:child_process');
@@ -24,7 +88,7 @@ process.stdin.on('end', () => {
     if (syntax.stdout) process.stdout.write(syntax.stdout);
     if (syntax.stderr) process.stderr.write(syntax.stderr);
     if (syntax.error || syntax.status !== 0) process.exit(Number.isInteger(syntax.status) ? syntax.status : 124);
-    const checks = cp.spawnSync(process.execPath, ['checks.cjs'], { encoding: 'utf8', timeout: 12000, maxBuffer: 4096 });
+    const checks = cp.spawnSync(process.execPath, ['-e', ${JSON.stringify(CHECK_RUNNER)}], { encoding: 'utf8', timeout: 12000, maxBuffer: 4096 });
     if (checks.stdout) process.stdout.write(checks.stdout);
     if (checks.stderr) process.stderr.write(checks.stderr);
     process.exit(Number.isInteger(checks.status) ? checks.status : 124);
