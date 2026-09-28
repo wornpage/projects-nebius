@@ -137,11 +137,34 @@ test('preserved WebMCP documentation denominators match the current manifest and
 	assert.match(
 		readme,
 		new RegExp(
-			`Current expected denominators are ${manifestCount}/${manifestCount} public source paths, ${webMcpContractCount}/${webMcpContractCount} WebMCP contracts, ${recordingPreflightContractCount}/${recordingPreflightContractCount} recording-preflight contracts, and ${artifactContractCount}/${artifactContractCount} static-artifact contracts\\.`,
+			`Current expected denominators are ${manifestCount}/${manifestCount} source inventory paths, ${webMcpContractCount}/${webMcpContractCount} WebMCP contracts, ${recordingPreflightContractCount}/${recordingPreflightContractCount} recording-preflight contracts, and ${artifactContractCount}/${artifactContractCount} static-artifact contracts\\.`,
 			'u'
 		)
 	);
+	assert.ok(entry.includes(`The current source inventory contains ${manifestCount}/${manifestCount} paths.`));
 	assert.match(readme, /npm run preflight:recording[\s\S]*?installed Google Chrome[\s\S]*?CHROME_EXECUTABLE_PATH[\s\S]*?temporary isolated profile[\s\S]*?test-only native registration probe[\s\S]*?does not modify the deployed UI or the normal Chrome profile/u);
+});
+
+test('distributed notices retain the MIT license and accompany the browser artifact', () => {
+	for (const file of ['LICENSE', 'LICENSING.md', 'THIRD_PARTY_LICENSES.txt']) {
+		assert.ok(STATIC_PUBLISH_FILES.includes(file), `${file} is selected for browser distribution`);
+		assert.deepEqual(readFileSync(path.join(artifactRoot, file)), readFileSync(path.join(root, file)), `${file} is distributed without alteration`);
+	}
+	const baseline = readFileSync(path.join(root, 'LICENSE'), 'utf8').replaceAll('\r\n', '\n');
+	assert.equal(createHash('sha256').update(baseline, 'utf8').digest('hex'), '8759f34b16b82f284085f5880657fa69a6209e5fe4744b92c7c3e9d5863e4eb9', 'complete original MIT notice remains intact');
+	assert.match(baseline, /^MIT License\n\nCopyright \(c\) 2026 Jared Bidlow\n/u);
+	assert.match(baseline, /Permission is hereby granted, free of charge/u);
+	assert.match(baseline, /THE SOFTWARE IS PROVIDED "AS IS"/u);
+	const policy = readFileSync(path.join(root, 'LICENSING.md'), 'utf8');
+	assert.match(policy, /public MIT-licensed release during submission\nweek/u);
+	assert.match(policy, /publication separately authorized by the owner/u);
+	for (const directory of ['', 'svelte-frontend']) {
+		const metadata = JSON.parse(readFileSync(path.join(root, directory, 'package.json'), 'utf8'));
+		const lock = JSON.parse(readFileSync(path.join(root, directory, 'package-lock.json'), 'utf8'));
+		assert.equal(metadata.private, true);
+		assert.equal(metadata.license, 'MIT');
+		assert.equal(lock.packages[''].license, metadata.license);
+	}
 });
 
 test('static artifact publishes the complete challenge input and security metadata', () => {
@@ -251,7 +274,7 @@ test('static mode identifies its bounded routes without production fallbacks', (
 	assert.equal(rootLock.packages['node_modules/playwright-core'].dev, true);
 	assert.equal(rootLock.packages['node_modules/playwright-core'].license, 'Apache-2.0');
 	for (const sourcePath of ['scripts/webmcp-recording-preflight.mjs', 'scripts/webmcp-recording-preflight-contract.test.mjs']) {
-		assert.ok(publicManifest.includes(sourcePath), `${sourcePath} is public source`);
+		assert.ok(publicManifest.includes(sourcePath), `${sourcePath} is in the source inventory`);
 		assert.ok(existsSync(path.join(root, sourcePath)), `${sourcePath} exists`);
 	}
 	assert.match(thirdPartyNotices, /Playwright Core is used only by the isolated local recording-preflight command and is Apache-2\.0-licensed\. It is not bundled into the deployed browser artifact\./u);

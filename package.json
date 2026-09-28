@@ -2,6 +2,7 @@
   "name": "projects-webmcp-extension",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Wornpage Projects demo with a preserved WebMCP baseline and a Nebius Token Factory edition.",
   "scripts": {

@@ -71,7 +71,7 @@ test('public manifest excludes reserved root files and directories without hidin
 		assert.equal(matchingResult.status, 0, matchingResult.stderr);
 		assert.match(
 			matchingResult.stdout,
-			new RegExp(`Public source manifest matches ${fixture.expectedCount} files\\.`, 'u')
+			new RegExp(`Source inventory matches ${fixture.expectedCount} files\\.`, 'u')
 		);
 
 		await fs.writeFile(path.join(fixture.fixtureRoot, 'src', 'new-source.mjs'), 'export const visible = true;\n', 'utf8');

@@ -1,5 +1,15 @@
 # Devpost submission
 
+## Repository status correction — September 28, 2026
+
+`wornpage/projects-nebius` is temporarily **private** during submission
+preparation and retains its original [MIT License](LICENSE). A public MIT
+release is planned for submission week after separate owner authorization.
+References below to public GitHub source describe the earlier submission record
+and must not be read as current public access. See [LICENSING.md](LICENSING.md).
+This local correction does not update the Devpost entry or establish compliance
+with a public-source requirement.
+
 ## Entry
 
 **Project:** Wornpage Projects — Nebius edition

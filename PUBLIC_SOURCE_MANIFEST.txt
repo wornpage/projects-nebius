@@ -21,6 +21,7 @@ docs/submission/webmcp/README.md
 docs/submission/webmcp/reviewer-tests.md
 landing.html
 LICENSE
+LICENSING.md
 manifest.json
 NEBIUS_DEMO_SCRIPT.md
 NEBIUS_EXECUTION.md

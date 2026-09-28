@@ -8,6 +8,8 @@ export const DEFAULT_STATIC_PUBLISH_DIR = path.join(distRoot, 'static-publish');
 
 export const STATIC_PUBLISH_FILES = Object.freeze([
 	'landing.html',
+	'LICENSE',
+	'LICENSING.md',
 	'THIRD_PARTY_LICENSES.txt',
 	'manifest.json',
 	'assets/demo.css',

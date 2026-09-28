@@ -1,4 +1,9 @@
-# Wornpage Projects — Nebius edition
+# Wornpage Projects — Nebius edition (private submission preparation)
+
+This repository is temporarily private during submission preparation. It
+retains its original [MIT License](LICENSE), with a public MIT release planned
+for submission week after separate owner authorization. See
+[LICENSING.md](LICENSING.md) for the access and publication policy.
 
 A project copilot for turning a goal into tasks, choosing the next step,
 recording evidence and adapting a plan when circumstances change.
@@ -14,8 +19,9 @@ and a real Node 24 execution completed successfully. The first tool-building
 attempts were rejected before execution; a complete generated tool and preview
 remain in validation. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
 The private Projects application is not needed to run it.
-[wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) contains
-the standalone MIT-licensed source; the earlier WebMCP entry remains separate.
+[wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
+temporarily private MIT-licensed continuation; the earlier WebMCP entry remains
+separate. A hosted demo does not make this repository public.
 
 ## Run without credentials
 
@@ -119,7 +125,8 @@ after `verify:nebius`, which creates the required Nebius build.
 
 ## Source and prior work
 
-- [MIT license](LICENSE) and [third-party licenses](THIRD_PARTY_LICENSES.txt).
+- [MIT license](LICENSE), [access and publication policy](LICENSING.md), and
+  [third-party licenses](THIRD_PARTY_LICENSES.txt).
 - [Nebius contribution and prior-work boundary](NEBIUS_PROVENANCE.md).
 - [Track direction and model strategy](NEBIUS_TRACK_DESIGN.md).
 - [Setup, architecture and limits](NEBIUS.md).
@@ -130,3 +137,15 @@ after `verify:nebius`, which creates the required Nebius build.
 The earlier public WebMCP repository and deployment remain frozen. This edition
 uses its own frontend and narrow inference Worker; it does not include or
 require the private Projects backend, authentication or billing services.
+
+## Licensing and source inventory
+
+The original MIT license remains in force during temporary private preparation
+and for the planned public submission. Earlier public or private MIT grants
+remain effective; dependencies retain their own licenses and notices. Public
+release requires separate owner authorization during submission week.
+
+The current source inventory contains 201/201 paths. The historical filename
+`PUBLIC_SOURCE_MANIFEST.txt` describes an inventory, not permission to publish
+private source. [WEBMCP_BASELINE.md](WEBMCP_BASELINE.md) records the corresponding
+verification denominators and the earlier demo's documentation.

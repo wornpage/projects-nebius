@@ -35,7 +35,7 @@ const expected = `${files.join('\n')}\n`;
 
 if (process.argv.includes('--write')) {
 	await fs.writeFile(manifestPath, expected, 'utf8');
-	console.log(`Wrote ${files.length} public source paths.`);
+	console.log(`Wrote ${files.length} source inventory paths; this is not publication permission.`);
 } else {
 	let actual = '';
 	try {
@@ -44,5 +44,5 @@ if (process.argv.includes('--write')) {
 	if (actual !== expected) {
 		throw new Error('PUBLIC_SOURCE_MANIFEST.txt is stale. Run npm run manifest:write and review the boundary change.');
 	}
-	console.log(`Public source manifest matches ${files.length} files.`);
+	console.log(`Source inventory matches ${files.length} files.`);
 }

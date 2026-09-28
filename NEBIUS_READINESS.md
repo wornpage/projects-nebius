@@ -1,5 +1,15 @@
 # Local implementation and submission evidence
 
+## Repository status correction — September 28, 2026
+
+`wornpage/projects-nebius` is temporarily **private** during submission
+preparation and retains its original [MIT License](LICENSE). A public MIT
+release is planned for submission week, subject to separate owner authorization;
+see [LICENSING.md](LICENSING.md). Earlier publication statements below are
+retained as dated historical evidence and do not describe current repository
+access. This source-only change does not establish any change to the hosted
+demo, Devpost entry, or challenge eligibility.
+
 ## Current runtime status — September 28, 2026
 
 | Capability | Observed result | Remaining evidence |
