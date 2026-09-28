@@ -236,14 +236,24 @@ Sandbox access is enabled in the hosted demo. On September 28, a real isolated
 Node 24 diagnostic returned exit code 0 with networking disabled, UID/GID 1000
 and writable `/tmp`. It used operator-written diagnostic code, not model output.
 
-Four model calls across four retained tool attempts stopped before Sandbox
-execution. The fourth failed with `page_style_missing` and recorded 894 input /
-921 output tokens. The source correction removes the required-style-block gate
-after review identified it as a cosmetic requirement. The correction is deployed
-as Worker `5ad767d5-d841-4e3c-991f-e9357f8b8c00`; a fresh generated-tool result
-remains outstanding. No successful generated checks or
-interactive result is claimed. Remaining page, worker and check-file rejections
-retain their specific diagnostics.
+The first four tool attempts stopped before Sandbox. The fourth exposed the
+cosmetic `page_style_missing` gate, which was removed and deployed as Worker
+`5ad767d5-d841-4e3c-991f-e9357f8b8c00`.
+
+The fifth attempt returned three files and reached a real Sandbox syntax check.
+Incomplete app.js source caused exit 1 before tool logic or assertions executed.
+Its one repair was rejected for a missing worker message handler. That run
+retains the first files, observed check and complete totals: two model calls,
+3,284 input / 1,905 output tokens. Six model calls were used across the five
+attempts; token counts for the first two remain unknown. No successful generated
+tool or interactive result is claimed.
+
+The generation instructions now include guarded worker/CommonJS scaffolding,
+complete multiline files, JSON.stringify for embedded examples and value patches
+for form inputs. The schema, validators and execution limits are unchanged.
+An uncertain start or explicit resume schedules a saved-run read; a read failure
+stops polling, and no read starts another run. Live validation of these source
+changes is still pending. This source update is awaiting deployment.
 
 The original five-call and one-run limits were restored after the first two attempts.
 The owner subsequently raised the hosted allowance to 20 model calls and

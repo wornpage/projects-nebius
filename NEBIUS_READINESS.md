@@ -7,7 +7,7 @@
 | Hosted next-step guidance | Two Nano responses recorded, including a changed next-step/status/blocker proposal | Broader quality evaluation; neither response was applied |
 | Sandbox access | Existing Token Factory key authenticated; Node 24 image imported | Ongoing availability is not guaranteed by a past observation |
 | Sandbox execution | One operator-written Node diagnostic: SUCCESS, exit 0, Node v24.21.0, UID/GID 1000, writable `/tmp`, networking off | This diagnostic does not prove a generated tool |
-| Tool building | Four authorized model calls across four retained attempts; all stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
+| Tool building | Six model calls across five retained attempts; the fifth reached Sandbox syntax checking, failed, and used its one repair, which was rejected | Passing assertions, a valid generated tool and interactive preview |
 | Public delivery | Separate hosted Worker and MIT source are published; Devpost entry is submitted | Final demonstration video and judging-period capacity |
 | Hosted capacity | Owner raised the allowance to 20 model calls and 3 task runs per UTC day | Existing attempts still count; remaining capacity is not yet shown in the UI |
 | Development review | Runtime and product reviews recorded in Projects Acceptance with independent recommendations | Optional development tooling, outside the submitted app |
@@ -31,7 +31,7 @@ check-file rejection. Tool generation now requests a strict three-file schema
 with thinking disabled. After those first two attempts, the then-current five
 model calls and one task run per UTC day were restored. That is a historical
 checkpoint; the current configured allowance is 20 model calls and 3 task runs,
-including the restoration after the fourth attempt described below. This
+including the restoration after the fifth attempt described below. This
 evidence record does not itself authorize another inference request.
 
 The follow-up UI/copy deployment is Worker version
@@ -49,6 +49,43 @@ Sandbox segment were updated; no new video was recorded in this pass.
 
 The sections below retain earlier milestone observations. This current-status
 section supersedes their access, hosting, publication and pending-run statements.
+
+## Fifth tool attempt and source guidance — September 28, 2026
+
+Run `3c509da3-ac49-4557-be7b-aefc076d3c1b` ran from 19:58:40.976 to
+19:58:56.368 UTC using the deployed style correction. Its first generation
+returned three files. Sandbox operation `01a0e999-3824-7030-a0a1-20847d55dceb`
+returned exit 1: `node --check app.js` found incomplete JavaScript. Neither
+tool logic nor the model-authored assertions executed. The one repair then
+failed `invalid_model_output` at `tool_worker` for a missing `self.onmessage`.
+Repair source was rejected and was not retained.
+
+The saved record retains the initial files, actual syntax-check output and
+source digest. Usage totals are complete: two model calls, 3,284 input tokens
+and 1,905 output tokens. The browser initially could not verify the start
+response; one authenticated GET recovered the terminal record without a second
+start. The normal 20-call/3-run limits were restored after that one uncertain
+start, without resetting counters. Restoration deployment was
+`5d86e5ca-6626-4221-ab88-d7d6d66fbc61` at 100%.
+
+Independent source inspection confirmed that the saved files were not sliced
+by the app. Both scripts ended at the start of an embedded JSON example. The
+source correction adds complete multiline-source guidance, object examples
+serialized with JSON.stringify, concrete guarded worker/CommonJS scaffolding,
+and value patches for form inputs. It preserves the schema, reasoning setting,
+validators, Sandbox path and one-repair limit. A separate client correction
+schedules one saved-run read after an uncertain start or explicit resume;
+further polling requires an observed nonterminal record. It never starts a new
+run automatically. This source update is awaiting deployment; no fresh live
+run has exercised it.
+
+The first complete generated checker remains outstanding. This attempt proves
+an actual Sandbox syntax check on model-generated source, not a passing tool.
+The exact authenticated receipt is retained by the operator with SHA-256
+`049e16be1a6beb3b59b618fbea447b81c82c0de6ea84adb276166fec107c9fdc`.
+Projects Acceptance currently returns a reauthentication error, including after
+the owner reported reconnecting; this attempt has not been recorded there or
+formally accepted.
 
 ## Fourth tool attempt and page-style correction — September 28, 2026
 
@@ -76,7 +113,7 @@ page solely for lacking CSS. Source `6deb6439f8fa9e78c59fb7ffa82ff006b999b7ec`
 is deployed as Worker version `5ad767d5-d841-4e3c-991f-e9357f8b8c00`, at 100% in
 deployment `f5dd993f-72d7-4827-ab22-26c4ae3f25cc`. Provider readback confirms
 unchanged bindings and asset/runtime configuration, including the 20-call/3-run
-limits. No fresh model call exercised this corrected version.
+limits. At that checkpoint, no fresh model call had exercised this corrected version.
 Script/resource/CSS-URL restrictions, preview
 sanitization, CSP, Worker isolation and the existing repair boundary remain.
 The failed source was not retained, so it cannot be replayed or claimed to meet
@@ -420,7 +457,7 @@ or a fresh-machine installation. Their exact revisions remain in the lockfile.
 | Gate | Actual evidence collected |
 | --- | --- |
 | Live model quality | Two ad-hoc routine responses observed; 0 of the separate 6 planned evaluation cases completed |
-| Exact model/JSON compatibility | Nano guidance succeeded; Super tool files were rejected before execution; planning/replanning/evidence-review quality is not yet qualified |
+| Exact model/JSON compatibility | Nano guidance succeeded; Super returned files that reached Sandbox syntax checking but failed, and its repair was rejected; planning/replanning/evidence-review quality is not yet qualified |
 | Measured latency and cost comparison | Pending actual calls; no fabricated estimates or benchmark claims |
 | Hosted demo and judge access | Hosted app is public; owner-approved limits are 20 model calls and 3 task runs per UTC day; remaining-capacity visibility is still pending |
 | Public submission repository | Published at wornpage/projects-nebius under MIT, separately from the private fork |

@@ -37,12 +37,15 @@ and evidence review. A run never marks the task done or publishes its output.
 **Current evidence boundary:** Two hosted Nano suggestions were observed on
 September 28, including a changed proposal after a hypothetical release update.
 Both stayed unsaved. Sandbox API access is enabled, and a real isolated Node 24
-diagnostic succeeded with networking off. Four tool-generation attempts stopped
-before executing generated code. The latest identified a missing style block;
-its saved record retains `page_style_missing` and 894 input / 921 output tokens.
-The source correction removes that cosmetic rejection and makes styling
-presentation guidance. The correction is deployed; a fresh generated-tool result
-remains pending.
+diagnostic succeeded with networking off. The first four tool-generation
+attempts stopped before Sandbox; the fourth exposed an unnecessary style-block
+requirement, which was removed. The fifth returned three files and reached a
+real Sandbox syntax check, which failed before tool logic or assertions ran.
+Its one repair was rejected for a missing worker message handler. The saved
+record retains the initial source, check output and complete totals of 3,284
+input / 1,905 output tokens across two model calls. The subsequent source
+guidance and automatic saved-run read are awaiting deployment and a fresh live
+run.
 The first complete generated tool and interactive preview remain outstanding.
 See NEBIUS_READINESS.md for the retained outcomes.
 
@@ -77,10 +80,12 @@ key also authenticates Sandbox requests for the selected project. Importing an
 official Node 24 image and running a network-disabled diagnostic succeeded.
 Tool generation needs further work: model files can fail the app's worker/page/
 check contract even when structured JSON is returned. The app now retains the
-failure stage and reported usage; the latest call exposed our unnecessary
-mandatory-style-block check, which this reviewed source correction removes.
-Qualifying generated files against the remaining contract remains the
-next step toward a complete tool-building demonstration.
+failure stage and reported usage. Removing the unnecessary style-block check
+allowed the fifth attempt to reach Sandbox. Its incomplete JavaScript failed
+syntax checking, then the repair lacked the worker handler. Generation guidance
+now includes complete source, guarded scaffolding, object-based example data
+and the correct form-value patches. That improvement still needs live
+validation before claiming a complete tool-building demonstration.
 
 ## Assets to finish
 
@@ -109,10 +114,11 @@ historical evidence; use updated narration for the next take.
 3. Show selected inputs, make a real Token Factory request, and review the
    actual changed fields. Record this when the daily allowance permits a call;
    do not substitute a scripted proposal or force a change for the camera.
-4. Open Build tool and preview the task and run limits. Sandbox API access and
-   the Node diagnostic are confirmed. The first tool-building attempts failed
-   before generated-code execution; do not present the example as a working
-   generated artifact. Record checks or a repair only when they actually occur.
+4. Open Build tool and preview the task and run limits. Review now retains the
+   fifth attempt's generated source and actual failed Sandbox syntax check,
+   followed by a rejected repair. This demonstrates the failure-and-repair
+   path, not a working generated artifact. Passing checks and an interactive
+   result still need to be recorded.
 5. Close on the human decision and public repository. Record real Sandbox
    output and revise this section after a successful end-to-end run.
 
