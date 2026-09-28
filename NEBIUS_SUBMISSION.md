@@ -1,4 +1,4 @@
-# Devpost submission preparation
+# Devpost submission
 
 ## Entry
 
@@ -10,11 +10,11 @@
 
 **Additional track to consider after live Sandbox execution:** Coding and Agentic Engineering
 
-The owner wants to establish the Devpost entry now and add the video later.
-The public GitHub repository and hosted demo are being prepared first because
-Devpost requires those project links.
-This document is draft material, not evidence that Devpost has accepted a
-submission. A saved draft and a submitted entry are different states.
+Devpost displayed **Project submitted!** on September 28, 2026 for
+[Wornpage Projects — Nebius edition](https://devpost.com/software/wornpage-projects-nebius-edition).
+The entry links the hosted demo and public GitHub source and remains editable
+until the submission deadline. Submission status does not establish technical
+readiness or judging eligibility.
 
 ## Inspiration
 
@@ -36,8 +36,10 @@ and evidence review. A run never marks the task done or publishes its output.
 
 **Current evidence boundary:** Live Sandbox execution is awaiting provider beta
 access. Model authentication and available model IDs have been confirmed; a
-successful end-to-end inference result has not yet been recorded. Do not label
-an illustrative workflow or a simulated tutorial as a successful live run.
+successful end-to-end inference result has not yet been recorded. Hosted
+suggestion attempts on September 28 returned a provider connection failure
+before a usable response. Do not label an illustrative workflow, keyboard
+rehearsal or simulated tutorial as a successful live AI run.
 
 ## How we built it
 
@@ -73,12 +75,12 @@ on output quality, latency and Sandbox execution only after observing real runs.
 - Hosted application: https://projects-nebius.ayivx-do-lmf-982.workers.dev/
 - Public repository: https://github.com/wornpage/projects-nebius, published with
   fresh history, MIT license and setup; private fork visibility is retained.
-- Public YouTube video: owner will provide later; keep it under three minutes.
+- Final Nebius demonstration video: still outstanding; keep it under three
+  minutes. A silent keyboard rehearsal was recorded on September 28, ending
+  before Apply. It does not demonstrate successful inference or Sandbox execution.
 - Successful live inference and Sandbox evidence: outstanding.
-- Devpost: the signed-in account has not joined this hackathon. Registration is
-  open at https://nebiusglobalaihackathon.devpost.com/register and awaits the
-  owner's personal answers and eligibility/terms confirmation. No project entry
-  has been created or submitted yet.
+- Devpost: [submitted entry](https://devpost.com/software/wornpage-projects-nebius-edition),
+  confirmed by the submission-success message on September 28, 2026.
 
 ## Video outline for later
 
