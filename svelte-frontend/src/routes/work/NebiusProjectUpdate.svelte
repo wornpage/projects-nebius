@@ -109,7 +109,11 @@
     finally { saving = false; }
   }
   function clear() { opened = false; snapshot = null; update = ''; proposal = null; reviewed = null; consent = false; updateContextOpen = true; client.setInput(null, ''); }
-  function discard() { if (canLeave()) { clear(); error = ''; } }
+  async function discard() {
+    if (!canLeave()) return;
+    clear(); error = '';
+    await tick(); updateElement?.querySelector<HTMLButtonElement>('[data-update-project]')?.focus();
+  }
   async function reviseInput() {
     if (!window.confirm('Discard this proposal to change the update?')) return;
     proposal = null; reviewed = null; consent = false; client.setInput(snapshot, update);

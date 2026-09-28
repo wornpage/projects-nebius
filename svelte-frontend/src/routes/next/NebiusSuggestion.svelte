@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { WornAlert, WornButton, WornTextarea } from '$lib/components';
   import type { DemoPack } from '$lib/demo-workflow';
   import { CONTEXT_LIMITS, type NebiusContextItem, type NebiusChanges } from '$lib/nebius-contract.mjs';
@@ -28,6 +28,12 @@
     used = false; void client.setTask(key, pack, selectedContext, updateText);
   });
   $effect(() => { ondirty(Boolean(updateText)); });
+  async function clearUpdate() {
+    updateText = '';
+    await tick();
+    const target = document.getElementById('nebius-task-update') || document.getElementById(`${id}-heading`);
+    target?.focus();
+  }
   function selectContext(key: string, checked: boolean) {
     if (!checked) { selectedKeys = selectedKeys.filter((current) => current !== key); return; }
     if (!selectedKeys.includes(key) && selectedKeys.length < CONTEXT_LIMITS.items) selectedKeys = [...selectedKeys, key];
@@ -51,12 +57,12 @@
 
 {#if view.phase !== 'hidden'}
   <section class="nebius-suggestion" aria-labelledby={`${id}-heading`} aria-busy={view.phase === 'generating' || view.phase === 'loading'} data-nebius-suggestion>
-    <h2 id={`${id}-heading`}>Ask Nebius</h2>
+    <h2 id={`${id}-heading`} tabindex="-1">Ask Nebius</h2>
     {#if pack.blockedBy}<p>Linked dependency kept in this browser: <a href={`/work?focus=${encodeURIComponent(pack.blockedBy)}`}>{dependencyTitle || 'Linked task is unavailable'}</a>. Suggestions cannot clear this link.</p>{/if}
     {#if (online && view.config && view.phase !== 'unavailable') || updateText}
     <label class="update-field" for="nebius-task-update">Task update · optional<WornTextarea id="nebius-task-update" rows={3} maxlength={1000} bind:value={updateText} disabled={disabled || view.phase === 'generating'} placeholder="What changed or what help do you need?" /></label>
     {/if}
-    {#if updateText}<WornButton type="button" disabled={view.phase === 'generating'} onclick={() => (updateText = '')}>Clear update</WornButton>{/if}
+    {#if updateText}<WornButton type="button" disabled={view.phase === 'generating'} onclick={clearUpdate}>Clear update</WornButton>{/if}
     <p role="status" aria-live="polite">{view.phase === 'loading' ? 'Loading model settings…' : view.phase === 'generating' ? 'Generating a suggestion…' : view.phase === 'complete' ? used ? 'Review the task draft to apply changes.' : 'Suggestion ready. Nothing has been saved.' : ''}</p>
     {#if !online}<WornAlert tone="info">You are offline. Browser-local edits remain available. Reconnect before asking Nebius again; generation will not restart automatically.</WornAlert>{/if}
     {#if view.error}<WornAlert tone="danger">{view.error}</WornAlert>{/if}

@@ -227,8 +227,8 @@
 		if (nebUpdateDirty) return { reason: 'Your task update has not been saved.', target: 'nebius-task-update', label: 'Finish or clear the update' };
 		return null;
 	});
-	async function focusTaskResolution(event: MouseEvent, targetId: string) {
-		event.preventDefault();
+	async function focusTaskResolution(targetId: string, event?: MouseEvent) {
+		event?.preventDefault();
 		taskView = targetId === 'nebius-evidence-recording' ? 'evidence' : 'next';
 		await tick();
 		const target = document.getElementById(targetId);
@@ -282,9 +282,10 @@
 		navigation.cancel();
 		if (navigation.type === 'leave') return;
 		navigationNotice = nebUpdateDirty && !nebEditorDirty && !nebReviewDirty ? 'Clear your task update before leaving this page.' : 'Apply or discard your unsaved changes before leaving this page.';
-		if (nebUpdateDirty && !nebEditorDirty && !nebReviewDirty) { document.querySelector<HTMLElement>('#nebius-task-update')?.focus(); return; }
-		const editor = document.querySelector<HTMLDetailsElement>(nebReviewDirty ? '[data-nebius-evidence-review]' : '[data-nebius-task-editor]');
-		if (editor) { editor.open = true; editor.querySelector('summary')?.focus(); }
+		const targetId = nebUpdateDirty && !nebEditorDirty && !nebReviewDirty
+			? 'nebius-task-update'
+			: nebReviewDirty ? 'nebius-evidence-recording' : 'nebius-task-editor';
+		void focusTaskResolution(targetId);
 	});
 	$effect(() => { if (!nebEditorDirty && !nebReviewDirty && !nebUpdateDirty) navigationNotice = ''; });
 	let preparationCells = $derived(preparationReceipt ? [
@@ -736,7 +737,7 @@
 				<div class="nebius-task-tools">
 				<WornTabs tabs={taskViews} bind:active={taskView} label="Task workspace" />
 			{#if taskBlockingState}
-				<p class="nebius-draft-resolution" role="status" data-nebius-draft-resolution>{taskBlockingState.reason} <a href={`#${taskBlockingState.target}`} onclick={(event) => focusTaskResolution(event, taskBlockingState.target)}>{taskBlockingState.label}</a></p>
+				<p class="nebius-draft-resolution" role="status" data-nebius-draft-resolution>{taskBlockingState.reason} <a href={`#${taskBlockingState.target}`} onclick={(event) => focusTaskResolution(taskBlockingState.target, event)}>{taskBlockingState.label}</a></p>
 			{/if}
 			<!-- Keep every editor mounted: changing tabs must not discard drafts or stop a run. -->
 			<div id="task-panel-next" class="task-tab-panel" role="tabpanel" aria-labelledby="task-tab-next" tabindex="0" hidden={taskView !== 'next'}>

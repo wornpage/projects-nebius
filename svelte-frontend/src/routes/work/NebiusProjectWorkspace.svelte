@@ -108,9 +108,18 @@
       await tick(); document.getElementById('project-title')?.focus();
     } catch (cause) { await showError(cause, 'Enter a project brief first.'); }
   }
-  function removeTask(id: string) {
-    if (!proposal || proposal.tasks.length <= 1) return;
+  async function removeTask(id: string) {
+    if (!proposal || busy || proposal.tasks.length <= 1) return;
+    const removedIndex = proposal.tasks.findIndex(task => task.id === id);
+    if (removedIndex < 0) return;
     proposal.tasks = proposal.tasks.filter(task => task.id !== id).map(task => ({ ...task, dependsOn: task.dependsOn === id ? null : task.dependsOn }));
+    const nextIndex = Math.min(removedIndex, proposal.tasks.length - 1);
+    await tick();
+    const panels = draftElement?.querySelectorAll<HTMLDetailsElement>('[data-plan-task-panel]');
+    const target = panels?.[nextIndex]?.querySelector<HTMLElement>('summary')
+      ?? draftElement?.querySelector<HTMLButtonElement>('[data-plan-add-task]');
+    target?.focus();
+    target?.scrollIntoView({ block: 'nearest' });
   }
   async function reviewPlan() {
     try {
@@ -135,10 +144,11 @@
     } catch (cause) { await showError(cause, 'Approval did not save. Review and try again.'); }
     finally { saving = false; }
   }
-  function discard() {
+  async function discard() {
     if (busy || (dirty && !window.confirm('Discard this unsaved project draft?'))) return;
     brief = ''; proposal = null; starterLabel = ''; reviewed = null; client.setBrief(''); approvalId = ''; error = ''; open = false;
     sourceControlsOpen = true;
+    await tick(); document.querySelector<HTMLButtonElement>('[data-new-project]')?.focus();
   }
   export function canChangeScope() { return !updateEditor || updateEditor.canLeave(); }
   async function changeScope(event: Event) {
@@ -227,7 +237,7 @@
             </details>
           {/each}
           {/key}
-          <div class="actions"><WornButton onclick={addTask} disabled={busy || proposal.tasks.length >= PLAN_LIMITS.tasks}>Add task</WornButton><span class="muted">{proposal.tasks.length} of {PLAN_LIMITS.tasks} tasks maximum</span></div>
+          <div class="actions"><WornButton data-plan-add-task onclick={addTask} disabled={busy || proposal.tasks.length >= PLAN_LIMITS.tasks}>Add task</WornButton><span class="muted">{proposal.tasks.length} of {PLAN_LIMITS.tasks} tasks maximum</span></div>
           {#if proposal.missingInformation.length}<div class="missing"><h3>Questions to resolve</h3><ul>{#each proposal.missingInformation as item}<li>{item}</li>{/each}</ul></div>{/if}
           <WornButton variant="primary" onclick={reviewPlan} disabled={busy}>Review plan</WornButton>
         {/if}
