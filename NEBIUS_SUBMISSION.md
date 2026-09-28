@@ -44,8 +44,9 @@ real Sandbox syntax check, which failed before tool logic or assertions ran.
 Its one repair was rejected for a missing worker message handler. The saved
 record retains the initial source, check output and complete totals of 3,284
 input / 1,905 output tokens across two model calls. The subsequent source
-guidance and automatic saved-run read are awaiting deployment and a fresh live
-run.
+guidance and automatic saved-run read are deployed in Worker
+`fda3257b-4352-4c99-b60e-3165ddf9313c`; their effect on a fresh live run remains
+unverified.
 The first complete generated tool and interactive preview remain outstanding.
 See NEBIUS_READINESS.md for the retained outcomes.
 

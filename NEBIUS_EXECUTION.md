@@ -253,7 +253,9 @@ complete multiline files, JSON.stringify for embedded examples and value patches
 for form inputs. The schema, validators and execution limits are unchanged.
 An uncertain start or explicit resume schedules a saved-run read; a read failure
 stops polling, and no read starts another run. Live validation of these source
-changes is still pending. This source update is awaiting deployment.
+changes is still pending. Source `be06c9973bef01b42726111f24771acf380704fb`
+is deployed as Worker `fda3257b-4352-4c99-b60e-3165ddf9313c`, retaining the
+normal 20-call/3-run daily limits.
 
 The original five-call and one-run limits were restored after the first two attempts.
 The owner subsequently raised the hosted allowance to 20 model calls and

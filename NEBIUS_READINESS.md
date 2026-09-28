@@ -76,8 +76,17 @@ and value patches for form inputs. It preserves the schema, reasoning setting,
 validators, Sandbox path and one-repair limit. A separate client correction
 schedules one saved-run read after an uncertain start or explicit resume;
 further polling requires an observed nonterminal record. It never starts a new
-run automatically. This source update is awaiting deployment; no fresh live
-run has exercised it.
+run automatically. Source `be06c9973bef01b42726111f24771acf380704fb` is deployed
+as Worker `fda3257b-4352-4c99-b60e-3165ddf9313c`, at 100% in deployment
+`e2dd1d03-3f47-440c-9b72-2bb1df6897dc`. All bindings and the 20-call/3-run
+limits match the restored baseline. Eight rebuilt frontend assets were uploaded;
+runtime settings differ only in the corresponding CSP script hashes, which
+match the built headers. No fresh live run has exercised these changes.
+
+Independent review accepted the provider and client source after correcting
+stale-read identity and message-ordering races. JavaScript syntax and whitespace
+checks, Svelte checking (zero errors/warnings), frontend build and Worker
+dry-run compilation passed. No repository test suite was added or run.
 
 The first complete generated checker remains outstanding. This attempt proves
 an actual Sandbox syntax check on model-generated source, not a passing tool.
@@ -85,7 +94,9 @@ The exact authenticated receipt is retained by the operator with SHA-256
 `049e16be1a6beb3b59b618fbea447b81c82c0de6ea84adb276166fec107c9fdc`.
 Projects Acceptance currently returns a reauthentication error, including after
 the owner reported reconnecting; this attempt has not been recorded there or
-formally accepted.
+formally accepted. The public Devpost story and six affected judge-feedback
+fields were updated and read back after deployment; the entry remains Submitted
+with 5/5 steps done, and its existing video is retained.
 
 ## Fourth tool attempt and page-style correction — September 28, 2026
 
