@@ -7,7 +7,7 @@
 | Hosted next-step guidance | Two Nano responses recorded, including a changed next-step/status/blocker proposal | Broader quality evaluation; neither response was applied |
 | Sandbox access | Existing Token Factory key authenticated; Node 24 image imported | Ongoing availability is not guaranteed by a past observation |
 | Sandbox execution | One operator-written Node diagnostic: SUCCESS, exit 0, Node v24.21.0, UID/GID 1000, writable `/tmp`, networking off | This diagnostic does not prove a generated tool |
-| Tool building | Two authorized model calls across two retained attempts; both stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
+| Tool building | Three authorized model calls across three retained attempts; all stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
 | Public delivery | Separate hosted Worker and MIT source are published; Devpost entry is submitted | Final demonstration video and judging-period capacity |
 | Hosted capacity | Owner raised the allowance to 20 model calls and 3 task runs per UTC day | Existing attempts still count; remaining capacity is not yet shown in the UI |
 | Projects Acceptance | Reconnected; runtime and product reviews recorded with independent recommendations | Jev preview refused with `inference_not_authorized`; no new automated assessment or formal acceptance receipt |
@@ -49,6 +49,40 @@ Sandbox segment were updated; no new video was recorded in this pass.
 The sections below retain earlier milestone observations. This current-status
 section supersedes their access, hosting, publication and pending-run statements.
 
+## Initialization and diagnostics update — September 28, 2026
+
+Published source `26889c35ca1b789eab4d505f8feaa4b52f28ca65` aligns preview
+initialization with the generated worker contract. Run records now retain a
+structured failure code/stage and any reported token counts, with incomplete
+totals explicitly labeled. Existing saved runs and backups normalize through
+the current validator; unknown historical usage remains unknown. Older open
+clients receive a reload instruction before a new run can be admitted.
+
+Independent source review recommended acceptance after three compatibility and
+accounting corrections. Svelte/TypeScript checking reported zero errors and
+warnings; JavaScript syntax, whitespace checks and the frontend build passed.
+No repository test suite was added or run for this correction.
+
+Worker version `17a6bc7b-c628-4755-aca0-b0876f04285b` was deployed at 100%
+in deployment `75d88679-0687-4f21-a8c5-4579794e04c5`. Provider readback
+confirmed the unchanged 20-model-call and 3-task-run daily limits.
+
+The fresh release-packet-checker run,
+`6664f366-d7d6-4ed9-95f0-4f0b26fd5268`, ran from 17:22:38 to 17:22:44 UTC.
+It failed at `tool_page` with `invalid_model_output`: the generated page
+did not meet the inline-style/no-script/no-external-resource contract. The
+retained message does not identify which clause failed, and rejected source
+was not retained. Its one model call reported 655 input and 976 output tokens;
+`totalsComplete` is true for this run. The authenticated saved-run read
+returned the same failure and counts, with empty files and checks.
+
+This demonstrates the new diagnostics and persistence on a real failed call.
+It does not establish generated-code execution, a working preview or full
+acceptance. Three observed tool attempts have now used the day's task-run
+ceiling; no additional attempt was started. The next runtime work is to
+qualify generation against the page/worker/check contract before another
+bounded live run. Jev inference authorization remains unavailable.
+
 ## Review and capacity update — September 28, 2026
 
 The owner requested a larger demo allowance. A configuration-only deployment,
@@ -66,7 +100,7 @@ Nebius proposals. The project-update footer and approval-count headline also
 need clearer wording. These are source findings, not reconstructed causes of
 the two historical failures.
 
-The next runtime milestone is to align initialization, retain useful failure
+At the capacity checkpoint, the next milestone was to align initialization, retain useful failure
 metadata and observed usage, qualify a known-good tool through the existing
 validation/preview/Sandbox boundary, then obtain one complete live result.
 That qualification fixture has not been added or run. Existing Sandbox network
