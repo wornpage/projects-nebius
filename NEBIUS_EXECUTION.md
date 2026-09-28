@@ -88,7 +88,7 @@ Statuses: queued, generating, checking, repairing, cancelling, ready, failed,
 cancelled, uncertain. Files are exactly index.html, app.js and checks.cjs;
 an unfinished run may have none. app.js contains DOM-free business logic with
 a CommonJS export for checks.cjs and a worker message handler. index.html is
-an inert UI template with its own styles. No packages, remote resources or
+an inert UI template with optional local styles. No packages, remote resources or
 user-supplied commands.
 
 Checks record the observed provider operation ID, resulting checkpoint ID if
@@ -108,16 +108,19 @@ response. The first matched rejection is retained at stage `tool_page`:
 | Code | Rejected condition |
 | --- | --- |
 | `page_script_forbidden` | A script tag, including a reference to app.js |
-| `page_style_missing` | No literal style block; style attributes alone are insufficient |
 | `page_resource_forbidden` | A quoted src/href outside fragment or data-image prefixes |
 | `page_css_url_forbidden` | A url(...) expression anywhere in index.html |
 
-These replace the combined page-error message while retaining the existing
-predicates and their order. They are bounded source checks, not an HTML/CSS
-security parser. The preview's sanitizer, CSP and Worker isolation remain the
-execution boundary. Invalid output stops the run; this change adds no retry or
-automatic repair of rejected files. Existing saved failure messages are not
-rewritten. A future run will record its own rule code and observed usage.
+These are bounded source checks, not an HTML/CSS security parser. The preview's
+sanitizer, CSP and Worker isolation remain the execution boundary. Styling is
+presentation advice: prefer a local style block for readable layout, while
+semantic native controls remain valid without CSS. The removed
+`page_style_missing` gate rejected a cosmetic omission before Sandbox; historical
+receipts retain that code. Visual quality is assessed in the human preview.
+
+Invalid output stops the run. Repair remains limited to an observed first
+Sandbox check failure. Rejected source is not retained or silently rewritten,
+and no new run is started automatically.
 
 ## Runtime and persistence
 
@@ -233,13 +236,16 @@ Sandbox access is enabled in the hosted demo. On September 28, a real isolated
 Node 24 diagnostic returned exit code 0 with networking disabled, UID/GID 1000
 and writable `/tmp`. It used operator-written diagnostic code, not model output.
 
-Two model calls for a release-packet checker stopped before Sandbox execution.
-The second returned files rejected by the isolation validator. No generated
-tool, successful generated checks or interactive result is claimed. Failure
-messages are now preserved and displayed, and future validation failures
-identify the page, worker or check-file requirement without relaxing it.
+Four model calls across four retained tool attempts stopped before Sandbox
+execution. The fourth failed with `page_style_missing` and recorded 894 input /
+921 output tokens. The source correction removes the required-style-block gate
+after review identified it as a cosmetic requirement. At this checkpoint it has
+not yet been deployed or exercised; a fresh generated-tool result remains
+outstanding. No successful generated checks or
+interactive result is claimed. Remaining page, worker and check-file rejections
+retain their specific diagnostics.
 
-The original five-call and one-run limits were restored after those attempts.
+The original five-call and one-run limits were restored after the first two attempts.
 The owner subsequently raised the hosted allowance to 20 model calls and
 3 task runs per UTC day. Existing daily counts were retained; per-run limits
 remain two model calls, 8,000 output tokens per call, and two 30-second Sandbox

@@ -7,7 +7,7 @@
 | Hosted next-step guidance | Two Nano responses recorded, including a changed next-step/status/blocker proposal | Broader quality evaluation; neither response was applied |
 | Sandbox access | Existing Token Factory key authenticated; Node 24 image imported | Ongoing availability is not guaranteed by a past observation |
 | Sandbox execution | One operator-written Node diagnostic: SUCCESS, exit 0, Node v24.21.0, UID/GID 1000, writable `/tmp`, networking off | This diagnostic does not prove a generated tool |
-| Tool building | Three authorized model calls across three retained attempts; all stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
+| Tool building | Four authorized model calls across four retained attempts; all stopped before executing generated code | A valid generated tool, executed checks and interactive preview |
 | Public delivery | Separate hosted Worker and MIT source are published; Devpost entry is submitted | Final demonstration video and judging-period capacity |
 | Hosted capacity | Owner raised the allowance to 20 model calls and 3 task runs per UTC day | Existing attempts still count; remaining capacity is not yet shown in the UI |
 | Development review | Runtime and product reviews recorded in Projects Acceptance with independent recommendations | Optional development tooling, outside the submitted app |
@@ -28,10 +28,11 @@ Sandbox API work together. It is not represented as model-generated code.
 Failure reasons are now preserved and displayed in Build tool. The existing
 isolation rules remain enforced, with separate messages for page, worker and
 check-file rejection. Tool generation now requests a strict three-file schema
-with thinking disabled. The original five model calls and one task run per UTC
-day were restored after the approved attempts. The temporary allowance is not
-part of the checked-in configuration. No additional inference is authorized by
-this evidence record.
+with thinking disabled. After those first two attempts, the then-current five
+model calls and one task run per UTC day were restored. That is a historical
+checkpoint; the current configured allowance is 20 model calls and 3 task runs,
+including the restoration after the fourth attempt described below. This
+evidence record does not itself authorize another inference request.
 
 The follow-up UI/copy deployment is Worker version
 `86c5457b-575a-49c7-abec-4a87cda32408`. Svelte checking reported zero errors and
@@ -48,6 +49,35 @@ Sandbox segment were updated; no new video was recorded in this pass.
 
 The sections below retain earlier milestone observations. This current-status
 section supersedes their access, hosting, publication and pending-run statements.
+
+## Fourth tool attempt and page-style correction — September 28, 2026
+
+The concrete release-packet checker starter was published at
+`4988e6f320bd7fa34f963078e2dbee483f82e6ec`. It places the two synthetic JSON
+examples and their exact expected outputs in the task fields sent to Nebius.
+Manual local and hosted walkthroughs confirmed plan approval, two created tasks,
+the build/review dependency and the exact generation input.
+
+With one additional task run authorized, run
+`5a233968-8ba3-4ab3-a1ff-e0a63cc01d11` ran from 19:11:42 to 19:11:55 UTC.
+Its single model call failed at `tool_page` with `page_style_missing`; the
+generated HTML lacked a literal style block. Reported usage was 894 input and
+921 output tokens, with complete totals. The authenticated saved-run read
+returned the same failure, empty accepted files and no Sandbox checks.
+
+The temporary four-run allowance was restored to three after admission, with
+the 20-model-call ceiling retained. No daily counters were reset. All four
+attempts remain counted; the unused second model call within this failed run
+does not authorize another task run.
+
+Independent source review found that style-block presence is a presentation
+requirement. The source correction gives styling advice without rejecting a
+semantic page solely for lacking CSS. At this source-review checkpoint, the
+correction has not yet been deployed or exercised. Script/resource/CSS-URL restrictions, preview
+sanitization, CSP, Worker isolation and the existing repair boundary remain.
+The failed source was not retained, so it cannot be replayed or claimed to meet
+the remaining rules. A new complete tool, Sandbox result and interactive preview
+remain outstanding after the correction.
 
 ## Initialization and diagnostics update — September 28, 2026
 

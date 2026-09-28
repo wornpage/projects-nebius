@@ -37,9 +37,12 @@ and evidence review. A run never marks the task done or publishes its output.
 **Current evidence boundary:** Two hosted Nano suggestions were observed on
 September 28, including a changed proposal after a hypothetical release update.
 Both stayed unsaved. Sandbox API access is enabled, and a real isolated Node 24
-diagnostic succeeded with networking off. Three tool-generation attempts stopped
-before executing generated code. The latest failed generated-page validation;
-its saved record retains the failure stage and 655 input / 976 output tokens.
+diagnostic succeeded with networking off. Four tool-generation attempts stopped
+before executing generated code. The latest identified a missing style block;
+its saved record retains `page_style_missing` and 894 input / 921 output tokens.
+The source correction removes that cosmetic rejection and makes styling
+presentation guidance. Deployment and a fresh live result are still pending
+at this source-review checkpoint.
 The first complete generated tool and interactive preview remain outstanding.
 See NEBIUS_READINESS.md for the retained outcomes.
 
@@ -74,8 +77,9 @@ key also authenticates Sandbox requests for the selected project. Importing an
 official Node 24 image and running a network-disabled diagnostic succeeded.
 Tool generation needs further work: model files can fail the app's worker/page/
 check contract even when structured JSON is returned. The app now retains the
-failure stage and reported usage; the latest call identified page validation
-as the blocker. Qualifying generated files against that contract remains the
+failure stage and reported usage; the latest call exposed our unnecessary
+mandatory-style-block check, which this reviewed source correction removes.
+Qualifying generated files against the remaining contract remains the
 next step toward a complete tool-building demonstration.
 
 ## Assets to finish
