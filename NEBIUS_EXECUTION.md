@@ -74,6 +74,26 @@ data, checks JavaScript syntax, then runs checks.cjs. Generated code executes
 only inside the remote sandbox or a dedicated worker in the explicitly opened
 isolated preview. A ready result's source digest must match the checked files.
 
+### Generated page rules
+
+The provider owns the page rules in `PAGE_RULES`. Their instructions are included
+in both generation and repair prompts; the same ordered rules validate each
+response. The first matched rejection is retained at stage `tool_page`:
+
+| Code | Rejected condition |
+| --- | --- |
+| `page_script_forbidden` | A script tag, including a reference to app.js |
+| `page_style_missing` | No literal style block; style attributes alone are insufficient |
+| `page_resource_forbidden` | A quoted src/href outside fragment or data-image prefixes |
+| `page_css_url_forbidden` | A url(...) expression anywhere in index.html |
+
+These replace the combined page-error message while retaining the existing
+predicates and their order. They are bounded source checks, not an HTML/CSS
+security parser. The preview's sanitizer, CSP and Worker isolation remain the
+execution boundary. Invalid output stops the run; this change adds no retry or
+automatic repair of rejected files. Existing saved failure messages are not
+rewritten. A future run will record its own rule code and observed usage.
+
 ## Runtime and persistence
 
 Use the existing Worker and a new per-run Durable Object, with alarms for
