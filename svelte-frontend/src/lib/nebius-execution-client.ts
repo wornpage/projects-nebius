@@ -1,4 +1,5 @@
 import {
+	RUN_RECORD_FORMAT,
 	isRunConfig,
 	validRunId,
 	validRunKey,
@@ -135,7 +136,9 @@ async function withRequestDeadline<T>(signal: AbortSignal | undefined, action: (
 
 async function fetchJson(input: RequestInfo | URL, init: RequestInit, signal?: AbortSignal): Promise<{ response: Response; value: unknown }> {
 	return withRequestDeadline(signal, async (requestSignal) => {
-		const response = await fetch(input, { ...init, signal: requestSignal });
+		const headers = new Headers(init.headers);
+		headers.set('X-Nebius-Run-Format', RUN_RECORD_FORMAT);
+		const response = await fetch(input, { ...init, headers, signal: requestSignal });
 		return { response, value: await boundedJson(response) };
 	});
 }

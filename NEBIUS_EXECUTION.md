@@ -34,6 +34,13 @@ The source of limits and validation is `nebius-execution-contract.mjs`.
 - Successful start/read/cancel returns `{ run: RunRecord }` with no access key.
   Errors use `{ code, error }`; responses are private/no-store.
 
+JSON run requests, including configuration, send
+`X-Nebius-Run-Format: run-diagnostics.v1`. The shared browser client owns this
+header. An older or missing format is rejected with a clear page-reload message
+before request admission. This keeps an already-open page from starting a run
+whose diagnostic fields its old parser cannot read. The HTML preview form
+still submits only its run key.
+
 RunInput has exactly version, packId, pack (the existing five-field task
 projection), currentStatus, context (zero to three selected notes/sources),
 requestedModel and consent. Only draft/active tasks with completion criteria
@@ -44,6 +51,14 @@ output are also sent for the single repair when needed.
 
 RunRecord has id, version, packId, pack, currentStatus, context, requestedModel,
 status, attempt, createdAt, updatedAt, events, files, checks, usage and error.
+The record also includes `failure: {code, stage} | null`. Its readable `error`
+message stays separate. Provider bodies and rejected generated files are not
+stored in diagnostics. Usage includes `totalsComplete`: false means token
+counts are recorded subtotals or unknown, not complete billing totals. A repair
+keeps previously recorded usage while its new response is pending. Valid
+provider usage is retained on output rejection and before preview validation.
+Cancellation also retains usage observed before it completes.
+
 Statuses: queued, generating, checking, repairing, cancelling, ready, failed,
 cancelled, uncertain. Files are exactly index.html, app.js and checks.cjs;
 an unfinished run may have none. app.js contains DOM-free business logic with
@@ -102,11 +117,29 @@ event handlers. The iframe has `sandbox="allow-scripts"` and no same-origin,
 popup, navigation or form permission. Generated code has no DOM or browsing
 context to navigate. It has no access to the parent workspace or run key.
 
-Worker input is `{type:'init'|'event', event, id, values}`. Controls need unique
+Worker initialization sends `{type:'init', values}`; user events send
+`{type:'event', event, id, values}`. Controls need unique
 IDs. Replies are `{patches:[{id,text?,value?,disabled?,hidden?,options?}]}`;
 options contain value/label pairs. These small tools use in-memory state and
 restart when the preview is reopened. Node checks cover generated logic;
 browser interactions and suitability still need live observation.
+
+### Saved-record compatibility
+
+Compatibility retained:
+- Consumer: existing `browser-tool.v1` run records and exported workspace backups,
+  including the two retained failed attempts from September 28.
+- Owner: `validateRunRecord` and the existing Durable Object load path.
+- Removal condition: retire v1 backup imports through an explicit migration
+  after all retained v1 runs have expired or been migrated.
+- Test coverage: no new tests added or run in this correction; source review
+  uses the retained old records, which omit failure metadata and completeness.
+- Why hard cutover is unsafe now: rejecting those records would hide the user's
+  saved failures and break existing backups. Their missing diagnostics normalize
+  to null and unknown counts remain unknown. New writes use the current shape.
+
+The server has one active response shape. Cached older clients must reload
+through the format gate; no older response serializer is retained.
 
 ## Enable execution locally
 

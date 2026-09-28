@@ -2,10 +2,12 @@ import { isRecord, validModelId } from '../svelte-frontend/src/lib/nebius-contra
 import { RUN_LIMITS, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 export class RunProviderError extends Error {
-  constructor(code, message, uncertain = false) { super(message); this.code = code; this.uncertain = uncertain; }
+  constructor(code, message, uncertain = false, stage = null) {
+    super(message); this.code = code; this.uncertain = uncertain; this.stage = stage; this.usage = null;
+  }
 }
 
-const fail = (code, message, uncertain = false) => { throw new RunProviderError(code, message, uncertain); };
+const fail = (code, message, uncertain = false, stage = null) => { throw new RunProviderError(code, message, uncertain, stage); };
 const RESPONSE_LIMIT = 131072;
 const TOKEN_FACTORY_URL = 'https://api.tokenfactory.nebius.com/v1/chat/completions';
 const FILES_RESPONSE_FORMAT = {
@@ -39,7 +41,7 @@ export function runModelConfiguration(env, requestedModel) {
     || !validModelId(model) || requestedModel !== model) {
     fail(requestedModel === model ? 'execution_unavailable' : 'model_changed', requestedModel === model
       ? 'Task execution needs its configured NVIDIA model and Nebius credential.'
-      : 'Model settings changed. Reload the run preview.');
+      : 'Model settings changed. Reload the run preview.', false, 'configuration');
   }
   return { apiKey, model };
 }
@@ -69,6 +71,12 @@ async function boundedJson(response) {
   } finally { reader.releaseLock(); }
 }
 
+function reportedUsage(raw) {
+  const inputTokens = raw?.usage?.prompt_tokens, outputTokens = raw?.usage?.completion_tokens;
+  return [inputTokens, outputTokens].every(count => Number.isSafeInteger(count) && count >= 0 && count <= 5000000)
+    ? { inputTokens, outputTokens } : null;
+}
+
 function validateEnvelope(raw, model) {
   const choice = raw?.choices?.[0];
   if (choice?.finish_reason === 'length') fail('invalid_model_output', 'Nebius reached the output limit before completing the tool files.');
@@ -77,42 +85,42 @@ function validateEnvelope(raw, model) {
     || choice?.finish_reason !== 'stop' || choice.message?.role !== 'assistant'
     || typeof choice.message.content !== 'string' || choice.message.function_call
     || (choice.message.tool_calls != null && (!Array.isArray(choice.message.tool_calls) || choice.message.tool_calls.length))
-    || !Number.isSafeInteger(raw.usage?.prompt_tokens) || raw.usage.prompt_tokens < 0
-    || !Number.isSafeInteger(raw.usage?.completion_tokens) || raw.usage.completion_tokens < 0) {
+    || !reportedUsage(raw)) {
     fail('invalid_model_output', 'Nebius did not return a complete generation response.');
   }
   let parsed;
   try { parsed = JSON.parse(choice.message.content); }
-  catch { fail('invalid_model_output', 'Nebius did not return structured browser tool files.'); }
-  if (!isRecord(parsed) || Object.keys(parsed).join(',') !== 'files') fail('invalid_model_output', 'Nebius returned an invalid browser tool envelope.');
+  catch { fail('invalid_model_output', 'Nebius did not return structured browser tool files.', false, 'tool_files'); }
+  if (!isRecord(parsed) || Object.keys(parsed).join(',') !== 'files') fail('invalid_model_output', 'Nebius returned an invalid browser tool envelope.', false, 'tool_files');
   let files;
   try { files = validateRunFiles(parsed.files); }
-  catch { fail('invalid_model_output', 'Nebius returned invalid browser tool files.'); }
+  catch { fail('invalid_model_output', 'Nebius returned invalid browser tool files.', false, 'tool_files'); }
   const source = Object.fromEntries(files.map(file => [file.path, file.content]));
   const checkImports = [...source['checks.cjs'].matchAll(/\brequire\(\s*['"]([^'"]+)['"]\s*\)/gu)].map(match => match[1]);
   if (/<script\b/iu.test(source['index.html']) || !/<style\b/iu.test(source['index.html'])
     || /\b(?:src|href)\s*=\s*["'](?!#|data:image\/)/iu.test(source['index.html'])
     || /\burl\s*\(/iu.test(source['index.html'])) {
-    fail('invalid_model_output', 'The generated page needs inline styles and cannot contain scripts or external resources.');
+    fail('invalid_model_output', 'The generated page needs inline styles and cannot contain scripts or external resources.', false, 'tool_page');
   }
   if (!/\bself\.onmessage\b/u.test(source['app.js'])) {
-    fail('invalid_model_output', 'The generated worker is missing its required message handler.');
+    fail('invalid_model_output', 'The generated worker is missing its required message handler.', false, 'tool_worker');
   }
   if (/\b(?:document|window|location|fetch|XMLHttpRequest|WebSocket|EventSource|importScripts|navigator)\b/u.test(source['app.js'])) {
-    fail('invalid_model_output', 'The generated worker references a browser or network API that this runner does not allow.');
+    fail('invalid_model_output', 'The generated worker references a browser or network API that this runner does not allow.', false, 'tool_worker');
   }
   if (/\b(?:child_process|node:child_process|execFile|execSync|spawnSync|spawn)\b/u.test(source['checks.cjs'])
     || !checkImports.some(specifier => ['node:assert', 'node:assert/strict'].includes(specifier)) || !checkImports.includes('./app.js')
     || checkImports.some(specifier => !['node:assert', 'node:assert/strict', './app.js'].includes(specifier))) {
-    fail('invalid_model_output', 'The generated checks must use the app script and Node assertions without other imports or subprocesses.');
+    fail('invalid_model_output', 'The generated checks must use the app script and Node assertions without other imports or subprocesses.', false, 'tool_checks');
   }
-  return { files, usage: { inputTokens: raw.usage.prompt_tokens, outputTokens: raw.usage.completion_tokens } };
+  return { files, usage: reportedUsage(raw) };
 }
 
 export async function generateRunFiles(config, input, repair, { fetcher = globalThis.fetch, timeoutMs = 60000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const state = repair ? { input, previousFiles: repair.files, observedCheck: repair.check } : { input };
+  let stage = 'generation', usage = null;
   try {
     // Keep credentials on the fixed origin and reject redirects below.
     const response = await fetcher(TOKEN_FACTORY_URL, {
@@ -129,10 +137,21 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
       await response.body?.cancel();
       fail(response.status === 429 ? 'rate_limited' : 'generation_failed', `Nebius could not generate the browser tool (HTTP ${response.status}).`);
     }
-    return validateEnvelope(await boundedJson(response), config.model);
+    stage = 'response';
+    const raw = await boundedJson(response);
+    // Retain only bounded numeric usage, even when the output is rejected.
+    // Never attach the provider body or rejected source to an error.
+    usage = reportedUsage(raw);
+    return validateEnvelope(raw, config.model);
   } catch (error) {
-    if (error instanceof RunProviderError) throw error;
-    fail(controller.signal.aborted ? 'generation_timeout' : 'generation_uncertain', controller.signal.aborted
-      ? 'The Nebius generation outcome is unknown after the request deadline.' : 'The Nebius generation outcome is unknown.', true);
+    if (error instanceof RunProviderError) {
+      error.stage ??= stage;
+      error.usage = usage;
+      throw error;
+    }
+    const failure = new RunProviderError(controller.signal.aborted ? 'generation_timeout' : 'generation_uncertain', controller.signal.aborted
+      ? 'The Nebius generation outcome is unknown after the request deadline.' : 'The Nebius generation outcome is unknown.', true, stage);
+    failure.usage = usage;
+    throw failure;
   } finally { clearTimeout(timer); }
 }

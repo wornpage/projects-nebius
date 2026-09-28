@@ -76,7 +76,7 @@ export async function renderRunPreview(rawFiles) {
       if(el&&elements.get(el.id)===el)send({type:'event',event:eventName,id:el.id});
     });
     addEventListener('pagehide',()=>stop('Preview closed.'),{once:true});
-    send({type:'init',event:'init',id:''});
+    send({type:'init'});
   })();`;
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bootstrap)));
   const scriptHash = btoa(String.fromCharCode(...digest));

@@ -177,6 +177,8 @@ function assertExecutionRunReference(value: unknown, packId: string): asserts va
 	if (record.id !== reference.id || record.packId !== packId || !executionInputMatchesRecord(input, record)) {
 		throw new ChallengeStateError('Saved task execution record does not match its authorized input.');
 	}
+	// Install the validated current shape for saved v1 records and backups.
+	reference.record = record;
 }
 
 function assertDemoState(value: unknown, recordOnly = false): asserts value is DemoState {

@@ -197,9 +197,10 @@
 			<div class="run-review-facts">
 				<div><span>Model</span><strong>{record.requestedModel}</strong></div>
 				<div><span>Model calls</span><strong>{record.usage.modelCalls} of 2</strong></div>
-				<div><span>Input tokens</span><strong>{tokenCount(record.usage.inputTokens)}</strong></div>
-				<div><span>Output tokens</span><strong>{tokenCount(record.usage.outputTokens)}</strong></div>
+				<div><span>Recorded input tokens</span><strong>{tokenCount(record.usage.inputTokens)}</strong></div>
+				<div><span>Recorded output tokens</span><strong>{tokenCount(record.usage.outputTokens)}</strong></div>
 			</div>
+			{#if !record.usage.totalsComplete}<p class="run-muted">Usage is incomplete. These counts include only recorded usage; the actual total may be higher.</p>{/if}
 
 			<div class="run-review-criteria">
 				<h3>Task criteria at run start</h3>
@@ -211,6 +212,9 @@
 			{/if}
 			{#if integrityError}<WornAlert tone="danger">{integrityError}</WornAlert>{/if}
 			{#if record.error}<WornAlert tone="danger">{record.error}</WornAlert>{/if}
+			{#if record.failure}
+				<details data-run-diagnostics><summary>Failure details</summary><dl><dt>Stage</dt><dd>{record.failure.stage.replaceAll('_', ' ')}</dd><dt>Code</dt><dd>{record.failure.code}</dd></dl></details>
+			{:else if record.error}<p class="run-muted">No structured failure details were recorded for this run.</p>{/if}
 
 			<section class="run-checks" aria-labelledby="run-checks-title">
 				<h3 id="run-checks-title">Observed agent-authored checks</h3>

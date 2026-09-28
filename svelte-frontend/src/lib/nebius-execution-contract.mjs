@@ -1,10 +1,12 @@
 import { isRecord, validateTask, validateSelectedContext, validModelId } from './nebius-contract.mjs';
 
 export const RUN_VERSION = 'browser-tool.v1';
+export const RUN_RECORD_FORMAT = 'run-diagnostics.v1';
 export const RUN_LIMITS = Object.freeze({ maxModelCalls: 2, maxSandboxRuns: 2, maxOutputTokens: 8000, sandboxSeconds: 30, runSeconds: 600, maxFileBytes: 32768, maxTotalFileBytes: 65536 });
 export const RUN_FILES = Object.freeze(['index.html', 'app.js', 'checks.cjs']);
 export const RUN_STATUSES = Object.freeze(['queued', 'generating', 'checking', 'repairing', 'cancelling', 'ready', 'failed', 'cancelled', 'uncertain']);
 export const TERMINAL_RUN_STATUSES = Object.freeze(['ready', 'failed', 'cancelled', 'uncertain']);
+export const RUN_FAILURE_STAGES = Object.freeze(['configuration', 'generation', 'response', 'tool_files', 'tool_page', 'tool_worker', 'tool_checks', 'preview', 'sandbox', 'orchestration']);
 export const validRunId = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value);
 export const validRunKey = value => typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
 const validProviderId = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value);
@@ -44,7 +46,9 @@ export function validateRunFiles(value) {
 }
 
 export function validateRunRecord(value) {
-  if (!exact(value, ['id', 'version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'status', 'attempt', 'createdAt', 'updatedAt', 'events', 'files', 'checks', 'usage', 'error'])
+  const keys = ['id', 'version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'status', 'attempt', 'createdAt', 'updatedAt', 'events', 'files', 'checks', 'usage', 'error'];
+  if (isRecord(value) && Object.hasOwn(value, 'failure')) keys.push('failure');
+  if (!exact(value, keys)
     || !validRunId(value.id) || !RUN_STATUSES.includes(value.status) || !integer(value.attempt, 2)
     || !iso(value.createdAt) || !iso(value.updatedAt) || Date.parse(value.updatedAt) < Date.parse(value.createdAt)
     || !(value.error === null || text(value.error, 500))) fail('The saved execution record is invalid.');
@@ -59,11 +63,25 @@ export function validateRunRecord(value) {
     || !(check.checkpointId === null || validProviderId(check.checkpointId))
     || !Number.isSafeInteger(check.exitCode) || check.exitCode < 0 || check.exitCode > 255
     || !text(check.stdout, 4096) || !text(check.stderr, 4096) || !hash(check.sourceDigest))) fail('The execution check record is invalid.');
-  if (!exact(value.usage, ['modelCalls', 'inputTokens', 'outputTokens']) || !integer(value.usage.modelCalls, 2)
+  const usageKeys = ['modelCalls', 'inputTokens', 'outputTokens'];
+  const legacyUsage = isRecord(value.usage) && !Object.hasOwn(value.usage, 'totalsComplete');
+  if (!legacyUsage) usageKeys.push('totalsComplete');
+  if (!exact(value.usage, usageKeys) || !integer(value.usage.modelCalls, 2)
     || ![value.usage.inputTokens, value.usage.outputTokens].every(count => count === null || integer(count, 10000000))) fail('The execution usage is invalid.');
-  if (value.status === 'ready' && (!files.length || value.checks.at(-1)?.exitCode !== 0 || value.checks.at(-1)?.attempt !== value.attempt || value.error !== null)) fail('A ready result needs observed successful checks.');
+  // Persisted v1 runs and workspace backups predate diagnostics. Normalize only
+  // at this owner: missing failure metadata stays unknown, and missing token
+  // counts stay unknown. Numeric legacy totals covered all submitted calls.
+  const usage = { ...value.usage, totalsComplete: legacyUsage
+    ? value.usage.inputTokens !== null && value.usage.outputTokens !== null : value.usage.totalsComplete };
+  if (typeof usage.totalsComplete !== 'boolean' || (usage.totalsComplete && (usage.inputTokens === null || usage.outputTokens === null))) fail('The execution usage coverage is invalid.');
+  const failure = Object.hasOwn(value, 'failure') ? value.failure : null;
+  if (failure !== null && (!exact(failure, ['code', 'stage']) || typeof failure.code !== 'string'
+    || !/^[a-z][a-z0-9_]{0,79}$/u.test(failure.code) || !RUN_FAILURE_STAGES.includes(failure.stage)
+    || value.error === null || !['failed', 'uncertain'].includes(value.status))) fail('The execution failure details are invalid.');
+  if (value.status === 'ready' && (!files.length || value.checks.at(-1)?.exitCode !== 0 || value.checks.at(-1)?.attempt !== value.attempt
+    || usage.modelCalls !== value.attempt || !usage.totalsComplete || value.error !== null || failure !== null)) fail('A ready result needs observed successful checks and complete usage.');
   const { consent, ...snapshot } = input;
-  return { ...value, ...snapshot, files };
+  return { ...value, ...snapshot, files, usage, failure };
 }
 
 export function isRunConfig(value) {

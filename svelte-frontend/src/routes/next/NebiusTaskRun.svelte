@@ -295,6 +295,14 @@
 			<strong>{requestLabel || statusLabel}</strong>
 			{#if latestEvent}<p>{latestEvent}</p>{/if}
 		</div>
+		{#if record}
+			<details class="task-run-input" data-run-diagnostics>
+				<summary>Run details and usage</summary>
+				<p>{record.usage.modelCalls} of 2 model calls · {record.usage.inputTokens === null ? 'Unknown' : record.usage.inputTokens.toLocaleString()} recorded input tokens · {record.usage.outputTokens === null ? 'Unknown' : record.usage.outputTokens.toLocaleString()} recorded output tokens</p>
+				{#if !record.usage.totalsComplete}<p>Usage is incomplete. These counts include only recorded usage; the actual total may be higher.</p>{/if}
+				{#if record.failure}<p>Failure stage: {record.failure.stage.replaceAll('_', ' ')} · Code: <code>{record.failure.code}</code></p>{:else if record.error}<p>No structured failure details were recorded for this run.</p>{/if}
+			</details>
+		{/if}
 		{#if runEvents.length}
 			<details class="task-run-history">
 				<summary>Run activity · {runEvents.length} {runEvents.length === 1 ? 'event' : 'events'}</summary>
