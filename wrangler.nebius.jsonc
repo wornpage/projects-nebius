@@ -31,7 +31,7 @@
   "env": {
     "demo": {
       "name": "projects-nebius",
-      "workers_dev": true,
+      "workers_dev": false,
       "preview_urls": false,
       "durable_objects": { "bindings": [
         { "name": "NEBIUS_BUDGET", "class_name": "NebiusBudget" },

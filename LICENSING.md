@@ -19,8 +19,9 @@ already granted through public or private copies. Dependencies retain their
 own licenses and notices. No proprietary licensing transition is being made.
 
 The local directory name `projects-nebius-public` is historical and does not
-describe current access. A separately hosted demo may remain publicly
-accessible while the source repository is private.
+describe current access. The Nebius Worker's public address and preview URLs
+were disabled on September 28, 2026 for local preparation. The deployment and
+server data are retained; reopening access requires separate owner authorization.
 
 ## Preserved earlier grants
 
@@ -55,6 +56,6 @@ setting does not change the MIT license or GitHub visibility.
 
 The historical challenge and deployment records document earlier events.
 They do not establish that today's private source satisfies a challenge's
-public-source requirements. The private repository does not by itself restrict
-access to a separately hosted demo. Names and branding are addressed in
+public-source requirements. Repository visibility and hosted access are
+separate controls; both are now restricted for preparation. Names and branding are addressed in
 [TRADEMARKS.md](TRADEMARKS.md).

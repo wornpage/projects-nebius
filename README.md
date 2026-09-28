@@ -12,16 +12,22 @@ evidence assessments. The task execution milestone adds a bounded browser-tool
 build, sandbox checks and result review. You authorize a run's selected task
 and limits; accepting the result remains a separate action.
 
-**[Open the hosted demo](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)**
+**Hosted access is paused during private preparation.** Use the local app at
+[http://127.0.0.1:8787/](http://127.0.0.1:8787/) after starting it below.
+The Nebius Worker's public address and preview URLs are disabled. Reopening
+hosted access requires separate owner authorization for release.
 
-**Development status:** hosted Nano guidance is live. Sandbox access is enabled
+**Development status:** Nano guidance has hosted runtime evidence. Sandbox access is enabled
 and a real Node 24 execution completed successfully. The first tool-building
 attempts were rejected before execution; a complete generated tool and preview
 remain in validation. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
 The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
 temporarily private MIT-licensed continuation; the earlier WebMCP entry remains
-separate. A hosted demo does not make this repository public.
+separate. Existing hosted versions and server data are retained while public
+access is disabled. Local storage is separate: use Guide's backup and restore
+controls to move browser work. Local AI actions still call Nebius online and
+use its normal account credits; starting the app does not initiate a model run.
 
 ## Run without credentials
 
