@@ -48,9 +48,6 @@ for (const [name, mutate] of [
   ['oversized line', files => { files[2].lines[0]='x'.repeat(1025); }],
   ['oversized Unicode line', files => { files[0].lines[1]=String.fromCodePoint(0x1f680).repeat(1025); }],
   ['too many lines', files => { files[2].lines=Array(1025).fill(''); }],
-  ['line comments swallowing checks', files => { files[2].lines[1]+=' // assert.ok(true);'; }],
-  ['block comments', files => { files[2].lines[2]='/* assertion omitted */'; }],
-  ['console output', files => { files[2].lines.push("console.log('passed');"); }],
   ['file byte limit', files => { files[1].lines.push(...Array(40).fill('x'.repeat(1000))); }],
 ]) {
   test(`source generation rejects ${name}`, async () => {
@@ -65,6 +62,14 @@ test('Unicode line limit counts code points like JSON Schema', async () => {
   files[0].lines[1]=String.fromCodePoint(0x1f680).repeat(1024);
   const result=await generate(files);
   assert.equal(result.files[0].content,files[0].lines.join('\n'));
+});
+
+test('ordinary comments and logging reach the trusted runtime assertion gate', async () => {
+  const files=fixture();
+  files[2].lines.splice(2,0,'// Check the supplied value','/* Synchronous assertion follows. */');
+  files[2].lines.push("console.log('Untrusted success claim');");
+  const result=await generate(files);
+  assert.equal(result.files[2].content,files[2].lines.join('\n'));
 });
 
 test('repair preserves the maximum line count and canonical content exactly', async () => {

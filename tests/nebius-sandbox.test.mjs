@@ -14,6 +14,8 @@ const cases = [
   ['assertion without validate', "const assert=require('node:assert'); assert.ok(true);", 1],
   ['caught assertion failure', "const assert=require('node:assert'); const {validate}=require('./app.js'); try { assert.strictEqual(validate('ok').value,'wrong'); } catch {} assert.ok(true);", 1],
   ['callable strict assertions', "const assert=require('node:assert').strict; const {validate}=require('./app.js'); assert(validate('ok').value==='ok');", 0],
+  ['comments and discarded logging with real assertions', "const assert=require('node:assert/strict'); const {validate}=require('./app.js');\n// Ordinary check commentary\nconsole.log('Untrusted success claim');\nassert.equal(validate('ok').value,'ok');", 0],
+  ['logging cannot replace commented-out assertions', "const assert=require('node:assert'); const {validate}=require('./app.js');\nconsole.log('Untrusted success claim'); // assert.ok(validate('ok'));", 1],
   ['unapproved import', "require('node:fs');", 1],
 ];
 
@@ -34,6 +36,7 @@ for (const [name, checks, expectedExit] of cases) {
     });
     assert.ifError(result.error);
     assert.equal(result.status, expectedExit, result.stderr);
+    assert.doesNotMatch(result.stdout, /Untrusted success claim/u);
     if (expectedExit === 0) {
       assert.match(result.stdout, /Observed successful assertions: 1; validate calls: 1/u);
     } else {

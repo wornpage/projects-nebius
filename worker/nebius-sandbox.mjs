@@ -17,7 +17,12 @@ const vm = require('node:vm');
 const realAssert = require('node:assert');
 let validateCalls = 0, assertionCalls = 0, assertionFailed = false;
 const harden = value => Object.freeze(Object.setPrototypeOf(value, null));
-const context = vm.createContext(Object.assign(Object.create(null), { console: undefined }), {
+// Generated logging is discarded; only trusted assertion counts reach stdout.
+const quietLog = harden(() => {});
+const quietConsole = Object.freeze(Object.assign(Object.create(null), {
+  log: quietLog, info: quietLog, warn: quietLog, error: quietLog, debug: quietLog
+}));
+const context = vm.createContext(Object.assign(Object.create(null), { console: quietConsole }), {
   codeGeneration: { strings: false, wasm: false }
 });
 const ContextError = vm.runInContext('Error', context);
