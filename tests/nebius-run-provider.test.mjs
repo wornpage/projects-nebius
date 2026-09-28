@@ -36,6 +36,7 @@ test('source line arrays become canonical content with real line boundaries', as
     assert.equal(schema.strict, true);
     assert.deepEqual(schema.schema.properties.files.items.required, ['path','lines']);
     assert.equal(request.max_tokens, 8000);
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
   });
   assert.deepEqual(result.files, files.map(file=>({path:file.path,content:file.lines.join('\n')})));
   assert.deepEqual(result.usage,{inputTokens:10,outputTokens:20});
@@ -80,5 +81,7 @@ test('repair preserves the maximum line count and canonical content exactly', as
     const state=JSON.parse(request.messages[1].content);
     assert.deepEqual(state.previousFiles, files);
     assert.equal(state.observedCheck.exitCode,1);
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
+    assert.equal(request.max_tokens,8000);
   }, {files:generated.files,check:{exitCode:1,stderr:'A controlled check failed.'}});
 });

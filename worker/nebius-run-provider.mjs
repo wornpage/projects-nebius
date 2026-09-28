@@ -68,7 +68,7 @@ const SYSTEM = [
   'Put comments on their own lines so they cannot hide assertions. console.log, info, warn, error and debug are permitted but discarded; logging is never a check. The trusted runner reports the actual assertion and validate-call counts.',
   `Do not add package metadata, source maps, binary data, credentials, external URLs, user-supplied commands or claims that the task is complete. Each file is at most ${RUN_LIMITS.maxFileBytes} UTF-8 bytes and all files together are at most ${RUN_LIMITS.maxTotalFileBytes} bytes.`,
 ].join('\n\n');
-const REPAIR_SYSTEM = `${SYSTEM} Repair the supplied three files using the observed sandbox exit code and bounded output. Return all three complete replacement files as path and lines arrays. Do not claim success; the server will execute the checks once more.`;
+const REPAIR_SYSTEM = `${SYSTEM} Repair the supplied three files using the observed sandbox exit code and bounded output. Source locations identify the generated file and its original line; inspect that statement and its enclosing scopes. Fix the cause of the error while preserving meaningful assertions for every task criterion. Return all three complete replacement files as path and lines arrays. Do not claim success; the server will execute the checks once more.`;
 
 function decodeSourceLines(value) {
   if (!Array.isArray(value) || value.length !== 3) throw new TypeError('Three source files are required.');
@@ -181,9 +181,9 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
         messages: [{ role: 'system', content: repair ? REPAIR_SYSTEM : SYSTEM }, { role: 'user', content: JSON.stringify(state) }],
         response_format: FILES_RESPONSE_FORMAT, temperature: 1.0, top_p: 0.95,
         max_tokens: RUN_LIMITS.maxOutputTokens, stream: false,
-        // NVIDIA's documented sampling profile and low-effort reasoning for code.
-        // Keep the existing output ceiling and validate only the final content.
-        chat_template_kwargs: { enable_thinking: true, low_effort: true },
+        // Use NVIDIA's full reasoning mode within the existing output ceiling.
+        // Only the final content is validated or persisted.
+        chat_template_kwargs: { enable_thinking: true, force_nonempty_content: true },
       }),
     });
     if (!response.ok) {

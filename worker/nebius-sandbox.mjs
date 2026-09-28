@@ -27,13 +27,18 @@ const context = vm.createContext(Object.assign(Object.create(null), { console: q
 });
 const ContextError = vm.runInContext('Error', context);
 const boundedMessage = error => String(error && error.message || error).slice(0, 800);
+const sourceLocations = error => {
+  const stack = String(error && error.stack || '').slice(0, 4096);
+  const locations = [...new Set(stack.match(/\b(?:app\.js|checks\.cjs):\d{1,6}(?::\d{1,6})?/g) || [])].slice(0, 4);
+  return locations.length ? '\nSource locations: ' + locations.join(', ') : '';
+};
 const deny = message => { throw new ContextError(message); };
 function runModule(source, filename, requireValue) {
   const moduleValue = vm.runInContext('({ exports: {} })', context);
   context.__module = moduleValue;
   context.__require = requireValue;
   const wrapped = '(function(module, exports, require) { "use strict";\n' + source + '\n})(__module, __module.exports, __require);';
-  new vm.Script(wrapped, { filename }).runInContext(context, { timeout: 4000 });
+  new vm.Script(wrapped, { filename, lineOffset: -1 }).runInContext(context, { timeout: 4000 });
   return moduleValue.exports;
 }
 function assertFacade(target) {
@@ -75,7 +80,7 @@ try {
   process.stdout.write('Observed successful assertions: ' + assertionCalls + '; validate calls: ' + validateCalls + '\n');
   process.exit(0);
 } catch (error) {
-  process.stderr.write('Generated checks failed: ' + boundedMessage(error) + '\n');
+  process.stderr.write('Generated checks failed: ' + boundedMessage(error) + sourceLocations(error) + '\n');
   process.exit(1);
 }`;
 const HARNESS = String.raw`'use strict';
