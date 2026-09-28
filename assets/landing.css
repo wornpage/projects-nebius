@@ -220,7 +220,7 @@ p { text-wrap: pretty; }
 .lp-insight.is-low .lp-insight-value { color: var(--danger-text); }
 
 /* ---- Section frame ---- */
-.lp-section { padding: clamp(48px, 8vw, 88px) 0; }
+.lp-section { padding-block: clamp(48px, 8vw, 88px); }
 .lp-section-head { max-width: var(--measure); margin-bottom: clamp(28px, 4vw, 40px); }
 .lp-section-head h2 { font-size: 2.2rem; line-height: 1.12; }
 .lp-section-head p { margin: 14px 0 0; font-size: 1.05rem; color: var(--ink-soft); max-width: var(--measure); }
