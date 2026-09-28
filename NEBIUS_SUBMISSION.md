@@ -84,16 +84,22 @@ on output quality, latency and Sandbox execution only after observing real runs.
 - Devpost: [submitted entry](https://devpost.com/software/wornpage-projects-nebius-edition),
   confirmed by the submission-success message on September 28, 2026.
 
-## Video outline for later
+## Video outline for the available demo
 
-1. **0:00–0:20:** State the problem and show the project brief.
-2. **0:20–0:55:** Generate a plan with Nebius, edit it, and approve the tasks.
-3. **0:55–1:45:** Select a suitable task, show authorized inputs, and run the
-   tool-building workflow. Record real Sandbox output once access is enabled.
-4. **1:45–2:25:** Try the returned tool, inspect source and checks, then save
-   evidence without confusing model checks with independent acceptance.
-5. **2:25–2:50:** Show the public repository, explain the new Nebius contribution,
-   and close with the human completion decision.
+Target roughly 80–100 seconds. The existing 2:25 recording shows a genuine
+response but no changed task fields; retain it as supporting evidence.
+
+1. Show a release task waiting for a health check.
+2. Enter an explicitly hypothetical demo update: health passed, rollback steps
+   recorded, reviewer approval pending.
+3. Show selected inputs, make a real Token Factory request, and review the
+   actual changed fields. Record this when the daily allowance permits a call;
+   do not substitute a scripted proposal or force a change for the camera.
+4. Open Build tool and show the Sandbox workflow with its execution-disabled
+   preview label. Explain that generation, isolated checks and one repair are
+   the intended execution path. Beta access remains pending.
+5. Close on the human decision and public repository. Record real Sandbox
+   output and revise this section after access is enabled.
 
 ## Rules checked
 

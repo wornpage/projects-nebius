@@ -4,6 +4,8 @@
   import type { DemoPack } from '$lib/demo-workflow';
   import { CONTEXT_LIMITS, type NebiusContextItem, type NebiusChanges } from '$lib/nebius-contract.mjs';
   import { createSuggestionClient, emptySuggestionView, type SuggestionView } from './nebius-client.mjs';
+  import { canonicalizeText } from '$lib/canonical-text.mjs';
+  import { normalizeStoredBlocker } from '$lib/workflow-rules.mjs';
   let { pack, dependencyTitle = null, disabled = false, onUse, ondirty = () => {} }: { pack: DemoPack; dependencyTitle?: string | null; disabled?: boolean; onUse: (changes: NebiusChanges) => void; ondirty?: (dirty: boolean) => void } = $props();
   const id = $props.id();
   let view = $state<SuggestionView>(emptySuggestionView());
@@ -13,6 +15,11 @@
   let selectionScope = $state('');
   let updateText = $state('');
   let updateScope = $state('');
+  let suggestionHasChanges = $derived(Boolean(view.result && (
+    canonicalizeText(view.result.changes.nextStep) !== canonicalizeText(pack.nextStep || '')
+    || (view.result.changes.status !== undefined && view.result.changes.status !== pack.status)
+    || (view.result.changes.blocker !== undefined && normalizeStoredBlocker(view.result.changes.blocker) !== normalizeStoredBlocker(pack.blocker))
+  )));
   const client = createSuggestionClient({ onChange: next => { view = next; } });
   const fields = [['title', 'Title'], ['purpose', 'Purpose'], ['nextStep', 'Written next step'], ['blocker', 'Blocker'], ['doneWhen', 'Done when']] as const;
   let availableContext = $derived([
@@ -63,7 +70,7 @@
     <label class="update-field" for="nebius-task-update">Task update · optional<WornTextarea id="nebius-task-update" rows={3} maxlength={1000} bind:value={updateText} disabled={disabled || view.phase === 'generating'} placeholder="What changed or what help do you need?" /></label>
     {/if}
     {#if updateText}<WornButton type="button" disabled={view.phase === 'generating'} onclick={clearUpdate}>Clear update</WornButton>{/if}
-    <p role="status" aria-live="polite">{view.phase === 'loading' ? 'Loading model settings…' : view.phase === 'generating' ? 'Generating a suggestion…' : view.phase === 'complete' ? used ? 'Review the task draft to apply changes.' : 'Suggestion ready. Nothing has been saved.' : ''}</p>
+    <p role="status" aria-live="polite">{view.phase === 'loading' ? 'Loading model settings…' : view.phase === 'generating' ? 'Generating a suggestion…' : view.phase === 'complete' ? !suggestionHasChanges ? 'No changes suggested. Your saved task already matches this response.' : used ? 'Review the task draft to apply changes.' : 'Suggestion ready. Nothing has been saved.' : ''}</p>
     {#if !online}<WornAlert tone="info">You are offline. Browser-local edits remain available. Reconnect before asking Nebius again; generation will not restart automatically.</WornAlert>{/if}
     {#if view.error}<WornAlert tone="danger">{view.error}</WornAlert>{/if}
     {#if view.phase === 'unavailable'}
@@ -111,7 +118,11 @@
         <div><strong>Information still needed</strong><ul>{#each view.result.missingInformation as item}<li>{item}</li>{/each}</ul></div>
       {/if}
       <p class="model">Model suggestion · check the facts before using it.</p>
-      <WornButton type="button" disabled={disabled || used} onclick={() => { if (!disabled && view.result) { onUse(view.result.changes); used = true; } }}>Review changes</WornButton>
+      {#if suggestionHasChanges}
+        <WornButton type="button" disabled={disabled || used} onclick={() => { if (!disabled && view.result) { onUse(view.result.changes); used = true; } }}>Review changes</WornButton>
+      {:else}
+        <WornButton type="button" disabled={disabled} onclick={() => document.getElementById('nebius-task-update')?.focus()}>Add an update</WornButton>
+      {/if}
     {/if}
     {#if view.phase === 'error' || view.phase === 'complete'}
       <WornButton type="button" disabled={!online || disabled} onclick={() => { if (online && !disabled) { used = false; void client.reload(); } }}>Reload preview</WornButton>

@@ -76,9 +76,17 @@
       if (detailsElement) detailsElement.open = true;
       return;
     }
-    draft.nextStep = changes.nextStep;
-    if (changes.blocker !== undefined) draft.blocker = changes.blocker;
-    if (changes.status !== undefined) draft.status = changes.status;
+    const candidate = { ...draft, nextStep: changes.nextStep,
+      ...(changes.blocker === undefined ? {} : { blocker: changes.blocker }),
+      ...(changes.status === undefined ? {} : { status: changes.status }) };
+    if (JSON.stringify(normalized(candidate)) === JSON.stringify(normalized(baseline))) {
+      notice = 'No changes suggested. Your saved task already matches this response.';
+      error = ''; reviewing = false;
+      if (detailsElement) detailsElement.open = false;
+      void tick().then(() => detailsElement?.querySelector('summary')?.focus());
+      return;
+    }
+    draft = candidate;
     if (detailsElement) detailsElement.open = true;
     reviewing = true;
     void tick().then(() => reviewElement?.focus());
@@ -187,11 +195,9 @@
       <!-- svelte-ignore a11y_no_redundant_roles -->
       <table role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Field</th><th scope="col" role="columnheader">Before</th><th scope="col" role="columnheader">After</th></tr></thead><tbody role="rowgroup">
       {#each changed as [field, label]}{@render comparisonRow(label, baseline[field], reviewed[field])}{/each}
-      {#if !changed.some(([field]) => field === 'status')}{@render comparisonRow('Status · preserved', baseline.status, reviewed.status)}{/if}
-      {#if !changed.some(([field]) => field === 'blocker')}{@render comparisonRow('Blocker · preserved', baseline.blocker, baseline.blocker)}{/if}
-      {#if pack.blockedBy}{@render comparisonRow('Dependency · preserved', dependencyTitle || 'Linked task is unavailable', dependencyTitle || 'Linked task is unavailable')}{/if}
       </tbody></table>
-      <p>Apply saves these changes to this browser.</p>
+      <p>Other task details stay the same. Apply saves these changes to this browser.</p>
+      {#if pack.blockedBy}<p>Linked dependency stays: {dependencyTitle || 'Linked task is unavailable'}.</p>{/if}
     </div>
   {/if}
   <div class="task-editor-actions">
@@ -201,7 +207,7 @@
   {:else}
     <WornButton type="button" variant="primary" disabled={disabled || saving || !dirty || stale} onclick={review}>Review changes</WornButton>
   {/if}
-  <WornButton type="button" disabled={saving || !dirty} onclick={discard}>Discard edits</WornButton>
+  <WornButton type="button" disabled={saving || (!dirty && !reviewing)} onclick={discard}>Discard edits</WornButton>
   </div>
   </div>
 </details>

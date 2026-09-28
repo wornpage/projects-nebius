@@ -26,6 +26,26 @@ and [track design](NEBIUS_TRACK_DESIGN.md).
 
 ## Local verification
 
+### Demo presentation — September 28, 2026
+
+Unchanged model suggestions now show a no-change message and an Add an update
+action. They do not open an empty task review. Comparison tables show changed
+fields only, with a short preservation note. A review can be discarded even
+when its normalized fields are unchanged.
+
+Build tool now names Nebius Sandbox and presents its Build, Check and Review
+workflow as **Preview only — execution disabled** when unavailable. The hosted
+keyboard path opened its explanation; no run was started or inferred. The
+preview describes an example release checklist without presenting a generated
+artifact or successful Sandbox result.
+
+Svelte checks completed with zero errors and warnings; the production frontend
+build and whitespace check completed. No test suite or new model call was run,
+and the no-change model path still needs observation on a future live response.
+Worker version: `b0bacb0a-881c-4695-aed0-d2337124a282`. Projects Acceptance again
+reported UNAUTHORIZED and requires reconnection; no acceptance receipt exists
+for this change.
+
 ### Hosted inference repair — September 28, 2026
 
 The original connection failures were caused by `redirect: 'error'`, which the

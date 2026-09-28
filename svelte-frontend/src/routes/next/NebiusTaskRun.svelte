@@ -55,7 +55,7 @@
 	let resumeDisabled = $derived(requestBusy || disabled || configState !== 'available' || !reference || Boolean(record) || !executionRunMatchesCurrentTask(pack, reference));
 	let statusLabel = $derived(record
 		? record.status.charAt(0).toUpperCase() + record.status.slice(1)
-		: reference ? 'Uncertain' : 'Not started');
+		: reference ? 'Uncertain' : configState === 'unavailable' ? 'Preview only' : 'Not started');
 	let latestEvent = $derived(record?.events.at(-1)?.message || (reference && !record ? 'The start response is unknown. Refresh or explicitly resume this saved request.' : ''));
 	let runEvents = $derived((record?.events ?? []).slice().reverse().map(event => ({ date: event.at, title: event.message })));
 
@@ -245,18 +245,26 @@
 <section id="nebius-task-run" class="task-run" aria-labelledby="task-run-title" data-nebius-task-run>
 	<div class="task-run-head">
 		<div>
-			<p class="task-run-kicker">Nebius browser tool</p>
-			<h2 id="task-run-title">Run this task</h2>
+			<p class="task-run-kicker">Nebius Sandbox</p>
+			<h2 id="task-run-title">Build a tool</h2>
 		</div>
 		<WornBadge label={statusLabel} variant={record?.status === 'ready' ? 'accent' : record?.status === 'failed' || record?.status === 'uncertain' ? 'warn' : undefined} />
 	</div>
-	<p class="task-run-scope">Turn this task into a small browser tool. Nebius writes the files, checks them in a sandbox, and returns the result for your review.</p>
+	<p class="task-run-scope">{configState === 'available' ? 'Turn this task into a small browser tool. Nemotron generates the files, Nebius Sandbox runs the checks, and you review the result.' : 'Preview how this task can become a browser tool: generate files with Nemotron, run checks in Nebius Sandbox, then review the result.'}</p>
 	<ol class="task-run-stages" aria-label="How a task run works">
 		<li><span aria-hidden="true">1</span><div><strong>Build</strong><small>Generate the tool files</small></div></li>
 		<li><span aria-hidden="true">2</span><div><strong>Check</strong><small>Run checks, with one repair</small></div></li>
 		<li><span aria-hidden="true">3</span><div><strong>Review</strong><small>Preview and decide what to keep</small></div></li>
 	</ol>
 	<p class="task-run-muted">Checks are written by the model. You decide whether to save evidence or mark the task done.</p>
+	{#if configState === 'unavailable' && !reference}
+		<p class="task-run-muted"><strong>Preview only — execution disabled.</strong> No tool or Sandbox result has been generated for this task.</p>
+		<details class="task-run-input">
+			<summary>What Sandbox will do</summary>
+			<p>Run the generated tool's Node checks in an isolated Nebius Sandbox. If a check fails, the workflow allows one repair and another check. Return the files and recorded check output for your review.</p>
+			<p>Example use: build a release checklist that flags missing health, reviewer and rollback evidence. This is a proposed use, not an executed result.</p>
+		</details>
+	{/if}
 
 	{#if configState === 'loading'}
 		<p class="task-run-muted" role="status">Checking whether task execution is configured…</p>
@@ -275,7 +283,7 @@
 	<details class="task-run-input">
 		<summary>Input and limits</summary>
 		<p>Selected context: none. The task details shown below are the only task context authorized for this run.</p>
-		{#if inputPreview}<pre>{JSON.stringify(inputPreview, null, 2)}</pre>{:else}<p class="task-run-muted">Complete the task requirements to prepare an exact payload.</p>{/if}
+		{#if inputPreview}<pre>{JSON.stringify(inputPreview, null, 2)}</pre>{:else if configState === 'unavailable'}<p class="task-run-muted">The exact model, payload and run limits will appear when execution is enabled.</p>{:else}<p class="task-run-muted">Complete the task requirements to prepare an exact payload.</p>{/if}
 	</details>
 
 	{#if eligibilityError}<p class="task-run-blocked" role="status">{eligibilityError}</p>{/if}
