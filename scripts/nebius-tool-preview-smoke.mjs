@@ -94,6 +94,21 @@ try {
   const executablePath = process.env.CHROME_EXECUTABLE_PATH;
   assert.ok(executablePath, 'Set CHROME_EXECUTABLE_PATH to an existing Chromium executable; this test never downloads a browser.');
   const preview = await renderRunPreview(files);
+  let bridgePreview;
+  if (!selected) {
+    // A deliberately slow authored handler proves event ordering in the real
+    // renderer. This is never inserted into a retained RunRecord or model file.
+    const bridgeFiles = authoredCheckerFiles();
+    bridgeFiles[1].content = bridgeFiles[1].content.replace('function handleMessage(message) {', `function handleMessage(message) {
+  if (message.type === 'event' && message.event === 'click') {
+    const start = Date.now();
+    while (Date.now() - start < 1000) {}
+  }`);
+    const materialized = await materializeAuthoredChecker(bridgeFiles);
+    bridgePreview = await renderRunPreview(materialized);
+    report.bridgeFixture = { kind: 'authored-slow-handler', delayMilliseconds: 1000, sourceDigest: await runFilesDigest(materialized), expectedChecks: 6 };
+    await writeFile(path.join(output, 'bridge-files.json'), JSON.stringify(materialized, null, 2) + '\n');
+  }
   assert.match(preview.csp, /connect-src 'none'/u);
   assert.match(preview.csp, /sandbox allow-scripts/u);
   assert.doesNotMatch(preview.csp, /allow-same-origin/u);
@@ -107,6 +122,7 @@ try {
   const wrapper = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Preview qualification host</title></head><body>
 <h1>Offline preview qualification</h1><p>${label}. Strict oracle; not independent project acceptance.</p>
 <form method="post" action="/fixture-preview" target="fixture"><button id="open-preview" type="submit">Open preview</button></form>
+${bridgePreview ? '<form method="post" action="/bridge-preview" target="fixture"><button id="open-bridge-preview" type="submit">Open authored event-order probe</button></form>' : ''}
 <iframe id="fixture" name="fixture" title="Checker qualification preview" src="about:blank" sandbox="allow-scripts" style="width:100%;height:700px;border:0"></iframe>
 <output id="preview-status"></output>
 <script>
@@ -127,6 +143,8 @@ addEventListener('message', event => {
       response.writeHead(200, headers); response.end(wrapper);
     } else if (request.url === '/fixture-preview' && request.method === 'POST') {
       response.writeHead(200, { ...headers, 'content-security-policy': preview.csp }); response.end(preview.html);
+    } else if (request.url === '/bridge-preview' && request.method === 'POST' && bridgePreview) {
+      response.writeHead(200, { ...headers, 'content-security-policy': bridgePreview.csp }); response.end(bridgePreview.html);
     } else {
       response.writeHead(404, { 'cache-control': 'no-store' }); response.end();
     }
@@ -153,18 +171,19 @@ addEventListener('message', event => {
         window.qualificationEvents = [];
         for (const name of ['click', 'input', 'change', 'submit']) document.addEventListener(name, event => {
           const element = event.target instanceof Element ? event.target.closest('[id]') : null;
-          if (element && window.qualificationEvents.length < 2000) window.qualificationEvents.push({ event: name, id: element.id });
+          if (element && window.qualificationEvents.length < 2000) window.qualificationEvents.push({ event: name, id: element.id,
+            accepted: Array.from(document.body.querySelectorAll('[id]')).slice(0, 200).includes(element) });
         }, true);
       });
 
-      const openTool = async () => {
+      const openTool = async (bridgeProbe = false) => {
         const page = await context.newPage();
         page.on('pageerror', error => pageErrors.push(error.message));
         page.setDefaultTimeout(4000);
         await page.goto(origin);
-        await page.locator('#open-preview').click();
+        await page.locator(bridgeProbe ? '#open-bridge-preview' : '#open-preview').click();
         await page.waitForFunction(() => document.getElementById('preview-status').textContent === 'ready');
-        const frame = page.frames().find(item => item.url() === origin + '/fixture-preview');
+        const frame = page.frames().find(item => item.url() === origin + (bridgeProbe ? '/bridge-preview' : '/fixture-preview'));
         assert.ok(frame, 'The actual rendered preview must be in the sandboxed frame.');
         await page.locator('#fixture').scrollIntoViewIfNeeded();
         for (const id of Object.values(bindings)) assert.equal(await frame.locator('#' + id).count(), 1, 'A bound ID must identify exactly one sanitized element.');
@@ -184,11 +203,11 @@ addEventListener('message', event => {
           const count = await frame.evaluate(() => window.qualificationEvents.length);
           await perform();
           const events = await frame.evaluate(previous => window.qualificationEvents.slice(previous), count);
-          const relevant = events.filter(event => Object.values(bindings).includes(event.id));
-          // One action can emit click and submit; the existing busy bridge may
-          // accept only one. A DOM event is not a one-to-one reply contract.
-          if (relevant.length) await page.waitForFunction(expected => window.fixtureMessages.length > expected, before);
-          // ready precedes patches; observe a subsequent rendered DOM turn.
+          const relevant = events.filter(event => event.accepted);
+          // The ordered bridge accepts every mapped event, including both
+          // click and submit. Wait for the complete action before the next one.
+          if (relevant.length) await page.waitForFunction(expected => window.fixtureMessages.length >= expected, before + relevant.length);
+          // ready follows patches; also observe a subsequent rendered DOM turn.
           await frame.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
           assert.notEqual(await page.locator('#preview-status').textContent(), 'failed');
         };
@@ -244,6 +263,50 @@ addEventListener('message', event => {
         });
       } finally { await interaction.page.close(); }
 
+      if (bridgePreview) {
+        for (const scenario of ['check then edit', 'two example loaders', 'example loader then edit']) {
+          const detail = { width, category: 'bridge', case: scenario, fixtureKind: 'authored-slow-handler', actualInput: null, actualOutput: null, replies: null, nativeEvents: null };
+          let tool;
+          let before = 0, eventCount = 0;
+          await observe('busy bridge: ' + scenario, detail, async () => {
+            tool = await openTool(true);
+            try {
+              if (scenario === 'check then edit') {
+                await tool.fill(CORRECTED);
+                assert.equal(await tool.check(), READY);
+              }
+              before = await tool.page.evaluate(() => window.fixtureMessages.length);
+              eventCount = await tool.frame.evaluate(() => window.qualificationEvents.length);
+              if (scenario === 'check then edit') {
+                await tool.control('check').focus();
+                await tool.page.keyboard.press('Enter');
+                await tool.control('input').fill('{');
+              } else if (scenario === 'two example loaders') {
+                await tool.control('incomplete').focus();
+                await tool.page.keyboard.press('Enter');
+                await tool.control('corrected').focus();
+                await tool.page.keyboard.press('Space');
+              } else {
+                await tool.control('corrected').focus();
+                await tool.page.keyboard.press('Space');
+                await tool.control('input').fill('{');
+              }
+              const expected = scenario === 'two example loaders' ? READY : 'Input changed. Check packet again.';
+              await tool.frame.waitForFunction(({ id, expected }) => document.getElementById(id).textContent === expected, { id: bindings.output, expected });
+              if (scenario === 'two example loaders') assert.deepEqual(JSON.parse(await tool.control('input').inputValue()), JSON.parse(CORRECTED));
+              else assert.equal(await tool.control('input').inputValue(), '{', 'A late reply must not overwrite newer user input.');
+              assert.notEqual(await tool.page.locator('#preview-status').textContent(), 'failed');
+            } finally {
+              detail.actualInput = await tool.control('input').inputValue();
+              detail.actualOutput = await tool.text();
+              detail.replies = await tool.page.evaluate(count => window.fixtureMessages.length - count, before);
+              detail.nativeEvents = await tool.frame.evaluate(count => window.qualificationEvents.slice(count), eventCount);
+            }
+          });
+          await tool?.page.close();
+        }
+      }
+
       for (const scenario of PACKET_CASES) {
         const detail = { width, category: 'packet', case: scenario.name, expected: scenario.invalid ? 'Input error: ... without readiness' : scenario.expected, actual: null, observed: false };
         let tool;
@@ -279,6 +342,10 @@ addEventListener('message', event => {
   if (server?.listening) await new Promise(resolve => server.close(resolve));
   const packets = report.checks.filter(check => check.category === 'packet');
   report.packetSummary = { expected: report.expectedPacketChecks, recorded: packets.length, observed: packets.filter(check => check.observed).length, passed: packets.filter(check => check.passed).length, failed: packets.filter(check => !check.passed).length };
+  if (report.bridgeFixture) {
+    const probes = report.checks.filter(check => check.category === 'bridge');
+    report.bridgeSummary = { expected: report.bridgeFixture.expectedChecks, recorded: probes.length, passed: probes.filter(check => check.passed).length, failed: probes.filter(check => !check.passed).length };
+  }
   await mkdir(output, { recursive: true });
   await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));

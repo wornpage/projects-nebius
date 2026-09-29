@@ -275,6 +275,22 @@ options contain value/label pairs. These small tools use in-memory state and
 restart when the preview is reopened. Node checks cover generated logic;
 browser interactions and suitability still need live observation.
 
+The DOM bridge sends one request at a time and retains up to 32 pending native
+events in order, with field values captured when each event occurs. A reply
+computed before a newer input/change event is discarded so it cannot overwrite
+the user's newer fields or publish a result for old values. The event is still
+handled in the Worker, then the next captured request is sent. Each dispatched
+request keeps the existing five-second deadline. Overflow, timeout, invalid
+reply or script error stops the Worker, clears pending events and reports an
+explicit failure. Reopening is the only restart; there is no automatic retry.
+
+The provider-free authored preview verifier also uses a deliberately slow
+authored handler for three event-order scenarios at 375 px and 1280 px: Check
+followed by an edit, two example loaders, and a loader followed by an edit.
+These six bridge checks have their own denominator and source digest; they
+are separate from the unchanged 48 packet checks and never alter or stand in
+for retained model source.
+
 ### Saved-record compatibility
 
 Compatibility retained:

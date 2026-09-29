@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { FIXTURE_INPUT, authoredCheckerFiles, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
 import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from './fixtures/nebius-release-packet-cases.mjs';
 import { runFilesDigest, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { renderRunPreview } from '../worker/nebius-run-preview.mjs';
 
 const files = await materializeAuthoredChecker();
 const script = files.find(file => file.path === 'app.js').content;
@@ -178,4 +179,160 @@ test('retained preview rejects ambiguous or untrusted input before browser execu
       assert.equal(report.passed, false);
     });
   }
+});
+
+// Run only the trusted renderer bootstrap against a controlled DOM and Worker
+// stub. Blob bytes are retained as data and never executed in host Node/vm.
+// The real browser verifier separately runs the authored code in its Worker.
+async function domBridgeHarness() {
+  class Element {
+    constructor(id = '') { this.id = id; this.textContent = ''; }
+    closest() { return this; }
+    setAttribute() {}
+  }
+  class Input extends Element {}
+  class Textarea extends Element { value = ''; }
+  class Select extends Element {}
+  class Button extends Element {}
+  const elements = new Map([
+    ['packet', new Textarea('packet')], ['result', new Element('result')],
+    ['load-incomplete', new Button('load-incomplete')], ['load-corrected', new Button('load-corrected')],
+    ['check-packet', new Button('check-packet')], ['packet-form', new Element('packet-form')],
+  ]);
+  const listeners = new Map(), windowListeners = new Map(), timers = new Map();
+  const status = new Element(), messages = [], notifications = [];
+  let worker, timerId = 0;
+  class Worker {
+    terminated = 0;
+    constructor() { worker = this; }
+    postMessage(message) { messages.push(JSON.parse(JSON.stringify(message))); }
+    terminate() { this.terminated += 1; }
+  }
+  const rendered = await renderRunPreview(files);
+  const bootstrap = rendered.html.match(/<script>([\s\S]*)<\/script><\/body><\/html>$/u)?.[1];
+  assert.ok(bootstrap, 'The actual renderer must supply its fixed bootstrap.');
+  const context = createContext({
+    document: { body: { querySelectorAll: () => [...elements.values()], append: () => {},
+      addEventListener: (name, listener) => listeners.set(name, listener) }, createElement: () => status },
+    Element, HTMLInputElement: Input, HTMLTextAreaElement: Textarea, HTMLSelectElement: Select, HTMLButtonElement: Button,
+    window: {}, parent: { postMessage: data => notifications.push({ ...data, renderedOutput: elements.get('result').textContent }) },
+    atob: text => Buffer.from(text, 'base64').toString('binary'), Uint8Array,
+    Blob: class {}, URL: { createObjectURL: () => 'blob:authored-unused-by-stub', revokeObjectURL: () => {} }, Worker,
+    setTimeout: (callback, milliseconds) => { const id = ++timerId; timers.set(id, { callback, milliseconds }); return id; },
+    clearTimeout: id => timers.delete(id), addEventListener: (name, listener) => windowListeners.set(name, listener),
+  });
+  runInContext(bootstrap, context, { timeout: 1000 });
+  return {
+    elements, worker, status, messages, notifications, timers,
+    emit(name, id, value) {
+      const target = elements.get(id); assert.ok(target);
+      if (value !== undefined) target.value = value;
+      listeners.get(name)({ target, preventDefault() {} });
+    },
+    reply(patches) { worker.onmessage({ data: { patches } }); },
+    expire() { assert.equal(timers.size, 1); const timer = [...timers.values()][0]; assert.equal(timer.milliseconds, 5000); timer.callback(); },
+    close() { windowListeners.get('pagehide')(); },
+  };
+}
+
+test('DOM bridge preserves ordered events and their captured input values while busy', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.emit('input', 'packet', 'first');
+  bridge.emit('input', 'packet', 'second');
+  bridge.emit('click', 'check-packet');
+  assert.equal(bridge.messages.length, 1);
+  bridge.reply([]);
+  assert.deepEqual(bridge.messages[1], { type: 'event', event: 'input', id: 'packet', values: { packet: 'first' } });
+  bridge.reply([{ id: 'result', text: 'stale first answer' }]);
+  assert.equal(bridge.elements.get('result').textContent, '');
+  assert.equal(bridge.messages[2].values.packet, 'second');
+  bridge.reply([{ id: 'result', text: 'Input changed' }]);
+  assert.equal(bridge.messages[3].id, 'check-packet');
+  assert.equal(bridge.messages[3].values.packet, 'second');
+  bridge.reply([{ id: 'result', text: 'checked second' }]);
+  assert.equal(bridge.elements.get('result').textContent, 'checked second');
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge delivers both queued example actions instead of dropping the second', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([]);
+  bridge.emit('click', 'load-incomplete'); bridge.emit('click', 'load-corrected');
+  bridge.reply([{ id: 'packet', value: INCOMPLETE }, { id: 'result', text: THREE_GAPS }]);
+  assert.equal(bridge.messages[2].id, 'load-corrected');
+  bridge.reply([{ id: 'packet', value: CORRECTED }, { id: 'result', text: READY }]);
+  assert.equal(bridge.elements.get('packet').value, CORRECTED);
+  assert.equal(bridge.elements.get('result').textContent, READY);
+});
+
+test('DOM bridge discards stale value and answer patches after a newer user edit', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([{ id: 'result', text: 'Initial result' }]);
+  bridge.emit('click', 'load-corrected'); bridge.emit('input', 'packet', '{');
+  bridge.reply([{ id: 'packet', value: CORRECTED }, { id: 'result', text: READY }]);
+  assert.equal(bridge.elements.get('packet').value, '{');
+  assert.equal(bridge.elements.get('result').textContent, 'Initial result');
+  bridge.reply([{ id: 'result', text: 'Input changed' }]);
+  assert.equal(bridge.elements.get('result').textContent, 'Input changed');
+});
+
+test('DOM bridge handles click and submit as separate ordered native events', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([]);
+  bridge.emit('click', 'check-packet'); bridge.emit('submit', 'packet-form');
+  bridge.reply([{ id: 'result', text: 'checked' }]);
+  assert.equal(bridge.messages[2].event, 'submit');
+  assert.equal(bridge.messages[2].id, 'packet-form');
+  bridge.reply([]);
+  assert.equal(bridge.elements.get('result').textContent, 'checked');
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge stops explicitly at 33 pending events instead of silently losing them', async () => {
+  const bridge = await domBridgeHarness();
+  for (let index = 0; index < 32; index += 1) bridge.emit('click', 'check-packet');
+  assert.equal(bridge.worker.terminated, 0);
+  bridge.emit('click', 'check-packet');
+  assert.equal(bridge.worker.terminated, 1);
+  assert.match(bridge.status.textContent, /Too many tool interactions/u);
+  bridge.reply([]); bridge.emit('click', 'check-packet');
+  assert.equal(bridge.messages.length, 1);
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge deadline terminates the Worker and prevents queued dispatch or retry', async () => {
+  const bridge = await domBridgeHarness(); bridge.emit('input', 'packet', 'new'); bridge.expire();
+  assert.equal(bridge.worker.terminated, 1);
+  assert.match(bridge.status.textContent, /stopped responding/u);
+  bridge.reply([]); bridge.emit('click', 'check-packet');
+  assert.equal(bridge.messages.length, 1);
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge rejects an invalid stale reply before it can dispatch pending events', async () => {
+  const bridge = await domBridgeHarness(); bridge.emit('input', 'packet', 'new');
+  bridge.reply(Array.from({ length: 101 }, () => ({ id: 'result', text: 'too many patches' })));
+  assert.equal(bridge.worker.terminated, 1);
+  assert.match(bridge.status.textContent, /unsupported update/u);
+  assert.equal(bridge.messages.length, 1);
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge script errors and page close stop pending work exactly once', async () => {
+  for (const reason of ['error', 'close']) {
+    const bridge = await domBridgeHarness(); bridge.emit('click', 'check-packet');
+    if (reason === 'error') bridge.worker.onerror({ preventDefault() {} }); else bridge.close();
+    bridge.close(); bridge.reply([]); bridge.emit('click', 'check-packet');
+    assert.equal(bridge.worker.terminated, 1);
+    assert.equal(bridge.messages.length, 1);
+    assert.equal(bridge.timers.size, 0);
+    assert.equal(bridge.notifications.filter(item => item.status === 'failed').length, 1);
+  }
+});
+
+test('DOM bridge reports ready after patches and ignores unsolicited idle replies', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([{ id: 'result', text: 'Initialized' }]);
+  assert.equal(bridge.notifications.at(-1).renderedOutput, 'Initialized');
+  bridge.reply([{ id: 'result', text: 'unsolicited' }]);
+  assert.equal(bridge.elements.get('result').textContent, 'Initialized');
+  bridge.emit('click', 'check-packet');
+  bridge.reply([{ id: 'result', text: 'Checked' }]);
+  assert.equal(bridge.notifications.at(-1).renderedOutput, 'Checked');
 });
