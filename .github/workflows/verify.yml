@@ -28,3 +28,24 @@ jobs:
           echo "CHROME_EXECUTABLE_PATH=$chrome" >> "$GITHUB_ENV"
       - run: npm run verify
       - run: npm run test:browser
+
+  verify-nebius:
+    name: Nebius provider-free verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm --prefix svelte-frontend ci --ignore-scripts --no-audit --no-fund
+      # Local tests, build, Worker dry run and inference-disabled runtime probe.
+      # No provider credentials or deployment; this does not prove model quality.
+      - name: Verify the Nebius edition
+        run: npm run verify:nebius
