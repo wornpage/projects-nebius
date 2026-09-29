@@ -73,7 +73,10 @@ addEventListener('message', event => {
   report.browser = browser.version();
 
   for (const width of [375, 1280]) {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
+    // Playwright's serviceWorkers:'block' injects a navigator.serviceWorker
+    // getter into every frame. That getter throws in the intentionally opaque
+    // sandbox and creates a test-driver page error. Probe this boundary below.
+    const context = await browser.newContext({ viewport: { width, height: 900 } });
     try {
       const externalRequests = [], pageErrors = [];
       await context.route('**/*', route => {
@@ -101,6 +104,12 @@ addEventListener('message', event => {
       assert.doesNotMatch(await text(), /Ready for human review/u);
       assert.equal(await frame.evaluate(() => { try { return parent.document.title; } catch { return 'blocked'; } }), 'blocked');
       record('opaque-origin worker handshake and parent DOM isolation', { width });
+      assert.equal(await frame.evaluate(() => {
+        try { void navigator.serviceWorker; return 'available'; }
+        catch (error) { return error.name; }
+      }), 'SecurityError');
+      assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
+      record('opaque preview denies service worker access and the fresh host has no registrations', { width });
 
       // Keyboard navigation, rather than programmatic clicks, drives these controls.
       await frame.locator('#packet').focus();
