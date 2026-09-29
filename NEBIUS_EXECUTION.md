@@ -91,9 +91,18 @@ a CommonJS export for checks.cjs and a worker message handler. index.html is
 an inert UI template with optional local styles. No packages, remote resources or
 user-supplied commands.
 
-The model supplies each file as a `path` and an array of physical source lines.
-For app.js it defines top-level `validate` and `handleMessage` functions and
-their helpers. The server joins those lines and appends one fixed runtime
+Generation uses ordinary chat text output, without a JSON `response_format`.
+The model supplies three native source-code blocks labelled `html index.html`,
+`javascript app.js`, and `javascript checks.cjs`. Each label follows three
+backticks at the start of a line. Each block ends with three backticks on their
+own line. The parser rejects prose outside
+the blocks, duplicate/unknown paths, nested/unterminated fences and missing
+files. It normalizes CRLF to LF, preserves code indentation and escaping, and
+applies the existing 2–1,024-line and 1,024-character-per-line limits. The prior
+JSON source-line envelope is no longer accepted; there is one provider format.
+
+For app.js the model defines top-level `validate` and `handleMessage` functions
+and their helpers. The server appends one fixed runtime
 bridge that checks both functions, handles Worker messages, verifies that a
 reply is a patch array, and exports validate for Node checks. The model must
 not define messaging or export plumbing. Its raw logic cannot reference the
@@ -105,10 +114,20 @@ Saved app.js is therefore generated logic plus the server bridge. Existing
 per-file and total byte limits apply after the bridge is appended. Source
 digests, Sandbox checks, downloads and preview all use those same materialized
 files. Repair removes and verifies only that exact suffix before sending the
-logic back to the model; a fresh suffix is appended to its replacement. Original
+logic back as native fenced code, with the task and diagnostic fields in
+separate JSON-labelled sections. The response may replace one to three named
+files; omitted files remain byte-for-byte unchanged. All merged files pass the
+same validation and receive exactly one runtime bridge. Original
 logic line numbers are preserved. The server never runs generated source while
 decoding or materializing it. Missing required functions fail when the Sandbox
 loads app.js and can use the existing single repair.
+
+Native code blocks remove the need for the model to JSON-escape every source
+line. This is a coding-format choice, not proof that structured JSON caused the
+previous syntax failures or that the new output will pass. Real Sandbox checks
+and interactive preview results remain required. The request retains the
+configured NVIDIA model, full reasoning, existing sampling settings and the
+8,000-output-token ceiling; it makes no extra inference call.
 
 Checks record the observed provider operation ID, resulting checkpoint ID if
 available, exit code, bounded stdout/stderr, attempt and source digest. These

@@ -17,23 +17,25 @@ const fixture = () => [
   ]},
 ];
 
+function fileBlocks(files) {
+  return files.map(file => '```' + (file.path === 'index.html' ? 'html' : 'javascript') + ' ' + file.path + '\n' + file.lines.join('\n') + '\n```').join('\n\n');
+}
+
 function mockedProvider(files, inspect = () => {}) {
   return async (url, options) => {
     assert.equal(url, 'https://api.tokenfactory.nebius.com/v1/chat/completions');
     inspect(JSON.parse(options.body));
     return Response.json({model,usage:{prompt_tokens:10,completion_tokens:20},choices:[{
-      finish_reason:'stop',message:{role:'assistant',content:JSON.stringify({files})},
+      finish_reason:'stop',message:{role:'assistant',content:typeof files==='string'?files:fileBlocks(files)},
     }]});
   };
 }
 const generate = (files, inspect, repair = null) => generateRunFiles({apiKey:'synthetic-key',model},{},repair,{fetcher:mockedProvider(files,inspect)});
 
-test('source line arrays become materialized files with one server runtime bridge', async () => {
+test('native file blocks become materialized files with one server runtime bridge', async () => {
   const files = fixture();
   const result = await generate(files, request => {
-    const schema = request.response_format.json_schema;
-    assert.equal(schema.strict, true);
-    assert.deepEqual(schema.schema.properties.files.items.required, ['path','lines']);
+    assert.equal(Object.hasOwn(request,'response_format'),false);
     assert.equal(request.max_tokens, 8000);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
@@ -50,9 +52,9 @@ test('source line arrays become materialized files with one server runtime bridg
 });
 
 for (const [name, mutate] of [
-  ['legacy content envelope', files => { files[2]={path:'checks.cjs',content:files[2].lines.join('\n')}; }],
   ['one packed line', files => { files[2].lines=[files[2].lines.join(' ')]; }],
-  ['embedded newline', files => { files[2].lines[0]+='\n'; }],
+  ['bare carriage return', files => { files[2].lines[0]+='\rx'; }],
+  ['Unicode line separator', files => { files[2].lines[0]+='\u2028'; }],
   ['oversized line', files => { files[2].lines[0]='x'.repeat(1025); }],
   ['oversized Unicode line', files => { files[0].lines[1]=String.fromCodePoint(0x1f680).repeat(1025); }],
   ['too many lines', files => { files[2].lines=Array(1025).fill(''); }],
@@ -65,7 +67,7 @@ for (const [name, mutate] of [
   });
 }
 
-test('Unicode line limit counts code points like JSON Schema', async () => {
+test('Unicode line limit counts code points', async () => {
   const files=fixture();
   files[0].lines[1]=String.fromCodePoint(0x1f680).repeat(1024);
   const result=await generate(files);
@@ -86,9 +88,10 @@ test('repair preserves the maximum line count and canonical content exactly', as
   files[1].lines=[...files[1].lines,...Array(1022).fill('')];
   const generated=await generate(files);
   const repaired=await generate(files, request => {
-    const state=JSON.parse(request.messages[1].content);
-    assert.deepEqual(state.previousFiles, files);
-    assert.equal(state.observedCheck.exitCode,1);
+    const prompt=request.messages[1].content;
+    assert.ok(prompt.includes(fileBlocks(files)));
+    assert.match(prompt, /"exitCode": 1/u);
+    assert.equal(prompt.includes('self.onmessage'),false);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
     assert.equal(request.max_tokens,8000);
   }, {files:generated.files,check:{exitCode:1,stderr:'A controlled check failed.'}});
@@ -160,4 +163,65 @@ test('repair refuses source without its exact bridge before requesting inference
   let called=false;
   await assert.rejects(generate(files,()=>{called=true;},{files:generated.files,check:{exitCode:1,stderr:'Controlled failure'}}),error=>error.code==='invalid_run_source');
   assert.equal(called,false);
+});
+
+for (const [name, output] of [
+  ['legacy JSON source lines',()=>JSON.stringify({files:fixture()})],
+  ['legacy JSON content',()=>JSON.stringify({files:fixture().map(file=>({path:file.path,content:file.lines.join('\n')}))})],
+  ['missing initial file',()=>fileBlocks(fixture().slice(0,2))],
+  ['unknown path',()=>fileBlocks([...fixture(),{path:'extra.js',lines:['// extra','// file']}])],
+  ['traversal path',()=>fileBlocks([{path:'../app.js',lines:['// extra','// file']},...fixture()])],
+  ['duplicate file',()=>fileBlocks([...fixture(),fixture()[0]])],
+  ['leading prose',()=> 'Here are your files:\n'+fileBlocks(fixture())],
+  ['trailing prose',()=>fileBlocks(fixture())+'\nAll tests pass.'],
+  ['unterminated block',()=>fileBlocks(fixture()).slice(0,-3)],
+  ['nested fence',()=>fileBlocks(fixture()).replace('<!doctype html>','```javascript extra.js')],
+  ['empty file',()=>fileBlocks([{path:'index.html',lines:[]},...fixture().slice(1)])],
+  ['wrong language',()=>fileBlocks(fixture()).replace('```javascript app.js','```python app.js')],
+]) {
+  test(`native file parser rejects ${name}`,async()=>{
+    await assert.rejects(generate(output()),error=>error.code==='invalid_model_output'&&error.stage==='tool_files'&&error.usage.outputTokens===20);
+  });
+}
+
+test('native files preserve JavaScript escaping, indentation and trailing blank lines',async()=>{
+  const files=fixture();
+  files[1].lines.push('const quoted = "a\\nb\\\"c";','  // preserve indentation','');
+  const generated=await generate(files);
+  assert.ok(generated.files[1].content.startsWith(files[1].lines.join('\n')+'\n;\n'));
+  const context={module:{exports:{}}};
+  runInNewContext(generated.files[1].content,context,{timeout:1000});
+  assert.equal(context.module.exports.validate('ok'),'ok');
+});
+
+test('CRLF file blocks normalize to LF without trimming source',async()=>{
+  const files=fixture();files[0].lines.push('');
+  const generated=await generate(fileBlocks(files).replace(/\n/g,'\r\n'));
+  assert.equal(generated.files[0].content,files[0].lines.join('\n'));
+});
+
+test('repair replaces only named files and preserves other source exactly',async()=>{
+  const original=await generate(fixture());
+  const changed=fixture()[1];
+  changed.lines[0]='function validate(value) { return value.trim(); }';
+  const repaired=await generate([changed],request=>{
+    assert.equal(Object.hasOwn(request,'response_format'),false);
+    assert.match(request.messages[0].content,/Omitted files remain byte-for-byte unchanged/u);
+    assert.ok(request.messages[1].content.includes(fileBlocks(fixture())));
+  },{files:original.files,check:{exitCode:1,stderr:'Controlled fixture error'}});
+  assert.deepEqual(repaired.files[0],original.files[0]);
+  assert.deepEqual(repaired.files[2],original.files[2]);
+  assert.ok(repaired.files[1].content.startsWith(changed.lines.join('\n')+'\n;\n'));
+  assert.equal(repaired.files[1].content.match(/self\.onmessage/g)?.length,1);
+});
+
+test('repair refuses an empty replacement without masking the failed check',async()=>{
+  const original=await generate(fixture());
+  await assert.rejects(generate('',undefined,{files:original.files,check:{exitCode:1,stderr:'Controlled failure'}}),error=>error.code==='invalid_model_output'&&error.stage==='tool_files');
+});
+
+test('changed repair files still pass ownership validation',async()=>{
+  const original=await generate(fixture());
+  const changed=fixture()[1];changed.lines.push('// self');
+  await assert.rejects(generate([changed],undefined,{files:original.files,check:{exitCode:1,stderr:'Controlled failure'}}),error=>error.code==='invalid_model_output'&&error.stage==='tool_worker');
 });
