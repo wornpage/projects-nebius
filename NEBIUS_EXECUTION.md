@@ -59,6 +59,12 @@ The source of limits and validation is `nebius-execution-contract.mjs`.
 - Successful start/read/cancel returns `{ run: RunRecord }` with no access key.
   Errors use `{ code, error }`; responses are private/no-store.
 
+Nebius host pages use `Referrer-Policy: same-origin` so native preview form
+POSTs retain their app Origin header. Cross-origin referrers are withheld. The
+API still rejects null or foreign origins and requires the exact run key.
+Generated preview responses retain their own `no-referrer` policy and opaque
+sandbox. The WebMCP build retains its original host-page policy.
+
 JSON run requests, including configuration, send
 `X-Nebius-Run-Format: run-diagnostics.v1`. The shared browser client owns this
 header. An older or missing format is rejected with a clear page-reload message
