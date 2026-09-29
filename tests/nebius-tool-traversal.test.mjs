@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createContext, runInContext } from 'node:vm';
-import { authoredCheckerFiles, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { FIXTURE_INPUT, authoredCheckerFiles, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
 import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from './fixtures/nebius-release-packet-cases.mjs';
 import { runFilesDigest, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
@@ -113,4 +118,64 @@ test('a named-file repair preserves the page and checks and appends exactly one 
   assert.deepEqual(repaired[2], files[2]);
   assert.equal(repaired[1].content.match(/self\.onmessage/g)?.length, 1);
   for (const scenario of PACKET_CASES) assertPacketResult(assert, loadAuthoredModule(repaired[1].content)(scenario.input), scenario);
+});
+
+test('retained preview rejects ambiguous or untrusted input before browser execution', async t => {
+  // Synthetic record for rejection tests only, not evidence of a provider run.
+  const { consent, ...snapshot } = FIXTURE_INPUT;
+  const sourceDigest = await runFilesDigest(files);
+  const fixtureRecord = {
+    id: '00000000-0000-4000-8000-000000000001', ...snapshot,
+    status: 'ready', attempt: 1, createdAt: '2026-09-29T00:00:00.000Z', updatedAt: '2026-09-29T00:00:00.000Z',
+    events: [], files, checks: [{ attempt: 1, operationId: '00000000-0000-4000-8000-000000000002', checkpointId: null,
+      exitCode: 0, stdout: 'Synthetic authored test record, not a provider receipt.', stderr: '', sourceDigest }],
+    usage: { modelCalls: 1, inputTokens: 0, outputTokens: 0, totalsComplete: true }, error: null, failure: null,
+  };
+  const bindings = { input: 'packet', output: 'result', check: 'check-packet', incomplete: 'load-incomplete', corrected: 'load-corrected' };
+  const script = fileURLToPath(new URL('../scripts/nebius-tool-preview-smoke.mjs', import.meta.url));
+  for (const [name, mutation, expected] of [
+    ['partial options', (record, ids, paths) => ({ args: ['--run-record', paths.record] }), /Use --run-record PATH and --bindings PATH together/u],
+    ['unknown option', (record, ids, paths) => ({ args: ['--run-record', paths.record, '--unknown', paths.bindings] }), /Unknown or duplicate/u],
+    ['duplicate option', (record, ids, paths) => ({ args: ['--run-record', paths.record, '--run-record', paths.bindings] }), /Unknown or duplicate/u],
+    ['source digest mismatch', record => { record.files[1].content += '\n// Authored data mutation'; }, /do not match the source that was checked/u],
+    ['non-ready record', record => { record.status = 'failed'; }, /Only a retained ready RunRecord/u],
+    ['response envelope instead of raw record', record => ({ record: { run: record } }), /saved execution record is invalid/u],
+    ['extra binding key', (record, ids) => { ids.extra = 'unused'; }, /Expected values to be strictly deep-equal/u],
+    ['selector instead of ID', (record, ids) => { ids.input = '#packet'; }, /HTML IDs, not selectors or code/u],
+    ['duplicate control ID', (record, ids) => { ids.output = ids.input; }, /distinct ID/u],
+    ['oversized bindings', () => ({ bindingsText: ' '.repeat(4097) }), /exceeds its size limit/u],
+    ['oversized record', () => ({ recordText: ' '.repeat(1048577) }), /exceeds its size limit/u],
+    ['malformed JSON without echoing its contents', () => ({ recordText: 'SECRET_FROM_MISPLACED_FILE' }), /Qualification inputs must be valid JSON/u],
+  ]) {
+    await t.test(name, child => {
+      const parent = resolve(tmpdir());
+      const directory = mkdtempSync(join(parent, 'nebius-preview-arguments-'));
+      child.after(() => {
+        const target = resolve(directory);
+        assert.equal(dirname(target), parent);
+        assert.ok(basename(target).startsWith('nebius-preview-arguments-'));
+        rmSync(target, { recursive: true });
+      });
+      const paths = { record: join(directory, 'record.json'), bindings: join(directory, 'bindings.json') };
+      const record = structuredClone(fixtureRecord), ids = { ...bindings };
+      const changes = mutation(record, ids, paths) || {};
+      writeFileSync(paths.record, changes.recordText ?? JSON.stringify(changes.record ?? record));
+      writeFileSync(paths.bindings, changes.bindingsText ?? JSON.stringify(ids));
+      const evidence = join(directory, 'evidence');
+      const result = spawnSync(process.execPath, [script, ...(changes.args ?? ['--run-record', paths.record, '--bindings', paths.bindings])], {
+        encoding: 'utf8', timeout: 6000, maxBuffer: 8192, windowsHide: true,
+        env: { ...process.env, CHROME_EXECUTABLE_PATH: '', NEBIUS_PREVIEW_EVIDENCE_DIR: evidence },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 1, result.stdout);
+      assert.doesNotMatch(result.stdout, /SECRET_FROM_MISPLACED_FILE/u);
+      const report = JSON.parse(readFileSync(join(evidence, 'report.json'), 'utf8'));
+      assert.match(report.error.message, expected);
+      assert.equal(report.browser, null);
+      assert.equal(report.liveModelCalls, 0);
+      assert.equal(report.liveSandboxRuns, 0);
+      assert.equal(report.packetSummary.observed, 0);
+      assert.equal(report.passed, false);
+    });
+  }
 });

@@ -1,47 +1,113 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, open, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { authoredCheckerFiles, materializeAuthoredChecker } from '../tests/fixtures/nebius-release-checker.mjs';
 import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from '../tests/fixtures/nebius-release-packet-cases.mjs';
-import { runFilesDigest } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { runFilesDigest, validateRunIntegrity } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 const output = path.resolve(process.env.NEBIUS_PREVIEW_EVIDENCE_DIR || 'dist/nebius-tool-preview');
 const report = {
-  evidenceKind: 'authored-provider-free-fixture', node: process.version,
+  evidenceKind: 'authored-provider-free-fixture', oracle: 'frozen-strict-output', node: process.version,
   liveModelCalls: 0, liveSandboxRuns: 0, deployed: false,
+  scope: 'production renderer in a local test host, not authenticated app routes',
   renderer: 'worker/nebius-run-preview.mjs', sourceDigest: null, browser: null,
-  checks: [], passed: false,
+  expectedPacketChecks: PACKET_CASES.length * 2, checks: [], passed: false,
 };
 let server, browser;
 const record = (name, detail = {}) => report.checks.push({ name, passed: true, ...detail });
+const failure = error => error instanceof Error ? { name: error.name, message: error.message.slice(0, 800) } : { message: String(error).slice(0, 800) };
+const observe = async (name, detail, check) => {
+  try { await check(); record(name, detail); }
+  catch (error) { report.checks.push({ name, passed: false, ...detail, error: failure(error) }); }
+};
+
+function options(args) {
+  if (!args.length) return null;
+  assert.equal(args.length, 4, 'Use --run-record PATH and --bindings PATH together, or no arguments for the authored fixture.');
+  const values = new Map();
+  for (let index = 0; index < args.length; index += 2) {
+    const name = args[index], value = args[index + 1];
+    assert.ok(['--run-record', '--bindings'].includes(name) && !values.has(name), 'Unknown or duplicate qualification option.');
+    assert.ok(value && !value.startsWith('--'), 'Each qualification option requires a path.');
+    values.set(name, value);
+  }
+  assert.equal(values.size, 2);
+  return { record: values.get('--run-record'), bindings: values.get('--bindings') };
+}
+
+async function boundedJson(file, maximum) {
+  const handle = await open(file, 'r');
+  try {
+    const stat = await handle.stat();
+    assert.ok(stat.isFile(), 'Qualification inputs must be regular files.');
+    assert.ok(stat.size <= maximum, 'The qualification input file exceeds its size limit.');
+    const bytes = Buffer.alloc(maximum + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const result = await handle.read(bytes, length, bytes.length - length, length);
+      if (!result.bytesRead) break;
+      length += result.bytesRead;
+    }
+    assert.ok(length <= maximum, 'The qualification input file exceeds its size limit.');
+    try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, length))); }
+    catch { throw new TypeError('Qualification inputs must be valid JSON.'); }
+  } finally { await handle.close(); }
+}
+
+function controlBindings(value) {
+  assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'Bindings must be an object.');
+  assert.deepEqual(Object.keys(value).sort(), ['check', 'corrected', 'incomplete', 'input', 'output']);
+  assert.ok(Object.values(value).every(id => typeof id === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,199}$/u.test(id)), 'Bindings must contain HTML IDs, not selectors or code.');
+  assert.equal(new Set(Object.values(value)).size, 5, 'Each bound control needs a distinct ID.');
+  return value;
+}
 
 try {
   await mkdir(output, { recursive: true });
+  const selected = options(process.argv.slice(2));
+  let files, bindings, label, prefix;
+  if (selected) {
+    // Source is data only. Generated code executes in the production renderer's
+    // isolated browser Worker, never in host Node or a substitute handler.
+    const run = await validateRunIntegrity(await boundedJson(selected.record, 1048576));
+    assert.equal(run.status, 'ready', 'Only a retained ready RunRecord can be qualified.');
+    bindings = controlBindings(await boundedJson(selected.bindings, 4096));
+    files = run.files;
+    report.evidenceKind = 'retained-model-source';
+    report.recordAuthority = 'Caller-supplied RunRecord file; integrity checked, not authenticated by this harness.';
+    report.run = { id: run.id, requestedModel: run.requestedModel, updatedAt: run.updatedAt, recordedUsage: run.usage };
+    label = 'Retained model source; no new model or Sandbox call';
+    prefix = 'retained';
+  } else {
+    files = await materializeAuthoredChecker();
+    bindings = controlBindings({ input: 'packet', output: 'result', check: 'check-packet', incomplete: 'load-incomplete', corrected: 'load-corrected' });
+    label = 'Authored fixture, not model-generated output';
+    prefix = 'authored';
+  }
+  report.sourceDigest = await runFilesDigest(files);
+  await writeFile(path.join(output, prefix + '-files.json'), JSON.stringify(files, null, 2) + '\n');
+  if (!selected) await writeFile(path.join(output, 'authored-source.json'), JSON.stringify(authoredCheckerFiles(), null, 2) + '\n');
+
   const { renderRunPreview } = await import('../worker/nebius-run-preview.mjs');
   const { chromium } = await import('playwright-core');
   const executablePath = process.env.CHROME_EXECUTABLE_PATH;
   assert.ok(executablePath, 'Set CHROME_EXECUTABLE_PATH to an existing Chromium executable; this test never downloads a browser.');
-  const files = await materializeAuthoredChecker();
-  report.sourceDigest = await runFilesDigest(files);
-  await writeFile(path.join(output, 'authored-files.json'), JSON.stringify(files, null, 2) + '\n');
   const preview = await renderRunPreview(files);
   assert.match(preview.csp, /connect-src 'none'/u);
   assert.match(preview.csp, /sandbox allow-scripts/u);
   assert.doesNotMatch(preview.csp, /allow-same-origin/u);
   record('real preview renderer preserves the existing isolation policy');
-
-  // Add an event attribute only for a sanitizer probe, not to the normal fixture.
   const sanitizerFiles = structuredClone(files);
-  sanitizerFiles[0].content = sanitizerFiles[0].content.replace('id="check-packet"', 'id="check-packet" onclick="alert(1)"');
+  sanitizerFiles[0].content += '\n<button id="sanitizer-probe" onclick="alert(1)">probe</button>';
   const sanitized = await renderRunPreview(sanitizerFiles);
   assert.doesNotMatch(sanitized.html, /onclick=/u);
   record('real renderer removes a supplied inline event handler');
 
-  const wrapper = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Authored preview test host</title></head><body>
-<h1>Provider-free test host</h1><p>Authored fixture. Not a model run.</p>
-<form method="post" action="/fixture-preview" target="fixture"><button id="open-preview" type="submit">Open authored preview</button></form>
-<iframe id="fixture" name="fixture" title="Authored checker preview" src="about:blank" sandbox="allow-scripts" style="width:100%;height:700px;border:0"></iframe>
+  const wrapper = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Preview qualification host</title></head><body>
+<h1>Offline preview qualification</h1><p>${label}. Strict oracle; not independent project acceptance.</p>
+<form method="post" action="/fixture-preview" target="fixture"><button id="open-preview" type="submit">Open preview</button></form>
+<iframe id="fixture" name="fixture" title="Checker qualification preview" src="about:blank" sandbox="allow-scripts" style="width:100%;height:700px;border:0"></iframe>
 <output id="preview-status"></output>
 <script>
 window.fixtureMessages = [];
@@ -73,97 +139,146 @@ addEventListener('message', event => {
   report.browser = browser.version();
 
   for (const width of [375, 1280]) {
-    // Playwright's serviceWorkers:'block' injects a navigator.serviceWorker
-    // getter into every frame. That getter throws in the intentionally opaque
-    // sandbox and creates a test-driver page error. Probe this boundary below.
     const context = await browser.newContext({ viewport: { width, height: 900 } });
+    const externalRequests = [], pageErrors = [];
     try {
-      const externalRequests = [], pageErrors = [];
       await context.route('**/*', route => {
         const url = route.request().url();
         if (url.startsWith(origin + '/') || url.startsWith('blob:') || url === 'about:blank') return route.continue();
         externalRequests.push(url); return route.abort();
       });
-      const page = await context.newPage();
-      page.on('pageerror', error => pageErrors.push(error.message));
-      page.setDefaultTimeout(7000);
-      await page.goto(origin);
-      await page.locator('#open-preview').click();
-      await page.waitForFunction(() => document.getElementById('preview-status').textContent === 'ready');
-      const frame = page.frames().find(item => item.url() === origin + '/fixture-preview');
-      assert.ok(frame, 'The actual rendered preview must be in the sandboxed frame.');
-      const text = () => frame.locator('#result').textContent();
-      const waitText = expected => frame.waitForFunction(value => document.getElementById('result').textContent === value, expected);
-      const waitEdited = () => waitText('Input changed. Check packet again.');
-      const fillAndWait = async value => {
-        const previous = await page.evaluate(() => window.fixtureMessages.length);
-        await frame.locator('#packet').fill(value);
-        await page.waitForFunction(count => window.fixtureMessages.length > count, previous);
-        await waitEdited();
+      // Observe native UI events without changing source or the message bridge.
+      await context.addInitScript(() => {
+        if (window === top) return;
+        window.qualificationEvents = [];
+        for (const name of ['click', 'input', 'change', 'submit']) document.addEventListener(name, event => {
+          const element = event.target instanceof Element ? event.target.closest('[id]') : null;
+          if (element && window.qualificationEvents.length < 2000) window.qualificationEvents.push({ event: name, id: element.id });
+        }, true);
+      });
+
+      const openTool = async () => {
+        const page = await context.newPage();
+        page.on('pageerror', error => pageErrors.push(error.message));
+        page.setDefaultTimeout(4000);
+        await page.goto(origin);
+        await page.locator('#open-preview').click();
+        await page.waitForFunction(() => document.getElementById('preview-status').textContent === 'ready');
+        const frame = page.frames().find(item => item.url() === origin + '/fixture-preview');
+        assert.ok(frame, 'The actual rendered preview must be in the sandboxed frame.');
+        await page.locator('#fixture').scrollIntoViewIfNeeded();
+        for (const id of Object.values(bindings)) assert.equal(await frame.locator('#' + id).count(), 1, 'A bound ID must identify exactly one sanitized element.');
+        const roles = await frame.evaluate(ids => Object.fromEntries(Object.entries(ids).map(([name, id]) => {
+          const element = document.getElementById(id);
+          return [name, { tag: element.tagName, type: element.type, disabled: element.disabled, readOnly: element.readOnly, tabIndex: element.tabIndex }];
+        })), bindings);
+        assert.ok(roles.input.tag === 'TEXTAREA' || (roles.input.tag === 'INPUT' && roles.input.type === 'text'));
+        assert.ok(!roles.input.disabled && !roles.input.readOnly && roles.input.tabIndex >= 0);
+        assert.ok(['OUTPUT', 'PRE'].includes(roles.output.tag));
+        for (const name of ['check', 'incomplete', 'corrected']) assert.ok(!roles[name].disabled && roles[name].tabIndex >= 0 && (roles[name].tag === 'BUTTON' || (roles[name].tag === 'INPUT' && ['button', 'submit'].includes(roles[name].type))));
+        report.bindings = bindings;
+        const control = name => frame.locator('#' + bindings[name]);
+        const text = () => control('output').textContent();
+        const action = async perform => {
+          const before = await page.evaluate(() => window.fixtureMessages.length);
+          const count = await frame.evaluate(() => window.qualificationEvents.length);
+          await perform();
+          const events = await frame.evaluate(previous => window.qualificationEvents.slice(previous), count);
+          const relevant = events.filter(event => Object.values(bindings).includes(event.id));
+          // One action can emit click and submit; the existing busy bridge may
+          // accept only one. A DOM event is not a one-to-one reply contract.
+          if (relevant.length) await page.waitForFunction(expected => window.fixtureMessages.length > expected, before);
+          // ready precedes patches; observe a subsequent rendered DOM turn.
+          await frame.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          assert.notEqual(await page.locator('#preview-status').textContent(), 'failed');
+        };
+        const fill = async value => {
+          await action(() => control('input').fill(value));
+          assert.equal(await control('input').inputValue(), value);
+        };
+        const check = async () => {
+          await action(() => control('check').focus());
+          await action(() => page.keyboard.press('Enter'));
+          return text();
+        };
+        return { page, frame, control, text, action, fill, check };
       };
-      assert.doesNotMatch(await text(), /Ready for human review/u);
-      assert.equal(await frame.evaluate(() => { try { return parent.document.title; } catch { return 'blocked'; } }), 'blocked');
-      record('opaque-origin worker handshake and parent DOM isolation', { width });
-      assert.equal(await frame.evaluate(() => {
-        try { void navigator.serviceWorker; return 'available'; }
-        catch (error) { return error.name; }
-      }), 'SecurityError');
-      assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
-      record('opaque preview denies service worker access and the fresh host has no registrations', { width });
 
-      // Keyboard navigation, rather than programmatic clicks, drives these controls.
-      await frame.locator('#packet').focus();
-      await page.keyboard.press('Tab');
-      assert.equal(await frame.evaluate(() => document.activeElement.id), 'load-incomplete');
-      await page.keyboard.press('Enter'); await waitText(THREE_GAPS);
-      assert.deepEqual(JSON.parse(await frame.locator('#packet').inputValue()), JSON.parse(INCOMPLETE));
-      await page.keyboard.press('Tab');
-      assert.equal(await frame.evaluate(() => document.activeElement.id), 'load-corrected');
-      await page.keyboard.press('Space'); await waitText(READY);
-      assert.deepEqual(JSON.parse(await frame.locator('#packet').inputValue()), JSON.parse(CORRECTED));
-      record('both example loaders set input values and correct outputs by keyboard', { width });
+      const interaction = await openTool();
+      try {
+        assert.doesNotMatch(await interaction.text(), /Ready for human review/u);
+        assert.equal(await interaction.frame.evaluate(() => { try { return parent.document.title; } catch { return 'blocked'; } }), 'blocked');
+        record('opaque-origin worker handshake and parent DOM isolation', { width });
+        assert.equal(await interaction.frame.evaluate(() => {
+          try { void navigator.serviceWorker; return 'available'; } catch (error) { return error.name; }
+        }), 'SecurityError');
+        assert.equal(await interaction.page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
+        record('opaque preview denies service worker access and the fresh host has no registrations', { width });
 
-      await fillAndWait('{');
-      assert.doesNotMatch(await text(), /Ready for human review|0 gaps/u);
-      await frame.locator('#check-packet').focus(); await page.keyboard.press('Enter');
-      await frame.waitForFunction(() => document.getElementById('result').textContent.startsWith('Input error:'));
-      assert.doesNotMatch(await text(), /Ready for human review|0 gaps/u);
-      record('editing and invalid input remove a previous readiness result', { width });
+        const loaders = { width, incomplete: null, corrected: null };
+        await observe('both example loaders set inputs and corresponding checked outputs by keyboard', loaders, async () => {
+          await interaction.action(() => interaction.control('incomplete').focus());
+          assert.equal(await interaction.frame.evaluate(() => document.activeElement.id), bindings.incomplete);
+          await interaction.action(() => interaction.page.keyboard.press('Enter'));
+          assert.deepEqual(JSON.parse(await interaction.control('input').inputValue()), JSON.parse(INCOMPLETE));
+          loaders.incomplete = await interaction.check();
+          assert.equal(loaders.incomplete, THREE_GAPS);
+          await interaction.action(() => interaction.control('corrected').focus());
+          assert.equal(await interaction.frame.evaluate(() => document.activeElement.id), bindings.corrected);
+          await interaction.action(() => interaction.page.keyboard.press('Space'));
+          assert.deepEqual(JSON.parse(await interaction.control('input').inputValue()), JSON.parse(CORRECTED));
+          assert.notEqual(await interaction.text(), THREE_GAPS, 'Loading another packet must clear or replace the old result.');
+          loaders.corrected = await interaction.check();
+          assert.equal(loaders.corrected, READY);
+        });
+        const edits = { width, afterEdit: null, afterCheck: null };
+        await observe('editing and invalid input remove a previous readiness result', edits, async () => {
+          await interaction.fill(CORRECTED);
+          assert.equal(await interaction.check(), READY);
+          await interaction.fill('{');
+          edits.afterEdit = await interaction.text();
+          // Capture both states even when the first assertion will fail.
+          edits.afterCheck = await interaction.check();
+          assert.doesNotMatch(edits.afterEdit, /Ready for human review|0 gaps/u);
+          assertPacketResult(assert, edits.afterCheck, PACKET_CASES.find(item => item.name === 'malformed JSON'));
+        });
+      } finally { await interaction.page.close(); }
 
       for (const scenario of PACKET_CASES) {
-        // Set a different intermediate value to guarantee an input event for each case.
-        await fillAndWait('__fixture_reset__');
-        await fillAndWait(scenario.input);
-        await frame.locator('#check-packet').focus(); await page.keyboard.press('Enter');
-        if (scenario.invalid) {
-          await frame.waitForFunction(() => document.getElementById('result').textContent.startsWith('Input error:'));
-        } else {
-          await waitText(scenario.expected);
-        }
-        assertPacketResult(assert, await text(), scenario);
-        record('browser packet: ' + scenario.name, { width, actual: await text() });
+        const detail = { width, category: 'packet', case: scenario.name, expected: scenario.invalid ? 'Input error: ... without readiness' : scenario.expected, actual: null, observed: false };
+        let tool;
+        await observe('browser packet: ' + scenario.name, detail, async () => {
+          // A fresh page/frame/Worker prevents a failed or busy case cascading.
+          tool = await openTool();
+          await tool.fill(scenario.input);
+          detail.actual = await tool.check();
+          detail.observed = true;
+          assertPacketResult(assert, detail.actual, scenario);
+          if (scenario.name === 'corrected example') await tool.page.screenshot({ path: path.join(output, prefix + '-preview-' + width + '.png') });
+        });
+        await tool?.page.close();
       }
-      const dimensions = await frame.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: innerWidth }));
-      assert.ok(dimensions.content <= dimensions.viewport + 1, JSON.stringify(dimensions));
-      await page.screenshot({ path: path.join(output, `authored-preview-${width}.png`), fullPage: true });
-      assert.deepEqual(pageErrors, []);
-      assert.deepEqual(externalRequests, []);
-      const messages = await page.evaluate(() => window.fixtureMessages);
-      assert.ok(messages.length > 0 && messages.every(message => message.origin === 'null' && message.status === 'ready'));
-      record('no horizontal overflow, page errors, failed handshake or external requests observed', { width });
-    } finally {
-      await context.close();
-    }
+      const layout = await openTool();
+      try {
+        const dimensions = await layout.frame.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: innerWidth }));
+        assert.ok(dimensions.content <= dimensions.viewport + 1, JSON.stringify(dimensions));
+        assert.deepEqual(pageErrors, []);
+        assert.deepEqual(externalRequests, []);
+        record('no horizontal overflow, page errors or external requests observed', { width });
+      } finally { await layout.page.close(); }
+    } finally { await context.close(); }
   }
-  // Retain original authored code separately from its server-materialized source.
-  await writeFile(path.join(output, 'authored-source.json'), JSON.stringify(authoredCheckerFiles(), null, 2) + '\n');
-  report.passed = true;
+  report.verificationCompleted = true;
+  report.passed = report.checks.every(check => check.passed);
+  if (!report.passed) process.exitCode = 1;
 } catch (error) {
-  report.error = error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) };
+  report.error = failure(error);
   process.exitCode = 1;
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(resolve => server.close(resolve));
+  const packets = report.checks.filter(check => check.category === 'packet');
+  report.packetSummary = { expected: report.expectedPacketChecks, recorded: packets.length, observed: packets.filter(check => check.observed).length, passed: packets.filter(check => check.passed).length, failed: packets.filter(check => !check.passed).length };
   await mkdir(output, { recursive: true });
   await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));

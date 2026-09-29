@@ -186,6 +186,45 @@ Invalid output stops the run. Repair remains limited to an observed first
 Sandbox check failure. Rejected source is not retained or silently rewritten,
 and no new run is started automatically.
 
+### Offline preview qualification
+
+`npm run test:nebius:tool-preview` qualifies the committed authored checker
+through the actual production renderer. Set `CHROME_EXECUTABLE_PATH` to an
+existing Chromium executable and optionally `NEBIUS_PREVIEW_EVIDENCE_DIR` for
+the local report and screenshots. It does not download a browser or call Nebius.
+
+The same verifier can inspect an existing ready result:
+
+```text
+npm run test:nebius:tool-preview -- --run-record run-record.json --bindings bindings.json
+```
+
+The record file must be one raw `RunRecord`, not a response envelope or workspace
+backup. Its ready status and checked source digest are validated. The original
+materialized files are previewed unchanged; no bridge is stripped or replaced.
+The bindings file has exactly five unique HTML IDs matching the actual template:
+
+```json
+{"input":"jsonInput","output":"output","check":"checkButton","incomplete":"exampleIncompleteBtn","corrected":"exampleCompleteBtn"}
+```
+
+Those IDs are an example, not guessed defaults for generated output. The verifier
+checks the sanitized controls before interaction. Record files are bounded to
+1 MiB and bindings to 4 KiB; selectors, extra keys and ambiguous options fail.
+Do not include provider credentials or run-access keys in either file.
+
+Each of the 24 frozen packet cases gets a fresh page, opaque frame and Worker at
+375 and 1280 pixels. The report retains all 48 outcomes, explicit observed/pass/
+fail counts, actual output, and separate loader/edit checks. A semantic failure
+does not stop later cases; any failed check exits nonzero. The strict oracle is
+unchanged: exact wording mismatches remain failures and can be discussed
+separately from behavior defects. Source runs only in the isolated browser Worker.
+
+This is a local test-host renderer check of a caller-supplied record, not an
+authenticated provider read, a new model/Sandbox run or independent project
+acceptance. File integrity is not a provenance signature. The real application
+route, provider receipts, generated assertions and human decision remain separate.
+
 ## Runtime and persistence
 
 Use the existing Worker and a new per-run Durable Object, with alarms for
