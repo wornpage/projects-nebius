@@ -31,6 +31,8 @@ human review of the actual output. Both begin as proposed work.
 The proposed tool accepts a JSON object with exactly these four string fields.
 Malformed input shows an error. It should provide buttons to load either
 example, a JSON editor and a Check packet button, all keyboard accessible.
+Unsupported health/review enum values are input errors, not release gaps.
+Editing or loading another packet clears or replaces the previous result.
 Readiness is based only on supplied text; the tool does not probe a live service
 or approve a release.
 
@@ -104,7 +106,7 @@ JSON source-line envelope is no longer accepted; there is one provider format.
 For app.js the model defines top-level `validate` and `handleMessage` functions
 and their helpers. The server appends one fixed runtime
 bridge that checks both functions, handles Worker messages, verifies that a
-reply is a patch array, and exports validate for Node checks. The model must
+reply is a patch array, and exports validate and handleMessage for Node checks. The model must
 not define messaging or export plumbing. Its raw logic cannot reference the
 reserved identifiers self, globalThis, onmessage, addEventListener,
 postMessage, module or exports, including in comments or strings. These are
@@ -121,6 +123,24 @@ same validation and receive exactly one runtime bridge. Original
 logic line numbers are preserved. The server never runs generated source while
 decoding or materializing it. Missing required functions fail when the Sandbox
 loads app.js and can use the existing single repair.
+
+The trusted check runner exposes only the actual exported `validate` and
+`handleMessage` functions through frozen wrappers. Each call is counted only
+after it returns successfully; a handler reply must be an array. At least one
+successful call to each function and one successful synchronous assertion are
+required. A caught assertion failure still fails the check. stdout records
+assertion, validate-call and handleMessage-call counts. These counts establish
+observed calls, not independent semantic acceptance.
+
+The generation prompt asks for assertions on example-loader patches, edits
+after a valid result and invalid enum input. The authored checker fixture tests
+those behaviors through this same runner; deliberate broken fixtures must fail.
+The independent packet cases remain separate and are not sent to the model.
+
+This bridge revision does not add an old-suffix repair fallback. Before applying
+it to a runtime, confirm no earlier nonterminal run may still need repair.
+Older retained runs stay readable and previewable with their original checked
+files; their historical assertion counts are not reinterpreted as new coverage.
 
 Native code blocks remove the need for the model to JSON-escape every source
 line. This is a coding-format choice, not proof that structured JSON caused the

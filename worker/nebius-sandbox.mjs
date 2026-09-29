@@ -15,7 +15,7 @@ export const CHECK_RUNNER = String.raw`'use strict';
 const fs = require('node:fs');
 const vm = require('node:vm');
 const realAssert = require('node:assert');
-let validateCalls = 0, assertionCalls = 0, assertionFailed = false;
+let validateCalls = 0, handleMessageCalls = 0, assertionCalls = 0, assertionFailed = false;
 const harden = value => Object.freeze(Object.setPrototypeOf(value, null));
 // Generated logging is discarded; only trusted assertion counts reach stdout.
 const quietLog = harden(() => {});
@@ -58,8 +58,15 @@ function assertFacade(target) {
 try {
   const app = runModule(fs.readFileSync('app.js', 'utf8'), 'app.js', harden(() => deny('app.js must not import modules.')));
   if (typeof app.validate !== 'function') throw new Error('app.js must export a validate function.');
+  if (typeof app.handleMessage !== 'function') throw new Error('app.js must export a handleMessage function.');
   const appFacade = Object.freeze(Object.assign(Object.create(null), {
-    validate: harden((...args) => { validateCalls += 1; return app.validate(...args); })
+    validate: harden((...args) => { const result = app.validate(...args); validateCalls += 1; return result; }),
+    handleMessage: harden((...args) => {
+      const patches = app.handleMessage(...args);
+      if (!Array.isArray(patches)) return deny('handleMessage must return a patch array.');
+      handleMessageCalls += 1;
+      return patches;
+    })
   }));
   const assertions = assertFacade(realAssert);
   const strictAssertions = assertFacade(realAssert.strict);
@@ -74,10 +81,10 @@ try {
     return deny('checks.cjs may import only ./app.js and synchronous node:assert methods.');
   });
   runModule(fs.readFileSync('checks.cjs', 'utf8'), 'checks.cjs', requireCheck);
-  if (assertionFailed || assertionCalls < 1 || validateCalls < 1) {
-    throw new Error('Checks must execute at least one successful Node assertion and call the exported validate function; no assertion may fail.');
+  if (assertionFailed || assertionCalls < 1 || validateCalls < 1 || handleMessageCalls < 1) {
+    throw new Error('Checks must execute at least one successful Node assertion and successfully call the exported validate and handleMessage functions; no assertion may fail.');
   }
-  process.stdout.write('Observed successful assertions: ' + assertionCalls + '; validate calls: ' + validateCalls + '\n');
+  process.stdout.write('Observed successful assertions: ' + assertionCalls + '; validate calls: ' + validateCalls + '; handleMessage calls: ' + handleMessageCalls + '\n');
   process.exit(0);
 } catch (error) {
   process.stderr.write('Generated checks failed: ' + boundedMessage(error) + sourceLocations(error) + '\n');

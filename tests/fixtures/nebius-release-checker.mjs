@@ -117,13 +117,31 @@ function handleMessage(message) {
   return [];
 }` },
     { path: 'checks.cjs', content: `const assert = require('node:assert/strict');
-const { validate } = require('./app.js');
+const { validate, handleMessage } = require('./app.js');
 const incomplete = { candidate: 'demo-42', health: 'missing', review: 'pending', rollback: '' };
 const corrected = { candidate: 'demo-42', health: 'passing', review: 'approved', rollback: 'Restore demo-41' };
 assert.equal(validate(JSON.stringify(incomplete)), '3 gaps: Health must be passing; Review must be approved; Rollback step is required');
 assert.equal(validate(JSON.stringify(corrected)), '0 gaps: Ready for human review');
 assert.match(validate('null'), /^Input error:/);
-assert.match(validate('{'), /^Input error:/);` },
+assert.match(validate('{'), /^Input error:/);
+assert.doesNotMatch(handleMessage({ type: 'init', values: { packet: '' } })[0].text, /Ready for human review|0 gaps/);
+for (const [id, example, expected] of [
+  ['load-incomplete', incomplete, '3 gaps: Health must be passing; Review must be approved; Rollback step is required'],
+  ['load-corrected', corrected, '0 gaps: Ready for human review'],
+]) {
+  const patches = handleMessage({ type: 'event', event: 'click', id, values: { packet: '' } });
+  assert.deepEqual(JSON.parse(patches.find(patch => patch.id === 'packet').value), example);
+  assert.equal(patches.find(patch => patch.id === 'result').text, expected);
+}
+for (const event of ['input', 'change']) {
+  const patches = handleMessage({ type: 'event', event, id: 'packet', values: { packet: '{' } });
+  assert.equal(patches.find(patch => patch.id === 'result').text, 'Input changed. Check packet again.');
+  assert.doesNotMatch(patches.find(patch => patch.id === 'result').text, /Ready for human review|0 gaps/);
+}
+for (const packet of [{ ...corrected, health: 'green' }, { ...corrected, review: 'yes' }]) {
+  const patches = handleMessage({ type: 'event', event: 'click', id: 'check-packet', values: { packet: JSON.stringify(packet) } });
+  assert.match(patches.find(patch => patch.id === 'result').text, /^Input error:/);
+}` },
   ];
 }
 

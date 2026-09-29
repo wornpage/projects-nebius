@@ -49,20 +49,21 @@ for (const scenario of PACKET_CASES) {
   });
 }
 
-test('authored checks import and exercise the actual materialized validation function', () => {
+test('authored checks import and exercise both actual materialized functions', () => {
   let imports = 0, assertions = 0;
   const validate = loadAuthoredModule();
+  const handleMessage = workerBridge();
   const countedAssert = new Proxy(assert, { get(target, key) {
     if (typeof target[key] !== 'function') return target[key];
     return (...args) => { assertions += 1; return target[key](...args); };
   } });
   const context = createContext({ require: name => {
     if (name === 'node:assert/strict') return countedAssert;
-    assert.equal(name, './app.js'); imports += 1; return { validate };
+    assert.equal(name, './app.js'); imports += 1; return { validate, handleMessage };
   } });
   runInContext(files.find(file => file.path === 'checks.cjs').content, context, { timeout: 1000 });
   assert.equal(imports, 1);
-  assert.equal(assertions, 4);
+  assert.equal(assertions, 15);
 });
 
 test('actual appended worker bridge handles init, both example loaders and changed input', () => {
