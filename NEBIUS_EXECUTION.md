@@ -91,6 +91,25 @@ a CommonJS export for checks.cjs and a worker message handler. index.html is
 an inert UI template with optional local styles. No packages, remote resources or
 user-supplied commands.
 
+The model supplies each file as a `path` and an array of physical source lines.
+For app.js it defines top-level `validate` and `handleMessage` functions and
+their helpers. The server joins those lines and appends one fixed runtime
+bridge that checks both functions, handles Worker messages, verifies that a
+reply is a patch array, and exports validate for Node checks. The model must
+not define messaging or export plumbing. Its raw logic cannot reference the
+reserved identifiers self, globalThis, onmessage, addEventListener,
+postMessage, module or exports, including in comments or strings. These are
+bounded source checks; they are not a JavaScript security parser.
+
+Saved app.js is therefore generated logic plus the server bridge. Existing
+per-file and total byte limits apply after the bridge is appended. Source
+digests, Sandbox checks, downloads and preview all use those same materialized
+files. Repair removes and verifies only that exact suffix before sending the
+logic back to the model; a fresh suffix is appended to its replacement. Original
+logic line numbers are preserved. The server never runs generated source while
+decoding or materializing it. Missing required functions fail when the Sandbox
+loads app.js and can use the existing single repair.
+
 Checks record the observed provider operation ID, resulting checkpoint ID if
 available, exit code, bounded stdout/stderr, attempt and source digest. These
 are agent-authored checks, not independent acceptance or a guarantee that all
