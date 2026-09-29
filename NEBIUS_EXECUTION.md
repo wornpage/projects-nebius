@@ -188,7 +188,8 @@ and no new run is started automatically.
 
 ### Offline preview qualification
 
-`npm run test:nebius:tool-preview` qualifies the committed authored checker
+Build the current UI with `npm run build:nebius`, then run
+`npm run test:nebius:tool-preview` to qualify the committed authored checker
 through the actual production renderer. Set `CHROME_EXECUTABLE_PATH` to an
 existing Chromium executable and optionally `NEBIUS_PREVIEW_EVIDENCE_DIR` for
 the local report and screenshots. It does not download a browser or call Nebius.
@@ -290,6 +291,25 @@ followed by an edit, two example loaders, and a loader followed by an edit.
 These six bridge checks have their own denominator and source digest; they
 are separate from the unchanged 48 packet checks and never alter or stand in
 for retained model source.
+
+The parent review page keeps its status subscription for the entire active
+iframe lifetime. The first valid ready message clears only the eight-second
+startup deadline; a later failure changes the parent status and ends the
+subscription. Close, component destruction, record replacement and reopening
+remove the old listener and deadline. Reopening replaces the iframe rather
+than reusing its WindowProxy, and closing returns keyboard focus to its Open
+preview trigger. Only the current opaque frame's exact two-field message
+shape is accepted.
+
+The default authored verifier also mounts the actual compiled review component
+in an isolated browser workspace with an explicitly synthetic run reference.
+It checks later Worker failure, a fresh frame on reopen and close-focus return
+at both widths, plus page-error/network guards: eight separately counted
+parent checks. The reference's modeled usage/check receipt is not provider
+evidence; only the preview API is served by the synthetic host and every other
+API is disabled. No real workspace is changed. Explicit retained-record mode
+continues to qualify its unchanged files in the renderer without seeding the
+synthetic parent workspace or requiring compiled UI assets.
 
 ### Saved-record compatibility
 

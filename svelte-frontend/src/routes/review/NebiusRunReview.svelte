@@ -25,6 +25,8 @@
 	let integrityRevision = 0;
 	let stopPreviewMessages: (() => void) | null = null;
 	let previewTimer: ReturnType<typeof setTimeout> | null = null;
+	let previewOpening = false;
+	let previewTrigger: HTMLButtonElement | null = null;
 
 	let reference = $derived(pack.executionRun || null);
 	let record = $derived(reference?.record || null);
@@ -58,13 +60,21 @@
 
 	function listenForPreviewStatus(frame: HTMLIFrameElement) {
 		stopPreviewListener();
+		let started = false;
 		const receive = (event: MessageEvent) => {
 			if (event.source !== frame.contentWindow || event.origin !== 'null') return;
 			const value = event.data;
 			if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'status,type' ||
 				value.type !== 'nebius-tool-preview' || (value.status !== 'ready' && value.status !== 'failed')) return;
-			previewStatus = value.status === 'ready' ? 'Preview running' : 'Preview could not run. Inspect source and checks.';
-			stopPreviewListener();
+			if (value.status === 'ready') {
+				started = true;
+				previewStatus = 'Preview running';
+				if (previewTimer) clearTimeout(previewTimer);
+				previewTimer = null;
+			} else {
+				previewStatus = started ? 'Preview stopped. Reopen it or inspect source and checks.' : 'Preview could not run. Inspect source and checks.';
+				stopPreviewListener();
+			}
 		};
 		window.addEventListener('message', receive);
 		stopPreviewMessages = () => window.removeEventListener('message', receive);
@@ -123,36 +133,51 @@
 		}
 	}
 
-	async function openPreview() {
-		if (!reference || !ready || integrityError) return;
-		previewOpen = true;
-		previewStatus = 'Opening isolated preview…';
-		await tick();
-		const iframe = previewFrame;
-		if (!iframe) {
-			error = 'The isolated preview frame could not be opened.';
-			return;
+	async function openPreview(event: MouseEvent) {
+		if (!reference || !ready || integrityError || previewOpening || busy) return;
+		const captured = { id: reference.id, key: reference.key };
+		const updatedAt = verified?.updatedAt;
+		if (event.currentTarget instanceof HTMLButtonElement) previewTrigger = event.currentTarget;
+		previewOpening = true;
+		try {
+			stopPreviewListener();
+			previewOpen = false;
+			await tick();
+			if (reference?.id !== captured.id || reference.key !== captured.key || !ready || integrityError || verified?.updatedAt !== updatedAt) return;
+			previewStatus = 'Opening isolated preview…';
+			previewOpen = true;
+			await tick();
+			if (!previewOpen || reference?.id !== captured.id || reference.key !== captured.key || !ready || integrityError || verified?.updatedAt !== updatedAt) return;
+			const iframe = previewFrame;
+			if (!iframe) {
+				error = 'The isolated preview frame could not be opened.';
+				return;
+			}
+			listenForPreviewStatus(iframe);
+			const form = document.createElement('form');
+			form.method = 'POST';
+			form.action = `/api/nebius/runs/${captured.id}/preview`;
+			form.target = previewName;
+			form.hidden = true;
+			const key = document.createElement('input');
+			key.type = 'hidden';
+			key.name = 'key';
+			key.value = captured.key;
+			form.append(key);
+			document.body.append(form);
+			try { form.requestSubmit(); } finally { form.remove(); }
+		} finally {
+			previewOpening = false;
 		}
-		listenForPreviewStatus(iframe);
-		const form = document.createElement('form');
-		form.method = 'POST';
-		form.action = `/api/nebius/runs/${reference.id}/preview`;
-		form.target = previewName;
-		form.hidden = true;
-		const key = document.createElement('input');
-		key.type = 'hidden';
-		key.name = 'key';
-		key.value = reference.key;
-		form.append(key);
-		document.body.append(form);
-		form.requestSubmit();
-		form.remove();
 	}
 
-	function closePreview() {
+	async function closePreview() {
+		const trigger = previewTrigger;
 		stopPreviewListener();
 		previewOpen = false;
 		previewStatus = '';
+		await tick();
+		if (trigger?.isConnected) trigger.focus();
 	}
 
 	async function saveEvidence() {
@@ -259,7 +284,7 @@
 		{#if ready}<p class="run-approval-note">These checks are agent-authored observations. Saving their run reference does not independently approve the result, mark the task done or publish the tool.</p>{/if}
 		{#if previewOpen}
 			<div class="run-preview-shell">
-				<div class="run-preview-bar"><div class="run-preview-label">Isolated preview · {previewStatus}</div><WornButton type="button" size="sm" onclick={closePreview}>Close preview</WornButton></div>
+				<div class="run-preview-bar"><div class="run-preview-label" role="status">Isolated preview · {previewStatus}</div><WornButton type="button" size="sm" onclick={closePreview}>Close preview</WornButton></div>
 				<iframe bind:this={previewFrame} name={previewName} title={`Isolated preview for ${record?.pack.title || 'generated browser tool'}`} src="about:blank" sandbox="allow-scripts"></iframe>
 			</div>
 		{/if}

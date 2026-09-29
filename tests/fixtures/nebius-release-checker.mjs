@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateRunFiles } from '../../worker/nebius-run-provider.mjs';
-import { validateRunInput } from '../../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { runFilesDigest, validateRunInput, validateRunIntegrity } from '../../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 // Authored test input, never a retained model response or an app starter result.
 // Do not load provider credentials, emit run records, or persist this fixture in a workspace.
@@ -175,4 +175,19 @@ export async function materializeAuthoredChecker(files = authoredCheckerFiles(),
     });
   assert.equal(fixtureResponses, 1);
   return result.files;
+}
+
+// Browser-test seed only. Its modeled usage/check receipt is synthetic; never
+// save this reference to a real workspace or count it as provider evidence.
+export async function authoredPreviewReference(files) {
+  const { consent, ...snapshot } = FIXTURE_INPUT;
+  const sourceDigest = await runFilesDigest(files);
+  const record = await validateRunIntegrity({
+    id: '00000000-0000-4000-8000-000000000001', ...snapshot,
+    status: 'ready', attempt: 1, createdAt: '2026-09-29T00:00:00.000Z', updatedAt: '2026-09-29T00:00:00.000Z',
+    events: [], files, checks: [{ attempt: 1, operationId: '00000000-0000-4000-8000-000000000002', checkpointId: null,
+      exitCode: 0, stdout: 'Synthetic authored test record, not a provider receipt.', stderr: '', sourceDigest }],
+    usage: { modelCalls: 1, inputTokens: 0, outputTokens: 0, totalsComplete: true }, error: null, failure: null,
+  });
+  return { id: record.id, key: '0'.repeat(64), input: structuredClone(FIXTURE_INPUT), record };
 }

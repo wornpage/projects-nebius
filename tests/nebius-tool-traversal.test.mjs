@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { FIXTURE_INPUT, authoredCheckerFiles, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
+import { authoredCheckerFiles, authoredPreviewReference, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
 import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from './fixtures/nebius-release-packet-cases.mjs';
 import { runFilesDigest, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 import { renderRunPreview } from '../worker/nebius-run-preview.mjs';
@@ -123,15 +123,7 @@ test('a named-file repair preserves the page and checks and appends exactly one 
 
 test('retained preview rejects ambiguous or untrusted input before browser execution', async t => {
   // Synthetic record for rejection tests only, not evidence of a provider run.
-  const { consent, ...snapshot } = FIXTURE_INPUT;
-  const sourceDigest = await runFilesDigest(files);
-  const fixtureRecord = {
-    id: '00000000-0000-4000-8000-000000000001', ...snapshot,
-    status: 'ready', attempt: 1, createdAt: '2026-09-29T00:00:00.000Z', updatedAt: '2026-09-29T00:00:00.000Z',
-    events: [], files, checks: [{ attempt: 1, operationId: '00000000-0000-4000-8000-000000000002', checkpointId: null,
-      exitCode: 0, stdout: 'Synthetic authored test record, not a provider receipt.', stderr: '', sourceDigest }],
-    usage: { modelCalls: 1, inputTokens: 0, outputTokens: 0, totalsComplete: true }, error: null, failure: null,
-  };
+  const fixtureRecord = (await authoredPreviewReference(files)).record;
   const bindings = { input: 'packet', output: 'result', check: 'check-packet', incomplete: 'load-incomplete', corrected: 'load-corrected' };
   const script = fileURLToPath(new URL('../scripts/nebius-tool-preview-smoke.mjs', import.meta.url));
   for (const [name, mutation, expected] of [
@@ -335,4 +327,77 @@ test('DOM bridge reports ready after patches and ignores unsolicited idle replie
   bridge.emit('click', 'check-packet');
   bridge.reply([{ id: 'result', text: 'Checked' }]);
   assert.equal(bridge.notifications.at(-1).renderedOutput, 'Checked');
+});
+
+// Exercise the two actual trusted component functions, removing only their
+// two TypeScript parameter annotations. This is not execution of model code.
+function parentPreviewHarness() {
+  const source = readFileSync(new URL('../svelte-frontend/src/routes/review/NebiusRunReview.svelte', import.meta.url), 'utf8');
+  const start = source.indexOf('function stopPreviewListener()');
+  const end = source.indexOf('async function refreshResult()', start);
+  assert.ok(start >= 0 && end > start);
+  const functions = source.slice(start, end).replace(': HTMLIFrameElement', '').replace(': MessageEvent', '');
+  const listeners = new Set(), timers = new Map(); let timerId = 0;
+  const context = createContext({
+    window: { addEventListener: (name, fn) => { assert.equal(name, 'message'); listeners.add(fn); },
+      removeEventListener: (name, fn) => { assert.equal(name, 'message'); listeners.delete(fn); } },
+    setTimeout: (callback, milliseconds) => { const id = ++timerId; timers.set(id, { callback, milliseconds }); return id; },
+    clearTimeout: id => timers.delete(id),
+  });
+  runInContext(`let stopPreviewMessages = null; let previewTimer = null; let previewStatus = 'Opening';
+${functions}
+this.unit = { listenForPreviewStatus, stopPreviewListener, status: () => previewStatus };`, context, { timeout: 1000 });
+  const frame = { contentWindow: {} };
+  return { listeners, timers, frame, status: context.unit.status,
+    listen: (target = frame) => context.unit.listenForPreviewStatus(target),
+    stop: () => context.unit.stopPreviewListener(),
+    emit(status, changes = {}) { for (const listener of [...listeners]) listener({ source: frame.contentWindow, origin: 'null', data: { type: 'nebius-tool-preview', status }, ...changes }); },
+    expire() { assert.equal(timers.size, 1); const [id, timer] = [...timers.entries()][0]; assert.equal(timer.milliseconds, 8000); timers.delete(id); timer.callback(); },
+  };
+}
+
+test('parent preview stays subscribed after readiness and reflects a later failure', () => {
+  const h = parentPreviewHarness(); h.listen(); h.emit('ready');
+  assert.equal(h.status(), 'Preview running'); assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 0);
+  h.emit('failed'); assert.match(h.status(), /^Preview stopped/u);
+  assert.equal(h.listeners.size, 0); h.emit('ready'); assert.match(h.status(), /^Preview stopped/u);
+});
+
+test('parent startup failure cleans up its listener and deadline', () => {
+  const h = parentPreviewHarness(); h.listen(); h.emit('failed');
+  assert.match(h.status(), /could not run/u); assert.equal(h.listeners.size, 0); assert.equal(h.timers.size, 0);
+});
+
+test('parent startup deadline stops a preview that never acknowledges initialization', () => {
+  const h = parentPreviewHarness(); h.listen(); h.expire();
+  assert.match(h.status(), /could not run/u); assert.equal(h.listeners.size, 0); assert.equal(h.timers.size, 0);
+});
+
+test('parent rejects unexpected sources, origins and message shapes without cancelling startup', () => {
+  const h = parentPreviewHarness(); h.listen();
+  for (const changes of [{ source: {} }, { origin: 'https://foreign.example' }, { origin: '' },
+    { data: null }, { data: [] }, { data: { type: 'nebius-tool-preview', status: 'ready', extra: true } },
+    { data: { type: 'other', status: 'ready' } }, { data: { type: 'nebius-tool-preview', status: 'busy' } }]) h.emit('ready', changes);
+  assert.equal(h.status(), 'Opening'); assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 1);
+  h.emit('failed'); assert.match(h.status(), /could not run/u);
+});
+
+test('parent replacement removes the old listener and rejects the old WindowProxy', () => {
+  const h = parentPreviewHarness(); h.listen();
+  const nextFrame = { contentWindow: {} }; h.listen(nextFrame);
+  assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 1);
+  h.emit('failed'); assert.equal(h.status(), 'Opening');
+  h.emit('ready', { source: nextFrame.contentWindow });
+  h.emit('failed', { source: nextFrame.contentWindow });
+  assert.match(h.status(), /^Preview stopped/u); assert.equal(h.listeners.size, 0);
+});
+
+test('parent explicit cleanup is idempotent and rejects subsequent messages', () => {
+  const h = parentPreviewHarness(); h.listen(); h.stop(); h.stop(); h.emit('ready');
+  assert.equal(h.status(), 'Opening'); assert.equal(h.listeners.size, 0); assert.equal(h.timers.size, 0);
+});
+
+test('parent repeated readiness retains one listener without rescheduling startup', () => {
+  const h = parentPreviewHarness(); h.listen(); h.emit('ready'); h.emit('ready');
+  assert.equal(h.status(), 'Preview running'); assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 0);
 });

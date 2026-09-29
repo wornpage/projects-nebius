@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdir, open, writeFile } from 'node:fs/promises';
+import { access, mkdir, open, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { authoredCheckerFiles, materializeAuthoredChecker } from '../tests/fixtures/nebius-release-checker.mjs';
+import { authoredCheckerFiles, authoredPreviewReference, materializeAuthoredChecker } from '../tests/fixtures/nebius-release-checker.mjs';
 import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from '../tests/fixtures/nebius-release-packet-cases.mjs';
 import { runFilesDigest, validateRunIntegrity } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
@@ -14,7 +14,7 @@ const report = {
   renderer: 'worker/nebius-run-preview.mjs', sourceDigest: null, browser: null,
   expectedPacketChecks: PACKET_CASES.length * 2, checks: [], passed: false,
 };
-let server, browser;
+let server, browser, parentPosts = 0;
 const record = (name, detail = {}) => report.checks.push({ name, passed: true, ...detail });
 const failure = error => error instanceof Error ? { name: error.name, message: error.message.slice(0, 800) } : { message: String(error).slice(0, 800) };
 const observe = async (name, detail, check) => {
@@ -94,8 +94,14 @@ try {
   const executablePath = process.env.CHROME_EXECUTABLE_PATH;
   assert.ok(executablePath, 'Set CHROME_EXECUTABLE_PATH to an existing Chromium executable; this test never downloads a browser.');
   const preview = await renderRunPreview(files);
-  let bridgePreview;
+  let bridgePreview, parentReference;
+  const staticRoot = path.resolve('dist/static-publish');
   if (!selected) {
+    await access(path.join(staticRoot, 'review.html')).catch(() => { throw new Error('Build the current review UI with npm run build:nebius before authored preview qualification.'); });
+    parentReference = await authoredPreviewReference(files);
+    report.scope = 'production renderer and compiled review UI in a local test host with synthetic API; not authenticated app routes or provider evidence';
+    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 8,
+      component: 'svelte-frontend/src/routes/review/NebiusRunReview.svelte', recordIsProviderEvidence: false };
     // A deliberately slow authored handler proves event ordering in the real
     // renderer. This is never inserted into a retained RunRecord or model file.
     const bridgeFiles = authoredCheckerFiles();
@@ -136,15 +142,46 @@ addEventListener('message', event => {
   document.getElementById('preview-status').textContent = data.status;
 });
 </script></body></html>`;
-  server = createServer((request, response) => {
+  const parentPreviewPath = parentReference ? '/api/nebius/runs/' + parentReference.id + '/preview' : null;
+  server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1');
+    const headers = { 'cache-control': 'no-store', 'content-type': 'text/html;charset=utf-8', 'referrer-policy': 'same-origin' };
+    if (url.pathname === parentPreviewPath && request.method === 'POST') {
+      let text = ''; for await (const chunk of request) {
+        text += chunk;
+        if (Buffer.byteLength(text) > 100) { response.writeHead(413); response.end(); return; }
+      }
+      const params = [...new URLSearchParams(text)];
+      if (text.length > 100 || params.length !== 1 || params[0][0] !== 'key' || params[0][1] !== parentReference.key) {
+        response.writeHead(401, { 'content-type': 'application/json' }); response.end('{}'); return;
+      }
+      parentPosts += 1;
+      response.writeHead(200, { ...headers, 'content-security-policy': preview.csp, 'referrer-policy': 'no-referrer' }); response.end(preview.html); return;
+    }
     request.resume();
-    const headers = { 'cache-control': 'no-store', 'content-type': 'text/html;charset=utf-8' };
+    if (url.pathname.startsWith('/api/')) {
+      // Every other API is disabled. This test host cannot request inference.
+      response.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      response.end(JSON.stringify({ code: 'execution_disabled', error: 'Synthetic preview test host only.' })); return;
+    }
     if (request.url === '/' && request.method === 'GET') {
       response.writeHead(200, headers); response.end(wrapper);
     } else if (request.url === '/fixture-preview' && request.method === 'POST') {
       response.writeHead(200, { ...headers, 'content-security-policy': preview.csp }); response.end(preview.html);
     } else if (request.url === '/bridge-preview' && request.method === 'POST' && bridgePreview) {
       response.writeHead(200, { ...headers, 'content-security-policy': bridgePreview.csp }); response.end(bridgePreview.html);
+    } else if (parentReference && request.method === 'GET') {
+      let relative;
+      try { relative = decodeURIComponent(url.pathname).replace(/^\//u, '') || 'index.html'; }
+      catch { response.writeHead(400); response.end(); return; }
+      if (!path.extname(relative)) relative += '.html';
+      const file = path.resolve(staticRoot, relative), distance = path.relative(staticRoot, file);
+      if (distance.startsWith('..') || path.isAbsolute(distance)) { response.writeHead(403); response.end(); return; }
+      try {
+        const bytes = await readFile(file);
+        const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
+        response.writeHead(200, { ...headers, 'content-type': types[path.extname(file)] || 'application/octet-stream' }); response.end(bytes);
+      } catch { response.writeHead(404); response.end(); }
     } else {
       response.writeHead(404, { 'cache-control': 'no-store' }); response.end();
     }
@@ -329,6 +366,67 @@ addEventListener('message', event => {
         assert.deepEqual(externalRequests, []);
         record('no horizontal overflow, page errors or external requests observed', { width });
       } finally { await layout.page.close(); }
+
+      if (parentReference) {
+        const storageKey = 'projects-webmcp-challenge-state-v1';
+        const seed = { packs: [{ id: parentReference.input.packId, ...parentReference.input.pack, status: parentReference.input.currentStatus,
+          next: 'Review', executionRun: parentReference }], selectedId: parentReference.input.packId, pendingNextActionDrafts: [] };
+        await context.addInitScript(({ key, seed }) => {
+          if (window !== top) return;
+          if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(seed));
+        }, { key: storageKey, seed });
+        for (const scenario of ['later Worker failure', 'reopen running preview', 'close restores keyboard focus']) {
+          const detail = { width, category: 'parent', case: scenario, fixtureKind: 'authored-synthetic-run-reference',
+            actualParentStatus: null, actualChildStatus: null, newFrame: null, restoredFocus: null };
+          let page, frame;
+          await observe('compiled parent: ' + scenario, detail, async () => {
+            page = await context.newPage(); page.setDefaultTimeout(4000);
+            page.on('pageerror', error => pageErrors.push(error.message));
+            await page.goto(origin + '/review?focus=' + encodeURIComponent(parentReference.input.packId));
+            const review = page.locator('[data-nebius-run-review]');
+            const button = review.getByRole('button', { name: 'Open preview', exact: true });
+            await button.waitFor({ state: 'visible' });
+            const saved = await page.evaluate(key => localStorage.getItem(key), storageKey);
+            for (let count = 0; count < 100 && !await button.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
+            assert.equal(await button.evaluate(element => element === document.activeElement), true, 'Open preview is reachable by real Tab navigation.');
+            await page.keyboard.press('Enter');
+            await review.locator('.run-preview-label').filter({ hasText: 'Preview running' }).waitFor();
+            frame = page.frames().find(item => item.url() === origin + parentPreviewPath);
+            assert.ok(frame, 'The compiled review UI must open the actual renderer.');
+            try {
+              if (scenario === 'later Worker failure') {
+                // One DOM turn fills the real bridge queue while a Worker reply
+                // is pending. This stops only this test frame, never a provider.
+                await frame.evaluate(() => { const button = document.getElementById('check-packet'); for (let count = 0; count < 34; count += 1) button.click(); });
+                await frame.locator('body > p[role="status"]').filter({ hasText: 'Too many tool interactions' }).waitFor();
+                await review.locator('.run-preview-label').filter({ hasText: 'Preview stopped' }).waitFor();
+              } else if (scenario === 'reopen running preview') {
+                await page.evaluate(() => { window.previousPreviewWindow = document.querySelector('[data-nebius-run-review] iframe').contentWindow; });
+                await button.focus(); await page.keyboard.press('Enter');
+                await review.locator('.run-preview-label').filter({ hasText: 'Preview running' }).waitFor();
+                detail.newFrame = await page.evaluate(() => document.querySelector('[data-nebius-run-review] iframe').contentWindow !== window.previousPreviewWindow);
+                assert.equal(detail.newFrame, true, 'Reopening replaces the old WindowProxy so late messages cannot target the new listener.');
+              } else {
+                const close = review.getByRole('button', { name: 'Close preview', exact: true });
+                await close.focus(); await page.keyboard.press('Enter');
+                await review.locator('iframe').waitFor({ state: 'detached' });
+                await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-nebius-run-review] button'))
+                  .some(button => button.textContent.trim() === 'Open preview' && button === document.activeElement));
+                detail.restoredFocus = await button.evaluate(element => element === document.activeElement);
+                assert.equal(detail.restoredFocus, true, 'Closing restores focus to the preview trigger.');
+              }
+              assert.equal(await page.evaluate(key => localStorage.getItem(key), storageKey), saved, 'Preview lifecycle never saves or approves run evidence.');
+            } finally {
+              detail.actualParentStatus = await review.locator('.run-preview-label').count() ? await review.locator('.run-preview-label').textContent() : '(closed)';
+              detail.actualChildStatus = frame && !frame.isDetached() ? await frame.locator('body > p[role="status"]').textContent() : '(detached)';
+            }
+          });
+          await page?.close();
+        }
+        await observe('compiled parent: no page errors or external requests', { width, category: 'parent', case: 'isolation' }, async () => {
+          assert.deepEqual(pageErrors, []); assert.deepEqual(externalRequests, []);
+        });
+      }
     } finally { await context.close(); }
   }
   report.verificationCompleted = true;
@@ -345,6 +443,11 @@ addEventListener('message', event => {
   if (report.bridgeFixture) {
     const probes = report.checks.filter(check => check.category === 'bridge');
     report.bridgeSummary = { expected: report.bridgeFixture.expectedChecks, recorded: probes.length, passed: probes.filter(check => check.passed).length, failed: probes.filter(check => !check.passed).length };
+  }
+  if (report.parentFixture) {
+    const checks = report.checks.filter(check => check.category === 'parent');
+    report.parentSummary = { expected: report.parentFixture.expectedChecks, recorded: checks.length, passed: checks.filter(check => check.passed).length, failed: checks.filter(check => !check.passed).length };
+    report.parentFixture.syntheticPreviewPosts = parentPosts;
   }
   await mkdir(output, { recursive: true });
   await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
