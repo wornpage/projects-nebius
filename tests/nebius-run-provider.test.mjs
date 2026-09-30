@@ -266,7 +266,8 @@ test('failed RunRecord preserves the parser reason and usage without inventing f
   assert.deepEqual(record.files,[]);
   assert.deepEqual(record.checks,[]);
   assert.doesNotMatch(JSON.stringify(record),/SYNTHETIC_REJECTED_SOURCE/u);
-  assert.throws(()=>validateRunRecord({...record,status:'ready'}),/A ready result needs observed successful checks/u);
+  assert.throws(()=>validateRunRecord({...record,status:'ready'}),/The execution failure details are invalid/u);
+  assert.throws(()=>validateRunRecord({...record,status:'ready',error:null,failure:null}),/A ready result needs observed successful checks/u);
 });
 
 test('native files preserve JavaScript escaping, indentation and trailing blank lines',async()=>{
