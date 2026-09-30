@@ -138,9 +138,13 @@ of a Nebius-generated tool.
 
 Local Windows qualification has used Node 24.18.0, its bundled npm 11.16.0 and
 Chromium 153.0.8010.12. Those observations do not qualify other environments.
-The current GitHub workflow runs the preserved WebMCP `verify` and
-`test:browser` commands; it does not run these Nebius gates. Local Nebius
-qualification and hosted CI remain separate results.
+The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
+defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
+both locked installs and its own hosted Chrome lookup, then runs
+`verify:nebius` and all four browser suites above in order. It supplies no
+provider credentials or deployment step. Local qualification, a prepared
+workflow and an observed passing GitHub run remain separate results; this
+candidate has not yet passed hosted CI.
 
 ## Source and prior work
 

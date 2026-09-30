@@ -118,8 +118,12 @@ Run these after `verify:nebius` creates the Nebius build. The tool-preview gate
 uses an authored checker through the production renderer and a synthetic
 parent run; it does not establish model-generated tool quality. The observed
 Windows qualification used Node 24.18.0, bundled npm 11.16.0 and Chromium
-153.0.8010.12. The current GitHub workflow runs the preserved WebMCP gates,
-not these Nebius commands; local qualification does not establish hosted CI.
+153.0.8010.12. The GitHub workflow preserves the WebMCP job and defines a
+separate Ubuntu 24.04 Nebius job with its own hosted Chrome lookup. It runs
+`verify:nebius`, then tool-preview, projects, browser and offline in that
+order, without provider credentials or deployment. Preparing that workflow
+and passing locally do not establish hosted CI; this candidate has not yet
+passed a GitHub run.
 
 On Windows, stop an existing local preview before rebuilding; its asset watcher
 can keep the generated output directory open.
