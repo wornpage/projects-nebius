@@ -123,7 +123,8 @@ try {
     // Re-entering a selected project after a task visit preserves membership.
     const manualTask = manual.packs.find(item => item.projectId === project.id);
     await page.goto(`${origin}/next?pack=${encodeURIComponent(manualTask.id)}`);
-    await page.getByRole('heading', { name: 'Next step', exact: true }).waitFor();
+    await page.getByRole('heading', { level: 1, name: manualTask.title, exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Switch task', { exact: true }).inputValue(), manualTask.id, 'the Next page selects the created task');
     await page.getByRole('link', { name: 'Work', exact: true }).click();
     await page.waitForURL('**/work');
     assert.equal(await page.locator('#project-scope').inputValue(), project.id);
@@ -199,6 +200,8 @@ try {
     page.once('dialog', async dialog => dialog.dismiss());
     await page.locator('#project-scope').selectOption(project.id);
     assert.equal(await page.locator('#project-scope').inputValue(), modelProject.id, 'canceling scope change preserves draft');
+    assert.deepEqual(await readState(page), beforeRevision, 'canceling scope change preserves the saved project and tasks');
+    assert.equal(await page.locator('[data-replan-task]').getByLabel('Next step', { exact: true }).inputValue(), 'Write a beginner-friendly learning objective.', 'canceling scope change retains the edited proposal');
     await page.getByRole('button', { name: 'Review changes', exact: true }).click();
     await page.locator('[data-replan-diff]').waitFor();
     assert.match(await page.locator('[data-replan-diff]').innerText(), /Before[\s\S]*Write the learning objective\.[\s\S]*After[\s\S]*Write a beginner-friendly learning objective\./);
@@ -299,7 +302,8 @@ try {
         const nextLinks = index === 1 ? page.getByRole('navigation', { name: 'Project next work', exact: true }) : page.locator('[data-ready-next]');
         await nextLinks.getByRole('link', { name: nextTitle, exact: true }).click();
       }
-      await page.locator('[data-nebius-evidence-review] > summary').click();
+      await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
+      assert.equal(await page.locator('[data-nebius-evidence-review]').evaluate(element => element.open), true, 'the Evidence tab exposes the recording form');
       await page.locator('#nebius-review-evidence').fill(evidence[index]);
       await page.getByRole('button', { name: 'Save evidence', exact: true }).click();
       await page.getByRole('button', { name: 'Mark done with recorded evidence', exact: true }).click();
@@ -384,7 +388,8 @@ try {
     assert(revisedSecond.activity.at(-1).includes(updateWhy));
     assert(revisedSecond.activity.at(-1).includes(taskWhy));
     await page.goto(`${origin}/next?pack=${encodeURIComponent(firstTask.id)}`);
-    await page.locator('[data-nebius-evidence-review] > summary').click();
+    await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
+    assert.equal(await page.locator('[data-nebius-evidence-review]').evaluate(element => element.open), true);
     assert.equal(await page.locator('[data-nebius-saved-criteria-text]').innerText(), firstTask.doneWhen);
     assert.equal(await page.locator('[data-nebius-optional-review]').evaluate(element => element.open), false, 'saved criteria are visible without opening AI review');
     await page.locator('[data-nebius-evidence-review]').screenshot({ path: path.resolve(`dist/nebius-rehearsal-criteria-${width}.png`) });
