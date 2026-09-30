@@ -32,6 +32,9 @@ The proposed tool accepts a JSON object with exactly these four string fields.
 Malformed input shows an error. It should provide buttons to load either
 example, a JSON editor and a Check packet button, all keyboard accessible.
 Unsupported health/review enum values are input errors, not release gaps.
+The task specifies `Input error: ` followed by a useful reason for invalid
+input, `1 gap: <reason>` for one gap and `<N> gaps: <reasons>` otherwise.
+Reasons appear in Health, Review, Rollback order, separated by `; `.
 Editing or loading another packet clears or replaces the previous result.
 Readiness is based only on supplied text; the tool does not probe a live service
 or approve a release.
@@ -39,6 +42,12 @@ or approve a release.
 Retain the generated files, observed Sandbox output and actual preview results
 when a live run is performed. These expected outcomes are not a record of a
 successful generated tool. Existing daily and per-run limits still apply.
+
+Starter changes apply to future proposals. For an older saved task, review the
+current starter requirements in the task editor and save them through the
+normal human approval flow before authorizing a new build. Inspect its displayed
+RunInput to confirm the exact task snapshot; older run criteria remain historical.
+The independent test corpus stays outside generation input.
 
 ## Shared boundary
 
