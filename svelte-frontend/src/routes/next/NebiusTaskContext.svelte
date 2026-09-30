@@ -61,7 +61,7 @@
 	dl, dd { margin: 0; }
 	dt { color: var(--worn-text-secondary); font-size: .75rem; font-weight: 650; margin-block-end: 5px; }
 	dd { font-size: .875rem; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
-	.task-blocker { border-inline-start: 3px solid var(--worn-warning-text); padding-inline-start: 12px; }
+	.task-blocker { border: 1px solid var(--worn-warning-text); border-radius: var(--worn-radius-md); padding: 8px 12px; }
 	.task-requirements { border-block-start: 1px solid var(--worn-border); }
 	.task-requirements summary { align-content: center; cursor: pointer; font-size: .8125rem; min-block-size: 44px; }
 	.task-requirements dl { display: grid; gap: 4px; padding-block: 4px 12px; }

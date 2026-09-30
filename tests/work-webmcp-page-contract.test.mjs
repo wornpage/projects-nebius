@@ -955,8 +955,11 @@ test('Work keeps the static edition stage label and gives Nebius a direct Work o
 	assert.match(routeSource, /sectionLabel=\{__NEBIUS_EDITION__ \? 'Work overview' : 'Step 1 of 3 · Observe'\}/u);
 	assert.doesNotMatch(routeSource, /Step 1 of 3 · Inspect/u);
 	assert.match(routeSource, /\$\{blockedCount\} with blockers/u);
-	assert.match(routeSource, /Edit the task or ask Nebius for help/u);
-	assert.match(routeSource, /Open next step/u);
+	const nebiusEntry = routeSource.match(/<section class="nebius-work-entry"[\s\S]*?<\/section>/u)?.[0] ?? '';
+	assert.match(nebiusEntry, /nebiusSelectedPack \? `Selected: \$\{workTitle\(nebiusSelectedPack\)\}\. Edit the task, get guidance, or build a browser tool\.`/u);
+	assert.match(nebiusEntry, /: 'Create or select a task to plan the next step or build a browser tool\.'/u);
+	assert.match(nebiusEntry, /href=\{`\/next\?pack=\$\{encodeURIComponent\(nebiusSelectedPack\.id\)\}`\}>Open next step/u);
+	assert.match(nebiusEntry, /disabled>Open next step/u);
 	for (const source of [workGridCardSource, workListCardSource]) {
 		assert.match(source, /NEBIUS_EDITION && pack\.nextStep/u);
 		assert.match(source, />Next step</u);

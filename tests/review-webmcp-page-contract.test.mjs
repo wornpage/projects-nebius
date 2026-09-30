@@ -417,7 +417,10 @@ test('Review accepts only one exact Decision Workspace focus request and leaves 
 
 	const focusOwner = routeSource.match(/async function focusReviewScopeDestination[\s\S]*?\n\t\}/u)?.[0] ?? '';
 	assert.match(focusOwner, /requestedItemId = ''[\s\S]*?currentReviewView\?\.upNext[\s\S]*?item\?\.id === requestedItemId/u);
-	assert.match(focusOwner, /requestedItemId && \(!requestedItem \|\| !requestedCard \|\| requestedCard\.dataset\.packId !== requestedItemId\)\) return null;/u);
+	// A saved execution card is an exact target too; both paths retain the DOM identity guard.
+	assert.match(focusOwner, /const executionCard = requestedItemId && executionFocusPack\?\.id === requestedItemId/u);
+	assert.match(focusOwner, /\[data-nebius-run-review\]\[data-pack-id="\$\{CSS\.escape\(requestedItemId\)\}"\]/u);
+	assert.match(focusOwner, /requestedItemId && \(!requestedCard \|\| requestedCard\.dataset\.packId !== requestedItemId \|\| \(!executionCard && !requestedItem\)\)\) return null;/u);
 	assert.match(focusOwner, /requestedItemId && itemId !== requestedItemId\) return null;/u);
 	assert.match(focusOwner, /focusAndPulse\(focusTarget, \{/u);
 	assert.doesNotMatch(focusOwner, /setSelectedWork|query\s*=|reviewSubFilter\s*=/u);
