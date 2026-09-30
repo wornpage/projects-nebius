@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
@@ -12,6 +13,13 @@ const server = spawn(
   { cwd: 'svelte-frontend', stdio: 'ignore', windowsHide: true }
 );
 let browser;
+let observedPage;
+const browserEvents = [];
+let browserEventCount = 0;
+function retainBrowserEvent(event) {
+  browserEventCount += 1;
+  if (browserEvents.length < 32) browserEvents.push(event);
+}
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -118,6 +126,11 @@ try {
     forbiddenHumanActivations: RECORDING_PREFLIGHT_SPEC.forbiddenHumanActivations
   });
   const page = await context.newPage();
+  observedPage = page;
+  page.on('pageerror', error => retainBrowserEvent({ type: 'pageerror', message: error.message }));
+  page.on('console', message => { if (message.type() === 'error') retainBrowserEvent({ type: 'console-error', message: message.text() }); });
+  page.on('requestfailed', request => retainBrowserEvent({ type: 'requestfailed', url: request.url(), error: request.failure()?.errorText }));
+  page.on('response', response => { if (response.status() >= 400) retainBrowserEvent({ type: 'http-error', url: response.url(), status: response.status() }); });
   await page.goto(`${origin}/webmcp-challenge`, { waitUntil: 'networkidle' });
   await waitForRoute(page, '/webmcp-challenge');
 
@@ -198,6 +211,27 @@ try {
   await page.keyboard.press('Enter');
   await waitForRoute(page, '/next');
   console.log(JSON.stringify({ calibration: 'complete', currentPath: new URL(page.url()).pathname }));
+} catch (error) {
+  const state = await observedPage?.evaluate(() => ({
+    url: location.href,
+    heading: document.querySelector('h1')?.textContent?.trim() ?? null,
+    focus: { tag: document.activeElement?.tagName, text: document.activeElement?.textContent?.trim().slice(0, 300), href: document.activeElement?.getAttribute('href') },
+    dialogs: [...document.querySelectorAll('[role="dialog"], [role="alert"]')].map(element => element.textContent?.trim().slice(0, 500)),
+    visibleText: document.body.innerText.slice(0, 2000)
+  })).catch(captureError => ({ captureError: captureError.message }));
+  const diagnostic = { calibration: 'failure', error: { name: error.name, message: error.message }, state, browserEvents, recordedEvents: browserEvents.length, omittedEvents: browserEventCount - browserEvents.length };
+  const evidenceDirectory = process.env.WEBMCP_BROWSER_EVIDENCE_DIR;
+  if (evidenceDirectory) {
+    try {
+      mkdirSync(evidenceDirectory, { recursive: true });
+      await observedPage?.screenshot({ path: path.join(evidenceDirectory, 'calibration-failure.png') }).catch(captureError => { diagnostic.screenshotError = captureError.message; });
+      writeFileSync(path.join(evidenceDirectory, 'calibration-failure.json'), JSON.stringify(diagnostic, null, 2));
+    } catch (retentionError) {
+      diagnostic.retentionError = retentionError.message;
+    }
+  }
+  console.error(JSON.stringify(diagnostic));
+  throw error;
 } finally {
   await browser?.close();
   server.kill();
