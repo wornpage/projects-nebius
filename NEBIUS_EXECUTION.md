@@ -118,6 +118,12 @@ an inert UI template with optional local styles. No packages, remote resources o
 user-supplied commands.
 
 Generation uses ordinary chat text output, without a JSON `response_format`.
+The prompt displays each exact opening fence literally, with its language and
+filename on one line, rather than presenting JSON-quoted header strings.
+Initial generation is instructed to begin immediately with the index.html
+header; repair begins with the first file being replaced. The parser still
+rejects prose, bare/unknown headers, duplicate files and malformed fences.
+This wording change has not established reliable live model compliance.
 The model supplies three native source-code blocks labelled `html index.html`,
 `javascript app.js`, and `javascript checks.cjs`. Each label follows three
 backticks at the start of a line. Each block ends with three backticks on their

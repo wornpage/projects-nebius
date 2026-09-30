@@ -38,6 +38,10 @@ test('native file blocks become materialized files with one server runtime bridg
   const files = fixture();
   const result = await generate(files, request => {
     assert.equal(Object.hasOwn(request,'response_format'),false);
+    assert.ok(request.messages[0].content.includes('```html index.html\n```javascript app.js\n```javascript checks.cjs\n'));
+    assert.match(request.messages[0].content,/language and filename together on the same physical line/u);
+    assert.match(request.messages[0].content,/start the reply immediately with this literal first line:\n```html index\.html\n/u);
+    assert.doesNotMatch(request.messages[0].content,/"```(?:html|javascript) /u);
     assert.equal(request.max_tokens, 8000);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
@@ -292,6 +296,8 @@ test('repair replaces only named files and preserves other source exactly',async
   changed.lines[0]='function validate(value) { return value.trim(); }';
   const repaired=await generate([changed],request=>{
     assert.equal(Object.hasOwn(request,'response_format'),false);
+    assert.match(request.messages[0].content,/For repair, start immediately with the exact opening line of the first file being replaced/u);
+    assert.match(request.messages[0].content,/Never preface either response with a heading, introduction or filename label/u);
     assert.match(request.messages[0].content,/Omitted files remain byte-for-byte unchanged/u);
     assert.ok(request.messages[1].content.includes(fileBlocks(fixture())));
   },{files:original.files,check:{exitCode:1,stderr:'Controlled fixture error'}});
