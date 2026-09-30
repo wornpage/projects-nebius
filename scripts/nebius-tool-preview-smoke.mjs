@@ -100,7 +100,7 @@ try {
     await access(path.join(staticRoot, 'review.html')).catch(() => { throw new Error('Build the current review UI with npm run build:nebius before authored preview qualification.'); });
     parentReference = await authoredPreviewReference(files);
     report.scope = 'production renderer and compiled review UI in a local test host with synthetic API; not authenticated app routes or provider evidence';
-    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 8,
+    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 10,
       component: 'svelte-frontend/src/routes/review/NebiusRunReview.svelte', recordIsProviderEvidence: false };
     // A deliberately slow authored handler proves event ordering in the real
     // renderer. This is never inserted into a retained RunRecord or model file.
@@ -384,11 +384,17 @@ addEventListener('message', event => {
             page.on('pageerror', error => pageErrors.push(error.message));
             await page.goto(origin + '/review?focus=' + encodeURIComponent(parentReference.input.packId));
             const review = page.locator('[data-nebius-run-review]');
-            const button = review.getByRole('button', { name: 'Open preview', exact: true });
+            const button = review.getByRole('button', { name: 'Try your tool', exact: true });
             await button.waitFor({ state: 'visible' });
+            assert.equal(await button.evaluate(element => element.classList.contains('is-primary')), true, 'Trying the current tool is the primary action.');
+            assert.equal(await review.getByRole('button', { name: 'Save run evidence', exact: true }).evaluate(element => element.classList.contains('is-primary')), false, 'Saving a run is a separate secondary action.');
+            assert.equal(await review.locator('[data-run-try]').evaluate(element => {
+              const details = ['.run-review-facts', '.run-checks', '.run-files'];
+              return details.every(selector => Boolean(element.compareDocumentPosition(element.closest('[data-nebius-run-review]').querySelector(selector)) & Node.DOCUMENT_POSITION_FOLLOWING));
+            }), true, 'Trying the tool comes before usage, checks and source.');
             const saved = await page.evaluate(key => localStorage.getItem(key), storageKey);
             for (let count = 0; count < 100 && !await button.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
-            assert.equal(await button.evaluate(element => element === document.activeElement), true, 'Open preview is reachable by real Tab navigation.');
+            assert.equal(await button.evaluate(element => element === document.activeElement), true, 'Try your tool is reachable by real Tab navigation.');
             await page.keyboard.press('Enter');
             await review.locator('.run-preview-label').filter({ hasText: 'Preview running' }).waitFor();
             frame = page.frames().find(item => item.url() === origin + parentPreviewPath);
@@ -411,7 +417,7 @@ addEventListener('message', event => {
                 await close.focus(); await page.keyboard.press('Enter');
                 await review.locator('iframe').waitFor({ state: 'detached' });
                 await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-nebius-run-review] button'))
-                  .some(button => button.textContent.trim() === 'Open preview' && button === document.activeElement));
+                  .some(button => button.textContent.trim() === 'Try your tool' && button === document.activeElement));
                 detail.restoredFocus = await button.evaluate(element => element === document.activeElement);
                 assert.equal(detail.restoredFocus, true, 'Closing restores focus to the preview trigger.');
               }
@@ -423,6 +429,31 @@ addEventListener('message', event => {
           });
           await page?.close();
         }
+        await observe('compiled parent: stale result remains inspection only', { width, category: 'parent', case: 'stale', fixtureKind: 'authored-synthetic-run-reference' }, async () => {
+          const page = await context.newPage(); page.setDefaultTimeout(4000);
+          page.on('pageerror', error => pageErrors.push(error.message));
+          const staleSeed = structuredClone(seed);
+          staleSeed.packs[0].purpose += ' The current requirement has changed.';
+          await page.addInitScript(({ key, seed }) => {
+            if (window === top) localStorage.setItem(key, JSON.stringify(seed));
+          }, { key: storageKey, seed: staleSeed });
+          try {
+            await page.goto(origin + '/review?focus=' + encodeURIComponent(parentReference.input.packId));
+            const review = page.locator('[data-nebius-run-review]');
+            const inspect = review.getByRole('button', { name: 'Inspect previous tool', exact: true });
+            await inspect.waitFor({ state: 'visible' });
+            assert.equal(await review.getByRole('button', { name: 'Try your tool', exact: true }).count(), 0);
+            assert.equal(await inspect.evaluate(element => element.classList.contains('is-primary')), false, 'A stale tool is never the primary current-result action');
+            assert.equal(await review.getByRole('button', { name: 'Save run evidence', exact: true }).isDisabled(), true);
+            await review.getByText('The task details have changed since this run started. You can inspect the result, but it cannot be saved as current evidence.', { exact: true }).waitFor();
+            const saved = await page.evaluate(key => localStorage.getItem(key), storageKey);
+            for (let count = 0; count < 100 && !await inspect.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
+            assert.equal(await inspect.evaluate(element => element === document.activeElement), true);
+            await page.keyboard.press('Enter');
+            await review.locator('.run-preview-label').filter({ hasText: 'Preview running' }).waitFor();
+            assert.equal(await page.evaluate(key => localStorage.getItem(key), storageKey), saved, 'Stale inspection never saves or approves evidence');
+          } finally { await page.close(); }
+        });
         await observe('compiled parent: no page errors or external requests', { width, category: 'parent', case: 'isolation' }, async () => {
           assert.deepEqual(pageErrors, []); assert.deepEqual(externalRequests, []);
         });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { beforeNavigate } from '$app/navigation';
+  import { beforeNavigate, replaceState } from '$app/navigation';
+  import { page } from '$app/stores';
   import { demoState, approveProjectPlan, selectProject, pendingNextActionDrafts } from '$lib/demo-client';
   import { hasBlocker, canSetNextAction, workTitle } from '$lib/demo-workflow';
   import { PLAN_LIMITS, validatePlanInput, validateProjectPlan, type ProjectPlan, type ProjectPlanTask } from '$lib/nebius-plan-contract.mjs';
@@ -52,7 +53,19 @@
     if (!dirty && !saving) return;
     event.preventDefault(); event.returnValue = '';
   }
-  onMount(() => { void client.reload(); return () => client.dispose(); });
+  onMount(() => {
+    const arrival = new URL($page.url.href);
+    const starterId = arrival.searchParams.get('starter');
+    if (starterId !== null) {
+      open = true;
+      void loadProjectStarter(starterId).catch(cause => showError(cause, 'The requested example could not be opened.'));
+      // Consume the entry request without saving the plan or reopening it on reload.
+      arrival.searchParams.delete('starter');
+      replaceState(arrival, $page.state);
+    }
+    void client.reload();
+    return () => client.dispose();
+  });
   function newTask(): ProjectPlanTask {
     let id = `task-${nextTask++}`;
     while (proposal?.tasks.some(task => task.id === id)) id = `task-${nextTask++}`;
