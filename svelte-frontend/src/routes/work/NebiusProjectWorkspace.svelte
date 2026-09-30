@@ -33,6 +33,8 @@
   } });
   let projects = $derived($demoState?.projects ?? []);
   let selectedProjectId = $derived($demoState?.selectedProjectId ?? null);
+  let scopeSelection = $state('');
+  $effect(() => { scopeSelection = selectedProjectId ?? ''; });
   let project = $derived(projects.find(candidate => candidate.id === selectedProjectId) ?? null);
   let scoped = $derived(($demoState?.packs ?? []).filter(pack => !selectedProjectId || pack.projectId === selectedProjectId));
   let progress = $derived(projectProgress(scoped));
@@ -151,11 +153,11 @@
     await tick(); document.querySelector<HTMLButtonElement>('[data-new-project]')?.focus();
   }
   export function canChangeScope() { return !updateEditor || updateEditor.canLeave(); }
-  async function changeScope(event: Event) {
-    const target = event.currentTarget as HTMLSelectElement;
-    if (updateEditor && !updateEditor.canLeave()) { target.value = selectedProjectId ?? ''; return; }
-    try { await selectProject(target.value || null); error = ''; }
-    catch (cause) { target.value = selectedProjectId ?? ''; error = cause instanceof Error ? cause.message : 'Project selection did not save.'; }
+  async function changeScope(value: string) {
+    scopeSelection = value;
+    if (updateEditor && !updateEditor.canLeave()) { scopeSelection = selectedProjectId ?? ''; return; }
+    try { await selectProject(value || null); error = ''; }
+    catch (cause) { scopeSelection = selectedProjectId ?? ''; error = cause instanceof Error ? cause.message : 'Project selection did not save.'; }
   }
 </script>
 
@@ -163,7 +165,7 @@
 <section class="project-workspace" data-nebius-project-workspace aria-label="Project workspace">
   <div class="project-heading">
     <label for="project-scope">Project scope
-      <WornSelect id="project-scope" value={selectedProjectId ?? ''} onchange={changeScope} disabled={saving}
+      <WornSelect id="project-scope" bind:value={() => scopeSelection, changeScope} disabled={saving}
         options={[{ value: '', label: 'All work' }, ...projects.map(item => ({ value: item.id, label: item.title }))]} />
     </label>
     <WornButton variant="primary" data-new-project onclick={() => { if (!updateEditor || updateEditor.canLeave()) { open = true; receipt = ''; } }} disabled={saving}>New project</WornButton>
