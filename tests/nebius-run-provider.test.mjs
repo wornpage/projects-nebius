@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import { generateRunFiles } from '../worker/nebius-run-provider.mjs';
+import { validateRunRecord } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 const model = 'nvidia/synthetic-code-model';
 const fixture = () => [
@@ -174,24 +175,99 @@ test('repair refuses source without its exact bridge before requesting inference
   assert.equal(called,false);
 });
 
-for (const [name, output] of [
-  ['legacy JSON source lines',()=>JSON.stringify({files:fixture()})],
-  ['legacy JSON content',()=>JSON.stringify({files:fixture().map(file=>({path:file.path,content:file.lines.join('\n')}))})],
-  ['missing initial file',()=>fileBlocks(fixture().slice(0,2))],
-  ['unknown path',()=>fileBlocks([...fixture(),{path:'extra.js',lines:['// extra','// file']}])],
-  ['traversal path',()=>fileBlocks([{path:'../app.js',lines:['// extra','// file']},...fixture()])],
-  ['duplicate file',()=>fileBlocks([...fixture(),fixture()[0]])],
-  ['leading prose',()=> 'Here are your files:\n'+fileBlocks(fixture())],
-  ['trailing prose',()=>fileBlocks(fixture())+'\nAll tests pass.'],
-  ['unterminated block',()=>fileBlocks(fixture()).slice(0,-3)],
-  ['nested fence',()=>fileBlocks(fixture()).replace('<!doctype html>','```javascript extra.js')],
-  ['empty file',()=>fileBlocks([{path:'index.html',lines:[]},...fixture().slice(1)])],
-  ['wrong language',()=>fileBlocks(fixture()).replace('```javascript app.js','```python app.js')],
+for (const [name, output, reason] of [
+  ['legacy JSON source lines',()=>JSON.stringify({files:fixture()}), /exact allowed file header on response line 1/u],
+  ['legacy JSON content',()=>JSON.stringify({files:fixture().map(file=>({path:file.path,content:file.lines.join('\n')}))}), /exact allowed file header on response line 1/u],
+  ['missing initial file',()=>fileBlocks(fixture().slice(0,2)), /Missing required source files: checks\.cjs\./u],
+  ['unknown path',()=>fileBlocks([...fixture(),{path:'extra.js',lines:['// extra','// file']}]), /exact allowed file header on response line \d+/u],
+  ['traversal path',()=>fileBlocks([{path:'../app.js',lines:['// extra','// file']},...fixture()]), /exact allowed file header on response line 1/u],
+  ['duplicate file',()=>fileBlocks([...fixture(),fixture()[0]]), /index\.html is repeated on response line \d+/u],
+  ['leading prose',()=> 'Here are your files:\n'+fileBlocks(fixture()), /exact allowed file header on response line 1/u],
+  ['trailing prose',()=>fileBlocks(fixture())+'\nAll tests pass.', /exact allowed file header on response line \d+/u],
+  ['unterminated block',()=>fileBlocks(fixture()).slice(0,-3), /checks\.cjs is missing its closing file fence/u],
+  ['nested fence',()=>fileBlocks(fixture()).replace('<!doctype html>','```javascript extra.js'), /Nested or indented file fence in index\.html on response line 2/u],
+  ['empty file',()=>fileBlocks([{path:'index.html',lines:[]},...fixture().slice(1)]), /index\.html must contain 2 to 1024 source lines/u],
+  ['wrong language',()=>fileBlocks(fixture()).replace('```javascript app.js','```python app.js'), /exact allowed file header on response line \d+/u],
 ]) {
   test(`native file parser rejects ${name}`,async()=>{
-    await assert.rejects(generate(output()),error=>error.code==='invalid_model_output'&&error.stage==='tool_files'&&error.usage.outputTokens===20);
+    await assert.rejects(generate(output()),error=>{
+      assert.equal(error.code,'invalid_model_output');
+      assert.equal(error.stage,'tool_files');
+      assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
+      assert.match(error.message,reason);
+      assert.equal(error.uncertain,false);
+      return true;
+    });
   });
 }
+
+for (const [name, mutate, reason] of [
+  ['empty reply',()=>'', /At least one source file block is required/u],
+  ['bare CR',text=>text.replace('<!doctype html>','<!doctype\rhtml>'), /LF or CRLF source line separators/u],
+  ['Unicode separator',text=>text.replace('<!doctype html>','<!doctype\u2028html>'), /LF or CRLF source line separators/u],
+  ['indented closing fence',text=>text.replace('\n```','\n ```'), /Nested or indented file fence in index\.html/u],
+  ['overlong source line',text=>text.replace('<!doctype html>','x'.repeat(1025)), /index\.html source line 1 exceeds 1024 characters/u],
+  ['too many source lines',text=>text.replace('<!doctype html>',Array(1024).fill('// line').join('\n')), /index\.html must contain 2 to 1024 source lines/u],
+  ['blank page',text=>text.replace('<!doctype html>\n<output id="result"></output>',' \n '), /The generated files are invalid/u],
+  ['NUL in page',text=>text.replace('<!doctype html>','<!doctype html>\u0000'), /The generated files are invalid/u],
+  ['oversized file',text=>text.replace('<!doctype html>',Array(33).fill('x'.repeat(1024)).join('\n')), /A generated file exceeds its size limit/u],
+]) {
+  test(`file diagnostics retain ${name} reason without the rejected reply`,async()=>{
+    const reply=mutate(fileBlocks(fixture()));
+    await assert.rejects(generate(reply),error=>{
+      assert.match(error.message,reason);
+      assert.equal(error.stage,'tool_files');
+      assert.equal(error.code,'invalid_model_output');
+      assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
+      assert.deepEqual(Object.keys(error).sort(),['code','stage','uncertain','usage']);
+      assert.ok(error.message.length<240);
+      return true;
+    });
+  });
+}
+
+test('file diagnostics never echo unknown headers or private provider text',async()=>{
+  const marker='SYNTHETIC_PRIVATE_PROVIDER_TEXT';
+  await assert.rejects(generate(marker+'\n'+fileBlocks(fixture())),error=>{
+    assert.match(error.message,/exact allowed file header on response line 1/u);
+    assert.doesNotMatch(error.message,new RegExp(marker));
+    assert.doesNotMatch(JSON.stringify(error),new RegExp(marker));
+    return true;
+  });
+});
+
+test('shared total-size rejection retains its safe diagnostic',async()=>{
+  const files=fixture().map(file=>({...file,lines:[...file.lines,...Array(23).fill('x'.repeat(1024))]}));
+  await assert.rejects(generate(files),error=>{
+    assert.match(error.message,/The generated tool exceeds its total size limit/u);
+    assert.equal(error.stage,'tool_files');
+    assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
+    return true;
+  });
+});
+
+test('failed RunRecord preserves the parser reason and usage without inventing files or checks',async()=>{
+  let failure;
+  try { await generate('SYNTHETIC_REJECTED_SOURCE'); }
+  catch (error) { failure=error; }
+  assert.ok(failure);
+  const record=validateRunRecord({
+    id:'00000000-0000-4000-8000-000000000000',version:'browser-tool.v1',packId:'synthetic-task',
+    pack:{title:'Build a tool',purpose:'Diagnose file format',nextStep:'Build the tool',blocker:'none',doneWhen:'Return the required files'},
+    currentStatus:'active',context:[],requestedModel:model,status:'failed',attempt:0,
+    createdAt:'2026-09-30T00:00:00.000Z',updatedAt:'2026-09-30T00:00:01.000Z',events:[],files:[],checks:[],
+    usage:{modelCalls:1,...failure.usage,totalsComplete:true},error:failure.message,
+    failure:{code:failure.code,stage:failure.stage},
+  });
+  assert.equal(record.error,failure.message);
+  assert.match(record.error,/exact allowed file header on response line 1/u);
+  assert.deepEqual(record.failure,{code:'invalid_model_output',stage:'tool_files'});
+  assert.deepEqual(record.usage,{modelCalls:1,inputTokens:10,outputTokens:20,totalsComplete:true});
+  assert.deepEqual(record.files,[]);
+  assert.deepEqual(record.checks,[]);
+  assert.doesNotMatch(JSON.stringify(record),/SYNTHETIC_REJECTED_SOURCE/u);
+  assert.throws(()=>validateRunRecord({...record,status:'ready'}),/A ready result needs observed successful checks/u);
+});
 
 test('native files preserve JavaScript escaping, indentation and trailing blank lines',async()=>{
   const files=fixture();

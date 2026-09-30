@@ -8,6 +8,15 @@ export class RunProviderError extends Error {
 }
 
 const fail = (code, message, uncertain = false, stage = null) => { throw new RunProviderError(code, message, uncertain, stage); };
+const invalidFiles = reason => fail('invalid_model_output', `Nebius returned invalid browser tool files: ${reason}`, false, 'tool_files');
+// These messages are owned by the shared file validator. Do not forward an
+// arbitrary exception, provider body or rejected source through diagnostics.
+const FILE_VALIDATION_ERRORS = new Set([
+  'The tool must contain its page, script and checks.',
+  'The generated files are invalid.',
+  'A generated file exceeds its size limit.',
+  'The generated tool exceeds its total size limit.',
+]);
 const RESPONSE_LIMIT = 131072;
 const SOURCE_LINE_LIMITS = Object.freeze({ minLines: 2, maxLines: 1024, maxCharacters: 1024 });
 const FILE_HEADERS = Object.freeze({
@@ -76,24 +85,26 @@ const REPAIR_SYSTEM = `${SYSTEM} Repair the supplied files using the observed sa
 
 function parseFileBlocks(text, repair) {
   const lines = text.replace(/\r\n/gu, '\n').split('\n');
-  if (/[\r\u2028\u2029]/u.test(lines.join('\n'))) throw new TypeError('Unsupported source line separator.');
+  if (/[\r\u2028\u2029]/u.test(lines.join('\n'))) invalidFiles('Use LF or CRLF source line separators.');
   const files = [], seen = new Set();
   let index = 0;
   while (index < lines.length) {
     if (!lines[index].trim()) { index += 1; continue; }
     const path = Object.keys(FILE_HEADERS).find(name => FILE_HEADERS[name] === lines[index]);
-    if (!path || seen.has(path)) throw new TypeError('Expected one allowed file block.');
+    if (!path) invalidFiles(`Expected an exact allowed file header on response line ${index + 1}.`);
+    if (seen.has(path)) invalidFiles(`${path} is repeated on response line ${index + 1}.`);
     seen.add(path);
     const start = ++index;
     while (index < lines.length && lines[index] !== '```') {
-      if (lines[index].trimStart().startsWith('```')) throw new TypeError('Nested file fences are not allowed.');
+      if (lines[index].trimStart().startsWith('```')) invalidFiles(`Nested or indented file fence in ${path} on response line ${index + 1}.`);
       index += 1;
     }
-    if (index === lines.length) throw new TypeError('Unclosed file block.');
+    if (index === lines.length) invalidFiles(`${path} is missing its closing file fence.`);
     files.push({ path, lines: lines.slice(start, index) });
     index += 1;
   }
-  if (!files.length || (!repair && files.length !== 3)) throw new TypeError('Required source files are missing.');
+  if (!files.length) invalidFiles('At least one source file block is required.');
+  if (!repair && files.length !== 3) invalidFiles(`Missing required source files: ${Object.keys(FILE_HEADERS).filter(path => !seen.has(path)).join(', ')}.`);
   return files;
 }
 
@@ -102,13 +113,19 @@ function formatFileBlocks(files) {
 }
 
 function decodeSourceLines(value) {
-  if (!Array.isArray(value) || value.length !== 3) throw new TypeError('Three source files are required.');
+  if (!Array.isArray(value) || value.length !== 3) invalidFiles('Three source files are required.');
   return validateRunFiles(value.map(file => {
     if (!isRecord(file) || Object.keys(file).sort().join(',') !== 'lines,path'
-      || !Array.isArray(file.lines) || file.lines.length < SOURCE_LINE_LIMITS.minLines || file.lines.length > SOURCE_LINE_LIMITS.maxLines
-      || file.lines.some(line => typeof line !== 'string' || [...line].length > SOURCE_LINE_LIMITS.maxCharacters || /[\r\n\u2028\u2029]/u.test(line))) {
-      throw new TypeError('Source lines must follow the generation format.');
+      || !Object.hasOwn(FILE_HEADERS, file.path) || !Array.isArray(file.lines)
+      || file.lines.some(line => typeof line !== 'string')) {
+      invalidFiles('Source lines must follow the generation format.');
     }
+    if (file.lines.length < SOURCE_LINE_LIMITS.minLines || file.lines.length > SOURCE_LINE_LIMITS.maxLines) {
+      invalidFiles(`${file.path} must contain ${SOURCE_LINE_LIMITS.minLines} to ${SOURCE_LINE_LIMITS.maxLines} source lines.`);
+    }
+    const tooLong = file.lines.findIndex(line => [...line].length > SOURCE_LINE_LIMITS.maxCharacters);
+    if (tooLong !== -1) invalidFiles(`${file.path} source line ${tooLong + 1} exceeds ${SOURCE_LINE_LIMITS.maxCharacters} characters.`);
+    if (file.lines.some(line => /[\r\n\u2028\u2029]/u.test(line))) invalidFiles(`${file.path} contains an unsupported source line separator.`);
     const source = file.lines.join('\n');
     if (file.path === 'app.js' && MODEL_BRIDGE_APIS.test(source)) {
       fail('invalid_model_output', 'The generated logic includes reserved runtime bridge or export identifiers.', false, 'tool_worker');
@@ -192,7 +209,8 @@ function validateEnvelope(raw, model, previousFiles) {
   }
   catch (error) {
     if (error instanceof RunProviderError) throw error;
-    fail('invalid_model_output', 'Nebius returned invalid browser tool files.', false, 'tool_files');
+    if (error instanceof TypeError && FILE_VALIDATION_ERRORS.has(error.message)) invalidFiles(error.message);
+    throw error;
   }
   const source = Object.fromEntries(files.map(file => [file.path, file.content]));
   const checkImports = [...source['checks.cjs'].matchAll(/\brequire\(\s*['"]([^'"]+)['"]\s*\)/gu)].map(match => match[1]);

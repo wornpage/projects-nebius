@@ -101,6 +101,15 @@ keeps previously recorded usage while its new response is pending. Valid
 provider usage is retained on output rejection and before preview validation.
 Cancellation also retains usage observed before it completes.
 
+File-format rejection messages retain the specific safe parser reason: the
+expected header's response line, a repeated or missing allowed file, an
+unclosed/nested fence, a source-line limit, or the shared file-size rejection.
+They keep `invalid_model_output` at `tool_files`. Diagnostics contain only
+server-authored descriptions, allowed filenames and numeric positions; unknown
+headers, rejected source and provider reasoning are not echoed or retained.
+This does not reconstruct a reason discarded by an older run, retry generation,
+relax the file format or establish that a tool works.
+
 Statuses: queued, generating, checking, repairing, cancelling, ready, failed,
 cancelled, uncertain. Files are exactly index.html, app.js and checks.cjs;
 an unfinished run may have none. app.js contains DOM-free business logic with
