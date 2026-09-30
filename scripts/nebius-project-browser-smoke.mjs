@@ -83,6 +83,65 @@ async function reviewAndApprove(page) {
   await page.getByRole('button', { name: 'Approve and create project', exact: true }).click();
   await page.waitForFunction(({ key, count }) => { const saved = JSON.parse(localStorage.getItem(key)); return (saved?.state || saved)?.projects?.length === count + 1; }, { key: storageKey, count: priorCount });
 }
+async function checkLandingEntry(width) {
+  const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
+  const errors = [], external = [], callsBefore = requests.length;
+  await context.addInitScript(({ storageKey, seed }) => {
+    if (!localStorage.getItem(storageKey)) localStorage.setItem(storageKey, JSON.stringify({ packs: seed, pendingNextActionDrafts: [] }));
+  }, { storageKey, seed });
+  await context.route('**/*', route => {
+    if (new URL(route.request().url()).origin !== origin) { external.push(route.request().url()); return route.abort(); }
+    return route.continue();
+  });
+  const page = await context.newPage(); page.setDefaultTimeout(10000);
+  page.on('pageerror', error => errors.push(error.message));
+  enabled = false;
+  try {
+    await page.goto(`${origin}/work`);
+    await page.locator('[data-nebius-project-workspace]').waitFor();
+    const before = await readState(page);
+    await page.goto(`${origin}/landing.html`);
+    const entry = page.getByRole('link', { name: 'Review the checker example', exact: true });
+    assert.equal(await entry.getAttribute('href'), '/work?starter=release-packet-checker');
+    for (let count = 0; count < 40 && !await entry.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
+    assert.equal(await entry.evaluate(element => element === document.activeElement), true, 'Landing example is reachable by real Tab navigation');
+    await page.keyboard.press('Enter');
+    await page.getByLabel('Project title', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Project title', { exact: true }).inputValue(), 'Build a release-packet checker');
+    assert.equal(await page.locator('[data-plan-task]').count(), 2);
+    assert.deepEqual(await readState(page), before, 'Opening the example never changes saved workspace state');
+    assert.equal(new URL(page.url()).searchParams.has('starter'), false, 'The entry request is consumed without a reload');
+    await page.getByRole('button', { name: 'Review plan', exact: true }).click();
+    assert.deepEqual(await readState(page), before, 'Reviewing the example still creates no saved project or task');
+    await page.getByRole('button', { name: 'Approve and create project', exact: true }).click();
+    await page.locator('[data-project-approved]').waitFor();
+    const approved = await readState(page), project = approved.projects.find(item => item.title === 'Build a release-packet checker');
+    assert.ok(project); assert.equal(project.source, 'manual');
+    assert.equal(approved.packs.length, before.packs.length + 2);
+    const tasks = approved.packs.filter(item => item.projectId === project.id);
+    assert.deepEqual(tasks.map(item => item.id).sort(), [`${project.id}:build-checker`, `${project.id}:review-checker`].sort());
+    assert.equal(tasks.find(item => item.id.endsWith(':review-checker')).blockedBy, `${project.id}:build-checker`);
+    await page.reload(); await page.locator('#project-scope').waitFor();
+    assert.equal(await page.locator('[data-project-draft]').count(), 0, 'Reload after approval does not reopen an example draft');
+    assert.deepEqual((await readState(page)).packs.filter(item => item.projectId === project.id), tasks);
+    await page.getByRole('navigation', { name: 'Project next work', exact: true }).getByRole('link', { name: 'Build the release packet checker', exact: true }).click();
+    await page.getByRole('heading', { level: 1, name: 'Build the release packet checker', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).searchParams.get('pack'), `${project.id}:build-checker`);
+    assert.equal(await page.getByLabel('Switch task', { exact: true }).inputValue(), `${project.id}:build-checker`);
+    await page.getByRole('tab', { name: 'Build tool', exact: true }).click();
+    assert.equal(await page.getByRole('tab', { name: 'Build tool', exact: true }).getAttribute('aria-selected'), 'true');
+    const beforeInvalid = await readState(page);
+    await page.goto(`${origin}/work?starter=unavailable-example`);
+    await page.locator('[data-project-plan-error]').waitFor();
+    assert.match(await page.locator('[data-project-plan-error]').innerText(), /Unknown project starter/u);
+    assert.equal(await page.locator('[data-plan-task]').count(), 0, 'An unknown example does not select a fallback plan');
+    assert.deepEqual(await readState(page), beforeInvalid);
+    assert.equal(requests.length, callsBefore, 'Entry, review, approval and inspection request no inference');
+    assert.deepEqual(errors, []); assert.deepEqual(external, []);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    return { landingEntry: true, exampleReviewNoWrite: true, explicitApproval: true, buildTaskReachable: true, consumedEntryReload: true, unknownExampleRefused: true };
+  } finally { await context.close(); }
+}
 try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined });
   for (const width of [375, 1280]) {
@@ -123,7 +182,8 @@ try {
     // Re-entering a selected project after a task visit preserves membership.
     const manualTask = manual.packs.find(item => item.projectId === project.id);
     await page.goto(`${origin}/next?pack=${encodeURIComponent(manualTask.id)}`);
-    await page.getByRole('heading', { name: 'Next step', exact: true }).waitFor();
+    await page.getByRole('heading', { level: 1, name: manualTask.title, exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Switch task', { exact: true }).inputValue(), manualTask.id, 'the Next page selects the created task');
     await page.getByRole('link', { name: 'Work', exact: true }).click();
     await page.waitForURL('**/work');
     assert.equal(await page.locator('#project-scope').inputValue(), project.id);
@@ -199,6 +259,8 @@ try {
     page.once('dialog', async dialog => dialog.dismiss());
     await page.locator('#project-scope').selectOption(project.id);
     assert.equal(await page.locator('#project-scope').inputValue(), modelProject.id, 'canceling scope change preserves draft');
+    assert.deepEqual(await readState(page), beforeRevision, 'canceling scope change preserves the saved project and tasks');
+    assert.equal(await page.locator('[data-replan-task]').getByLabel('Next step', { exact: true }).inputValue(), 'Write a beginner-friendly learning objective.', 'canceling scope change retains the edited proposal');
     await page.getByRole('button', { name: 'Review changes', exact: true }).click();
     await page.locator('[data-replan-diff]').waitFor();
     assert.match(await page.locator('[data-replan-diff]').innerText(), /Before[\s\S]*Write the learning objective\.[\s\S]*After[\s\S]*Write a beginner-friendly learning objective\./);
@@ -299,7 +361,8 @@ try {
         const nextLinks = index === 1 ? page.getByRole('navigation', { name: 'Project next work', exact: true }) : page.locator('[data-ready-next]');
         await nextLinks.getByRole('link', { name: nextTitle, exact: true }).click();
       }
-      await page.locator('[data-nebius-evidence-review] > summary').click();
+      await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
+      assert.equal(await page.locator('[data-nebius-evidence-review]').evaluate(element => element.open), true, 'the Evidence tab exposes the recording form');
       await page.locator('#nebius-review-evidence').fill(evidence[index]);
       await page.getByRole('button', { name: 'Save evidence', exact: true }).click();
       await page.getByRole('button', { name: 'Mark done with recorded evidence', exact: true }).click();
@@ -384,7 +447,8 @@ try {
     assert(revisedSecond.activity.at(-1).includes(updateWhy));
     assert(revisedSecond.activity.at(-1).includes(taskWhy));
     await page.goto(`${origin}/next?pack=${encodeURIComponent(firstTask.id)}`);
-    await page.locator('[data-nebius-evidence-review] > summary').click();
+    await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
+    assert.equal(await page.locator('[data-nebius-evidence-review]').evaluate(element => element.open), true);
     assert.equal(await page.locator('[data-nebius-saved-criteria-text]').innerText(), firstTask.doneWhen);
     assert.equal(await page.locator('[data-nebius-optional-review]').evaluate(element => element.open), false, 'saved criteria are visible without opening AI review');
     await page.locator('[data-nebius-evidence-review]').screenshot({ path: path.resolve(`dist/nebius-rehearsal-criteria-${width}.png`) });
@@ -418,6 +482,7 @@ try {
     assert.deepEqual(errors, []); assert.deepEqual(external, []);
     results.push({ width, manualWithoutInference: true, generatedPlanNoWrite: true, approvalAtomic: true, cyclesRefused: true, dependencyReload: true, projectScope: true, explicitFocus: true, exportImport: true, reviewedReplan: true, manualReplanOffline: true, quickAddPreservesDraft: true, concurrentApprovalRefused: true, fullReset: true, examplePlans: 3, examplesNoInference: true, exampleApprovalReload: true, completedProjectJourney: true, freshReplanAfterCompletion: true, nextTaskLinks: true, independentBlockerPreserved: true, approvedReasonReload: true, manualCriteriaVisible: true, explicitBlockerResolution: true, rehearsalNoInference: true, overflow: false });
     await context.close();
+    Object.assign(results[results.length - 1], await checkLandingEntry(width));
   }
   console.log(JSON.stringify({ syntheticInference: true, cases: results }, null, 2));
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

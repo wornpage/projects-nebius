@@ -1,0 +1,403 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createContext, runInContext } from 'node:vm';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { authoredCheckerFiles, authoredPreviewReference, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
+import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from './fixtures/nebius-release-packet-cases.mjs';
+import { runFilesDigest, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { renderRunPreview } from '../worker/nebius-run-preview.mjs';
+
+const files = await materializeAuthoredChecker();
+const script = files.find(file => file.path === 'app.js').content;
+
+// Execute only the committed authored fixture. This is not a security sandbox
+// for arbitrary model code and does not call Token Factory Sandboxes.
+function loadAuthoredModule(source = script) {
+  const context = createContext({ module: { exports: {} } });
+  runInContext(source, context, { timeout: 1000 });
+  return text => {
+    context.inputText = text;
+    return runInContext('module.exports.validate(inputText)', context, { timeout: 1000 });
+  };
+}
+
+function workerBridge() {
+  const replies = [];
+  const context = createContext({ self: { postMessage: reply => replies.push(JSON.parse(JSON.stringify(reply))) } });
+  runInContext(script, context, { timeout: 1000 });
+  return data => {
+    context.inputMessage = data;
+    runInContext('self.onmessage({data: inputMessage})', context, { timeout: 1000 });
+    assert.equal(replies.length, 1);
+    return replies.shift().patches;
+  };
+}
+
+test('authored checker traverses the actual native parser, validators and materializer', async () => {
+  assert.deepEqual(validateRunFiles(files), files);
+  assert.equal(script.match(/self\.onmessage/g)?.length, 1);
+  assert.equal(script.match(/module\.exports/g)?.length, 1);
+  for (const file of authoredCheckerFiles()) {
+    const result = files.find(item => item.path === file.path).content;
+    if (file.path === 'app.js') assert.ok(result.startsWith(file.content + '\n;\n'));
+    else assert.equal(result, file.content);
+  }
+  assert.equal(await runFilesDigest(files), await runFilesDigest(await materializeAuthoredChecker()));
+});
+
+for (const scenario of PACKET_CASES) {
+  test(`authored checker independent case: ${scenario.name}`, () => {
+    assertPacketResult(assert, loadAuthoredModule()(scenario.input), scenario);
+  });
+}
+
+test('authored checks import and exercise both actual materialized functions', () => {
+  let imports = 0, assertions = 0;
+  const validate = loadAuthoredModule();
+  const handleMessage = workerBridge();
+  const countedAssert = new Proxy(assert, { get(target, key) {
+    if (typeof target[key] !== 'function') return target[key];
+    return (...args) => { assertions += 1; return target[key](...args); };
+  } });
+  const context = createContext({ require: name => {
+    if (name === 'node:assert/strict') return countedAssert;
+    assert.equal(name, './app.js'); imports += 1; return { validate, handleMessage };
+  } });
+  runInContext(files.find(file => file.path === 'checks.cjs').content, context, { timeout: 1000 });
+  assert.equal(imports, 1);
+  assert.equal(assertions, 15);
+});
+
+test('actual appended worker bridge handles init, both example loaders and changed input', () => {
+  const send = workerBridge();
+  assert.doesNotMatch(send({ type: 'init', values: { packet: '' } })[0].text, /Ready for human review/u);
+  for (const [id, input, expected] of [
+    ['load-incomplete', INCOMPLETE, THREE_GAPS], ['load-corrected', CORRECTED, READY],
+  ]) {
+    const patches = send({ type: 'event', event: 'click', id, values: { packet: '' } });
+    assert.deepEqual(JSON.parse(patches.find(patch => patch.id === 'packet').value), JSON.parse(input));
+    assert.equal(patches.find(patch => patch.id === 'result').text, expected);
+  }
+  const changed = send({ type: 'event', event: 'input', id: 'packet', values: { packet: '{' } });
+  assert.doesNotMatch(changed.find(patch => patch.id === 'result').text, /Ready for human review|0 gaps/u);
+  const invalid = send({ type: 'event', event: 'click', id: 'check-packet', values: { packet: '{' } });
+  assert.match(invalid.find(patch => patch.id === 'result').text, /^Input error:/u);
+});
+
+test('all independent cases survive actual worker message dispatch, not only direct function calls', () => {
+  const send = workerBridge();
+  for (const scenario of PACKET_CASES) {
+    const patches = send({ type: 'event', event: 'click', id: 'check-packet', values: { packet: scenario.input } });
+    assertPacketResult(assert, patches.find(patch => patch.id === 'result').text, scenario);
+  }
+});
+
+test('independent oracle detects a tool that falsely reports every input ready', () => {
+  const wrong = loadAuthoredModule('function validate() { return "0 gaps: Ready for human review"; }\nmodule.exports = { validate };');
+  assert.throws(() => assertPacketResult(assert, wrong(INCOMPLETE), PACKET_CASES[0]));
+  assert.throws(() => assertPacketResult(assert, wrong('null'), PACKET_CASES.find(item => item.name === 'null')));
+});
+
+test('known-good fixture does not require weaker page or worker validation', async () => {
+  const badPage = authoredCheckerFiles();
+  badPage[0].content += '\n<script>throw new Error("must be rejected")</script>';
+  await assert.rejects(materializeAuthoredChecker(badPage), error => error.stage === 'tool_page' && error.code === 'page_script_forbidden');
+  const badLogic = authoredCheckerFiles();
+  badLogic[1].content += '\n// fetch';
+  await assert.rejects(materializeAuthoredChecker(badLogic), error => error.stage === 'tool_worker');
+});
+
+test('a named-file repair preserves the page and checks and appends exactly one bridge', async () => {
+  const replacements = authoredCheckerFiles().filter(file => file.path === 'app.js');
+  replacements[0].content += '\n// Authored repair fixture, not a model repair.';
+  const repaired = await materializeAuthoredChecker(replacements, { files, check: { exitCode: 1, stderr: 'Authored diagnostic fixture.' } });
+  assert.deepEqual(repaired[0], files[0]);
+  assert.deepEqual(repaired[2], files[2]);
+  assert.equal(repaired[1].content.match(/self\.onmessage/g)?.length, 1);
+  for (const scenario of PACKET_CASES) assertPacketResult(assert, loadAuthoredModule(repaired[1].content)(scenario.input), scenario);
+});
+
+test('retained preview rejects ambiguous or untrusted input before browser execution', async t => {
+  // Synthetic record for rejection tests only, not evidence of a provider run.
+  const fixtureRecord = (await authoredPreviewReference(files)).record;
+  const bindings = { input: 'packet', output: 'result', check: 'check-packet', incomplete: 'load-incomplete', corrected: 'load-corrected' };
+  const script = fileURLToPath(new URL('../scripts/nebius-tool-preview-smoke.mjs', import.meta.url));
+  for (const [name, mutation, expected] of [
+    ['partial options', (record, ids, paths) => ({ args: ['--run-record', paths.record] }), /Use --run-record PATH and --bindings PATH together/u],
+    ['unknown option', (record, ids, paths) => ({ args: ['--run-record', paths.record, '--unknown', paths.bindings] }), /Unknown or duplicate/u],
+    ['duplicate option', (record, ids, paths) => ({ args: ['--run-record', paths.record, '--run-record', paths.bindings] }), /Unknown or duplicate/u],
+    ['source digest mismatch', record => { record.files[1].content += '\n// Authored data mutation'; }, /do not match the source that was checked/u],
+    ['non-ready record', record => { record.status = 'failed'; }, /Only a retained ready RunRecord/u],
+    ['response envelope instead of raw record', record => ({ record: { run: record } }), /saved execution record is invalid/u],
+    ['extra binding key', (record, ids) => { ids.extra = 'unused'; }, /Expected values to be strictly deep-equal/u],
+    ['selector instead of ID', (record, ids) => { ids.input = '#packet'; }, /HTML IDs, not selectors or code/u],
+    ['duplicate control ID', (record, ids) => { ids.output = ids.input; }, /distinct ID/u],
+    ['oversized bindings', () => ({ bindingsText: ' '.repeat(4097) }), /exceeds its size limit/u],
+    ['oversized record', () => ({ recordText: ' '.repeat(1048577) }), /exceeds its size limit/u],
+    ['malformed JSON without echoing its contents', () => ({ recordText: 'SECRET_FROM_MISPLACED_FILE' }), /Qualification inputs must be valid JSON/u],
+  ]) {
+    await t.test(name, child => {
+      const parent = resolve(tmpdir());
+      const directory = mkdtempSync(join(parent, 'nebius-preview-arguments-'));
+      child.after(() => {
+        const target = resolve(directory);
+        assert.equal(dirname(target), parent);
+        assert.ok(basename(target).startsWith('nebius-preview-arguments-'));
+        rmSync(target, { recursive: true });
+      });
+      const paths = { record: join(directory, 'record.json'), bindings: join(directory, 'bindings.json') };
+      const record = structuredClone(fixtureRecord), ids = { ...bindings };
+      const changes = mutation(record, ids, paths) || {};
+      writeFileSync(paths.record, changes.recordText ?? JSON.stringify(changes.record ?? record));
+      writeFileSync(paths.bindings, changes.bindingsText ?? JSON.stringify(ids));
+      const evidence = join(directory, 'evidence');
+      const result = spawnSync(process.execPath, [script, ...(changes.args ?? ['--run-record', paths.record, '--bindings', paths.bindings])], {
+        encoding: 'utf8', timeout: 6000, maxBuffer: 8192, windowsHide: true,
+        env: { ...process.env, CHROME_EXECUTABLE_PATH: '', NEBIUS_PREVIEW_EVIDENCE_DIR: evidence },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 1, result.stdout);
+      assert.doesNotMatch(result.stdout, /SECRET_FROM_MISPLACED_FILE/u);
+      const report = JSON.parse(readFileSync(join(evidence, 'report.json'), 'utf8'));
+      assert.match(report.error.message, expected);
+      assert.equal(report.browser, null);
+      assert.equal(report.liveModelCalls, 0);
+      assert.equal(report.liveSandboxRuns, 0);
+      assert.equal(report.packetSummary.observed, 0);
+      assert.equal(report.passed, false);
+    });
+  }
+});
+
+// Run only the trusted renderer bootstrap against a controlled DOM and Worker
+// stub. Blob bytes are retained as data and never executed in host Node/vm.
+// The real browser verifier separately runs the authored code in its Worker.
+async function domBridgeHarness() {
+  class Element {
+    constructor(id = '') { this.id = id; this.textContent = ''; }
+    closest() { return this; }
+    setAttribute() {}
+  }
+  class Input extends Element {}
+  class Textarea extends Element { value = ''; }
+  class Select extends Element {}
+  class Button extends Element {}
+  const elements = new Map([
+    ['packet', new Textarea('packet')], ['result', new Element('result')],
+    ['load-incomplete', new Button('load-incomplete')], ['load-corrected', new Button('load-corrected')],
+    ['check-packet', new Button('check-packet')], ['packet-form', new Element('packet-form')],
+  ]);
+  const listeners = new Map(), windowListeners = new Map(), timers = new Map();
+  const status = new Element(), messages = [], notifications = [];
+  let worker, timerId = 0;
+  class Worker {
+    terminated = 0;
+    constructor() { worker = this; }
+    postMessage(message) { messages.push(JSON.parse(JSON.stringify(message))); }
+    terminate() { this.terminated += 1; }
+  }
+  const rendered = await renderRunPreview(files);
+  const bootstrap = rendered.html.match(/<script>([\s\S]*)<\/script><\/body><\/html>$/u)?.[1];
+  assert.ok(bootstrap, 'The actual renderer must supply its fixed bootstrap.');
+  const context = createContext({
+    document: { body: { querySelectorAll: () => [...elements.values()], append: () => {},
+      addEventListener: (name, listener) => listeners.set(name, listener) }, createElement: () => status },
+    Element, HTMLInputElement: Input, HTMLTextAreaElement: Textarea, HTMLSelectElement: Select, HTMLButtonElement: Button,
+    window: {}, parent: { postMessage: data => notifications.push({ ...data, renderedOutput: elements.get('result').textContent }) },
+    atob: text => Buffer.from(text, 'base64').toString('binary'), Uint8Array,
+    Blob: class {}, URL: { createObjectURL: () => 'blob:authored-unused-by-stub', revokeObjectURL: () => {} }, Worker,
+    setTimeout: (callback, milliseconds) => { const id = ++timerId; timers.set(id, { callback, milliseconds }); return id; },
+    clearTimeout: id => timers.delete(id), addEventListener: (name, listener) => windowListeners.set(name, listener),
+  });
+  runInContext(bootstrap, context, { timeout: 1000 });
+  return {
+    elements, worker, status, messages, notifications, timers,
+    emit(name, id, value) {
+      const target = elements.get(id); assert.ok(target);
+      if (value !== undefined) target.value = value;
+      listeners.get(name)({ target, preventDefault() {} });
+    },
+    reply(patches) { worker.onmessage({ data: { patches } }); },
+    expire() { assert.equal(timers.size, 1); const timer = [...timers.values()][0]; assert.equal(timer.milliseconds, 5000); timer.callback(); },
+    close() { windowListeners.get('pagehide')(); },
+  };
+}
+
+test('DOM bridge preserves ordered events and their captured input values while busy', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.emit('input', 'packet', 'first');
+  bridge.emit('input', 'packet', 'second');
+  bridge.emit('click', 'check-packet');
+  assert.equal(bridge.messages.length, 1);
+  bridge.reply([]);
+  assert.deepEqual(bridge.messages[1], { type: 'event', event: 'input', id: 'packet', values: { packet: 'first' } });
+  bridge.reply([{ id: 'result', text: 'stale first answer' }]);
+  assert.equal(bridge.elements.get('result').textContent, '');
+  assert.equal(bridge.messages[2].values.packet, 'second');
+  bridge.reply([{ id: 'result', text: 'Input changed' }]);
+  assert.equal(bridge.messages[3].id, 'check-packet');
+  assert.equal(bridge.messages[3].values.packet, 'second');
+  bridge.reply([{ id: 'result', text: 'checked second' }]);
+  assert.equal(bridge.elements.get('result').textContent, 'checked second');
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge delivers both queued example actions instead of dropping the second', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([]);
+  bridge.emit('click', 'load-incomplete'); bridge.emit('click', 'load-corrected');
+  bridge.reply([{ id: 'packet', value: INCOMPLETE }, { id: 'result', text: THREE_GAPS }]);
+  assert.equal(bridge.messages[2].id, 'load-corrected');
+  bridge.reply([{ id: 'packet', value: CORRECTED }, { id: 'result', text: READY }]);
+  assert.equal(bridge.elements.get('packet').value, CORRECTED);
+  assert.equal(bridge.elements.get('result').textContent, READY);
+});
+
+test('DOM bridge discards stale value and answer patches after a newer user edit', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([{ id: 'result', text: 'Initial result' }]);
+  bridge.emit('click', 'load-corrected'); bridge.emit('input', 'packet', '{');
+  bridge.reply([{ id: 'packet', value: CORRECTED }, { id: 'result', text: READY }]);
+  assert.equal(bridge.elements.get('packet').value, '{');
+  assert.equal(bridge.elements.get('result').textContent, 'Initial result');
+  bridge.reply([{ id: 'result', text: 'Input changed' }]);
+  assert.equal(bridge.elements.get('result').textContent, 'Input changed');
+});
+
+test('DOM bridge handles click and submit as separate ordered native events', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([]);
+  bridge.emit('click', 'check-packet'); bridge.emit('submit', 'packet-form');
+  bridge.reply([{ id: 'result', text: 'checked' }]);
+  assert.equal(bridge.messages[2].event, 'submit');
+  assert.equal(bridge.messages[2].id, 'packet-form');
+  bridge.reply([]);
+  assert.equal(bridge.elements.get('result').textContent, 'checked');
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge stops explicitly at 33 pending events instead of silently losing them', async () => {
+  const bridge = await domBridgeHarness();
+  for (let index = 0; index < 32; index += 1) bridge.emit('click', 'check-packet');
+  assert.equal(bridge.worker.terminated, 0);
+  bridge.emit('click', 'check-packet');
+  assert.equal(bridge.worker.terminated, 1);
+  assert.match(bridge.status.textContent, /Too many tool interactions/u);
+  bridge.reply([]); bridge.emit('click', 'check-packet');
+  assert.equal(bridge.messages.length, 1);
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge deadline terminates the Worker and prevents queued dispatch or retry', async () => {
+  const bridge = await domBridgeHarness(); bridge.emit('input', 'packet', 'new'); bridge.expire();
+  assert.equal(bridge.worker.terminated, 1);
+  assert.match(bridge.status.textContent, /stopped responding/u);
+  bridge.reply([]); bridge.emit('click', 'check-packet');
+  assert.equal(bridge.messages.length, 1);
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge rejects an invalid stale reply before it can dispatch pending events', async () => {
+  const bridge = await domBridgeHarness(); bridge.emit('input', 'packet', 'new');
+  bridge.reply(Array.from({ length: 101 }, () => ({ id: 'result', text: 'too many patches' })));
+  assert.equal(bridge.worker.terminated, 1);
+  assert.match(bridge.status.textContent, /unsupported update/u);
+  assert.equal(bridge.messages.length, 1);
+  assert.equal(bridge.timers.size, 0);
+});
+
+test('DOM bridge script errors and page close stop pending work exactly once', async () => {
+  for (const reason of ['error', 'close']) {
+    const bridge = await domBridgeHarness(); bridge.emit('click', 'check-packet');
+    if (reason === 'error') bridge.worker.onerror({ preventDefault() {} }); else bridge.close();
+    bridge.close(); bridge.reply([]); bridge.emit('click', 'check-packet');
+    assert.equal(bridge.worker.terminated, 1);
+    assert.equal(bridge.messages.length, 1);
+    assert.equal(bridge.timers.size, 0);
+    assert.equal(bridge.notifications.filter(item => item.status === 'failed').length, 1);
+  }
+});
+
+test('DOM bridge reports ready after patches and ignores unsolicited idle replies', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([{ id: 'result', text: 'Initialized' }]);
+  assert.equal(bridge.notifications.at(-1).renderedOutput, 'Initialized');
+  bridge.reply([{ id: 'result', text: 'unsolicited' }]);
+  assert.equal(bridge.elements.get('result').textContent, 'Initialized');
+  bridge.emit('click', 'check-packet');
+  bridge.reply([{ id: 'result', text: 'Checked' }]);
+  assert.equal(bridge.notifications.at(-1).renderedOutput, 'Checked');
+});
+
+// Exercise the two actual trusted component functions, removing only their
+// two TypeScript parameter annotations. This is not execution of model code.
+function parentPreviewHarness() {
+  const source = readFileSync(new URL('../svelte-frontend/src/routes/review/NebiusRunReview.svelte', import.meta.url), 'utf8');
+  const start = source.indexOf('function stopPreviewListener()');
+  const end = source.indexOf('async function refreshResult()', start);
+  assert.ok(start >= 0 && end > start);
+  const functions = source.slice(start, end).replace(': HTMLIFrameElement', '').replace(': MessageEvent', '');
+  const listeners = new Set(), timers = new Map(); let timerId = 0;
+  const context = createContext({
+    window: { addEventListener: (name, fn) => { assert.equal(name, 'message'); listeners.add(fn); },
+      removeEventListener: (name, fn) => { assert.equal(name, 'message'); listeners.delete(fn); } },
+    setTimeout: (callback, milliseconds) => { const id = ++timerId; timers.set(id, { callback, milliseconds }); return id; },
+    clearTimeout: id => timers.delete(id),
+  });
+  runInContext(`let stopPreviewMessages = null; let previewTimer = null; let previewStatus = 'Opening';
+${functions}
+this.unit = { listenForPreviewStatus, stopPreviewListener, status: () => previewStatus };`, context, { timeout: 1000 });
+  const frame = { contentWindow: {} };
+  return { listeners, timers, frame, status: context.unit.status,
+    listen: (target = frame) => context.unit.listenForPreviewStatus(target),
+    stop: () => context.unit.stopPreviewListener(),
+    emit(status, changes = {}) { for (const listener of [...listeners]) listener({ source: frame.contentWindow, origin: 'null', data: { type: 'nebius-tool-preview', status }, ...changes }); },
+    expire() { assert.equal(timers.size, 1); const [id, timer] = [...timers.entries()][0]; assert.equal(timer.milliseconds, 8000); timers.delete(id); timer.callback(); },
+  };
+}
+
+test('parent preview stays subscribed after readiness and reflects a later failure', () => {
+  const h = parentPreviewHarness(); h.listen(); h.emit('ready');
+  assert.equal(h.status(), 'Preview running'); assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 0);
+  h.emit('failed'); assert.match(h.status(), /^Preview stopped/u);
+  assert.equal(h.listeners.size, 0); h.emit('ready'); assert.match(h.status(), /^Preview stopped/u);
+});
+
+test('parent startup failure cleans up its listener and deadline', () => {
+  const h = parentPreviewHarness(); h.listen(); h.emit('failed');
+  assert.match(h.status(), /could not run/u); assert.equal(h.listeners.size, 0); assert.equal(h.timers.size, 0);
+});
+
+test('parent startup deadline stops a preview that never acknowledges initialization', () => {
+  const h = parentPreviewHarness(); h.listen(); h.expire();
+  assert.match(h.status(), /could not run/u); assert.equal(h.listeners.size, 0); assert.equal(h.timers.size, 0);
+});
+
+test('parent rejects unexpected sources, origins and message shapes without cancelling startup', () => {
+  const h = parentPreviewHarness(); h.listen();
+  for (const changes of [{ source: {} }, { origin: 'https://foreign.example' }, { origin: '' },
+    { data: null }, { data: [] }, { data: { type: 'nebius-tool-preview', status: 'ready', extra: true } },
+    { data: { type: 'other', status: 'ready' } }, { data: { type: 'nebius-tool-preview', status: 'busy' } }]) h.emit('ready', changes);
+  assert.equal(h.status(), 'Opening'); assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 1);
+  h.emit('failed'); assert.match(h.status(), /could not run/u);
+});
+
+test('parent replacement removes the old listener and rejects the old WindowProxy', () => {
+  const h = parentPreviewHarness(); h.listen();
+  const nextFrame = { contentWindow: {} }; h.listen(nextFrame);
+  assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 1);
+  h.emit('failed'); assert.equal(h.status(), 'Opening');
+  h.emit('ready', { source: nextFrame.contentWindow });
+  h.emit('failed', { source: nextFrame.contentWindow });
+  assert.match(h.status(), /^Preview stopped/u); assert.equal(h.listeners.size, 0);
+});
+
+test('parent explicit cleanup is idempotent and rejects subsequent messages', () => {
+  const h = parentPreviewHarness(); h.listen(); h.stop(); h.stop(); h.emit('ready');
+  assert.equal(h.status(), 'Opening'); assert.equal(h.listeners.size, 0); assert.equal(h.timers.size, 0);
+});
+
+test('parent repeated readiness retains one listener without rescheduling startup', () => {
+  const h = parentPreviewHarness(); h.listen(); h.emit('ready'); h.emit('ready');
+  assert.equal(h.status(), 'Preview running'); assert.equal(h.listeners.size, 1); assert.equal(h.timers.size, 0);
+});

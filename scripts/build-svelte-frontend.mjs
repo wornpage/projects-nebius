@@ -117,6 +117,10 @@ function finalizeStaticCsp(outputDir) {
 		// in its named sandboxed frame. The frozen WebMCP artifact keeps its CSP.
 		if (finalizedHeaders.split("form-action 'none'").length !== 2) throw new Error('Nebius preview form policy could not be finalized.');
 		finalizedHeaders = finalizedHeaders.replace("form-action 'none'", "form-action 'self'");
+		// no-referrer makes a native form POST carry Origin:null. The authenticated
+		// preview needs the app origin; same-origin still withholds cross-origin referrers.
+		if (finalizedHeaders.split('Referrer-Policy: no-referrer').length !== 2) throw new Error('Nebius preview referrer policy could not be finalized.');
+		finalizedHeaders = finalizedHeaders.replace('Referrer-Policy: no-referrer', 'Referrer-Policy: same-origin');
 	}
 	writeFileSync(headersPath, finalizedHeaders, 'utf8');
 }

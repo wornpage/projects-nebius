@@ -68,6 +68,20 @@ test('unknown starter ids refuse selection rather than substituting an example',
   }
 });
 
+test('checker criteria require input errors, result invalidation and actual handler assertions', () => {
+  const task = getProjectStarter('release-packet-checker').plan.tasks[0];
+  assert.match(task.purpose, /Health values: missing, failing or passing/u);
+  assert.match(task.purpose, /Review values: pending, rejected or approved/u);
+  assert.match(task.purpose, /Use "1 gap: <reason>" for one gap and "<N> gaps: <reasons>" otherwise/u);
+  assert.match(task.purpose, /Health, Review, Rollback order, joined by "; "/u);
+  assert.match(task.purpose, /Invalid JSON or fields start exactly "Input error: " followed by a useful reason, never readiness/u);
+  assert.match(task.doneWhen, /Invalid enums show an input error, never a gap count/u);
+  assert.match(task.doneWhen, /Editing or loading another input clears or replaces the old result/u);
+  assert.match(task.doneWhen, /actual validate and handleMessage functions/u);
+  assert.ok(task.doneWhen.length <= 1000);
+  assert.ok(task.purpose.length <= 1000);
+});
+
 test('starter data has only pure validation dependencies and no state or provider access', () => {
   const source = readFileSync(new URL('../svelte-frontend/src/lib/nebius-project-starters.mjs', import.meta.url), 'utf8');
   const imports = [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/gu)].map(match => match[1]);

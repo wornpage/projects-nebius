@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 
@@ -186,7 +186,9 @@ try {
 	assert.equal(await page.locator('main.challenge-route').count(), 1, 'an unvisited Next route hydrates offline after a clean install');
 	if (nebiusEdition) {
 		lastStage = 'checking Nebius query selection and local save offline';
-		await page.getByRole('heading', { name: 'Next step', exact: true }).waitFor();
+		const expectedTask = JSON.parse(readFileSync(path.join(artifactRoot, 'data/demo-packs.json'), 'utf8')).find(pack => pack.id === 'nebius-keyboard-review');
+		assert.ok(expectedTask, 'the bundled Nebius fixture contains the requested offline task');
+		await page.getByRole('heading', { level: 1, name: expectedTask.title, exact: true }).waitFor();
 		assert.equal(await page.getByLabel('Switch task', { exact: true }).inputValue(), 'nebius-keyboard-review', 'offline task URL uses the Next shell and preserves task identity');
 		await page.locator('[data-nebius-task-editor] > summary').click();
 		await page.locator('#nebius-written-step').fill('Record the keyboard route while disconnected.');

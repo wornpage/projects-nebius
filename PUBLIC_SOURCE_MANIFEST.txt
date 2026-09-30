@@ -45,6 +45,7 @@ scripts/inline-script-bodies.mjs
 scripts/nebius-browser-smoke.mjs
 scripts/nebius-project-browser-smoke.mjs
 scripts/nebius-runtime-smoke.mjs
+scripts/nebius-tool-preview-smoke.mjs
 scripts/offline-browser-smoke.mjs
 scripts/portability-browser-smoke.mjs
 scripts/run-webmcp-contracts.mjs
@@ -161,6 +162,8 @@ svelte-frontend/vite.config.ts
 tests/activity-presentation-webmcp-contract.test.mjs
 tests/challenge-brand-affordance-webmcp-contract.test.mjs
 tests/challenge-webmcp-page-contract.test.mjs
+tests/fixtures/nebius-release-checker.mjs
+tests/fixtures/nebius-release-packet-cases.mjs
 tests/focus-pulse-webmcp-contract.test.mjs
 tests/full-border-webmcp-contract.test.mjs
 tests/handoff-session-webmcp-contract.test.mjs
@@ -178,6 +181,7 @@ tests/nebius-replan.test.mjs
 tests/nebius-routing.test.mjs
 tests/nebius-run-provider.test.mjs
 tests/nebius-sandbox.test.mjs
+tests/nebius-tool-traversal.test.mjs
 tests/next-webmcp-page-contract.test.mjs
 tests/priority-webmcp-page-contract.test.mjs
 tests/public-manifest-webmcp-contract.test.mjs

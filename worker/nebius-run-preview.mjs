@@ -46,18 +46,29 @@ export async function renderRunPreview(rawFiles) {
     try{url=URL.createObjectURL(new Blob([bytes], {type:'text/javascript'}));worker=new Worker(url);}
     catch{status.textContent='This browser could not start the tool preview.';notify('failed');return;}
     finally{if(url)URL.revokeObjectURL(url);}
-    let timer; let stopped = false; let busy = false;
-    const stop = message=>{if(stopped)return;stopped=true;clearTimeout(timer);worker.terminate();status.textContent=message;notify('failed');};
+    let timer; let stopped = false; let busy = false; let editRevision = 0; let activeRevision = 0;
+    const pending = [];
+    const stop = message=>{if(stopped)return;stopped=true;clearTimeout(timer);pending.length=0;worker.terminate();status.textContent=message;notify('failed');};
     const values = ()=>Object.fromEntries(Array.from(elements).filter(([,el])=>el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement).map(([id,el])=>[id,el instanceof HTMLInputElement && (el.type==='checkbox'||el.type==='radio') ? el.checked : el.value.slice(0,4000)]));
-    const send = message=>{if(stopped||busy)return;busy=true;timer=setTimeout(()=>stop('The tool stopped responding. Reopen the preview to restart it.'),5000);worker.postMessage({...message,values:values()});};
+    const dispatch = request=>{busy=true;activeRevision=request.revision;timer=setTimeout(()=>stop('The tool stopped responding. Reopen the preview to restart it.'),5000);worker.postMessage(request.message);};
+    const send = message=>{
+      if(stopped)return;
+      const request={message:{...message,values:values()},revision:editRevision};
+      if(busy){
+        if(pending.length>=32){stop('Too many tool interactions are waiting. Reopen the preview to restart it.');return;}
+        pending.push(request);
+      }else dispatch(request);
+    };
     worker.onerror=event=>{event.preventDefault();stop('The tool encountered a script error. Review its source and checks.');};
     worker.onmessage=event=>{
       if(stopped || !busy)return;
-      clearTimeout(timer);busy=false;
+      clearTimeout(timer);
       const data=event.data;
       if(!data||typeof data!=='object'||!Array.isArray(data.patches)||data.patches.length>100){stop('The tool returned an unsupported update.');return;}
-      notify('ready');
-      for(const patch of data.patches){
+      // A response computed before a newer field edit cannot overwrite that
+      // edit or publish an answer for the previous values. Still validate its
+      // envelope, then deliver the queued event with its captured values.
+      if(activeRevision===editRevision)for(const patch of data.patches){
         if(!patch||typeof patch!=='object'||typeof patch.id!=='string')continue;
         const el=elements.get(patch.id);if(!el)continue;
         if(typeof patch.text==='string'&&patch.text.length<=16000)el.textContent=patch.text;
@@ -69,11 +80,16 @@ export async function renderRunPreview(rawFiles) {
           el.replaceChildren(...options.map(item=>new Option(item.label,item.value)));
         }
       }
+      notify('ready');busy=false;
+      if(pending.length)dispatch(pending.shift());
     };
     for(const eventName of ['click','input','change','submit'])document.body.addEventListener(eventName,event=>{
       if(eventName==='submit')event.preventDefault();
       const el=event.target instanceof Element ? event.target.closest('[id]') : null;
-      if(el&&elements.get(el.id)===el)send({type:'event',event:eventName,id:el.id});
+      if(el&&elements.get(el.id)===el){
+        if(eventName==='input'||eventName==='change')editRevision++;
+        send({type:'event',event:eventName,id:el.id});
+      }
     });
     addEventListener('pagehide',()=>stop('Preview closed.'),{once:true});
     send({type:'init'});

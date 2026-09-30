@@ -31,12 +31,23 @@ human review of the actual output. Both begin as proposed work.
 The proposed tool accepts a JSON object with exactly these four string fields.
 Malformed input shows an error. It should provide buttons to load either
 example, a JSON editor and a Check packet button, all keyboard accessible.
+Unsupported health/review enum values are input errors, not release gaps.
+The task specifies `Input error: ` followed by a useful reason for invalid
+input, `1 gap: <reason>` for one gap and `<N> gaps: <reasons>` otherwise.
+Reasons appear in Health, Review, Rollback order, separated by `; `.
+Editing or loading another packet clears or replaces the previous result.
 Readiness is based only on supplied text; the tool does not probe a live service
 or approve a release.
 
 Retain the generated files, observed Sandbox output and actual preview results
 when a live run is performed. These expected outcomes are not a record of a
 successful generated tool. Existing daily and per-run limits still apply.
+
+Starter changes apply to future proposals. For an older saved task, review the
+current starter requirements in the task editor and save them through the
+normal human approval flow before authorizing a new build. Inspect its displayed
+RunInput to confirm the exact task snapshot; older run criteria remain historical.
+The independent test corpus stays outside generation input.
 
 ## Shared boundary
 
@@ -58,6 +69,12 @@ The source of limits and validation is `nebius-execution-contract.mjs`.
   its CSP and can also be downloaded as a complete tool.
 - Successful start/read/cancel returns `{ run: RunRecord }` with no access key.
   Errors use `{ code, error }`; responses are private/no-store.
+
+Nebius host pages use `Referrer-Policy: same-origin` so native preview form
+POSTs retain their app Origin header. Cross-origin referrers are withheld. The
+API still rejects null or foreign origins and requires the exact run key.
+Generated preview responses retain their own `no-referrer` policy and opaque
+sandbox. The WebMCP build retains its original host-page policy.
 
 JSON run requests, including configuration, send
 `X-Nebius-Run-Format: run-diagnostics.v1`. The shared browser client owns this
@@ -104,7 +121,7 @@ JSON source-line envelope is no longer accepted; there is one provider format.
 For app.js the model defines top-level `validate` and `handleMessage` functions
 and their helpers. The server appends one fixed runtime
 bridge that checks both functions, handles Worker messages, verifies that a
-reply is a patch array, and exports validate for Node checks. The model must
+reply is a patch array, and exports validate and handleMessage for Node checks. The model must
 not define messaging or export plumbing. Its raw logic cannot reference the
 reserved identifiers self, globalThis, onmessage, addEventListener,
 postMessage, module or exports, including in comments or strings. These are
@@ -121,6 +138,24 @@ same validation and receive exactly one runtime bridge. Original
 logic line numbers are preserved. The server never runs generated source while
 decoding or materializing it. Missing required functions fail when the Sandbox
 loads app.js and can use the existing single repair.
+
+The trusted check runner exposes only the actual exported `validate` and
+`handleMessage` functions through frozen wrappers. Each call is counted only
+after it returns successfully; a handler reply must be an array. At least one
+successful call to each function and one successful synchronous assertion are
+required. A caught assertion failure still fails the check. stdout records
+assertion, validate-call and handleMessage-call counts. These counts establish
+observed calls, not independent semantic acceptance.
+
+The generation prompt asks for assertions on example-loader patches, edits
+after a valid result and invalid enum input. The authored checker fixture tests
+those behaviors through this same runner; deliberate broken fixtures must fail.
+The independent packet cases remain separate and are not sent to the model.
+
+This bridge revision does not add an old-suffix repair fallback. Before applying
+it to a runtime, confirm no earlier nonterminal run may still need repair.
+Older retained runs stay readable and previewable with their original checked
+files; their historical assertion counts are not reinterpreted as new coverage.
 
 Native code blocks remove the need for the model to JSON-escape every source
 line. This is a coding-format choice, not proof that structured JSON caused the
@@ -159,6 +194,46 @@ receipts retain that code. Visual quality is assessed in the human preview.
 Invalid output stops the run. Repair remains limited to an observed first
 Sandbox check failure. Rejected source is not retained or silently rewritten,
 and no new run is started automatically.
+
+### Offline preview qualification
+
+Build the current UI with `npm run build:nebius`, then run
+`npm run test:nebius:tool-preview` to qualify the committed authored checker
+through the actual production renderer. Set `CHROME_EXECUTABLE_PATH` to an
+existing Chromium executable and optionally `NEBIUS_PREVIEW_EVIDENCE_DIR` for
+the local report and screenshots. It does not download a browser or call Nebius.
+
+The same verifier can inspect an existing ready result:
+
+```text
+npm run test:nebius:tool-preview -- --run-record run-record.json --bindings bindings.json
+```
+
+The record file must be one raw `RunRecord`, not a response envelope or workspace
+backup. Its ready status and checked source digest are validated. The original
+materialized files are previewed unchanged; no bridge is stripped or replaced.
+The bindings file has exactly five unique HTML IDs matching the actual template:
+
+```json
+{"input":"jsonInput","output":"output","check":"checkButton","incomplete":"exampleIncompleteBtn","corrected":"exampleCompleteBtn"}
+```
+
+Those IDs are an example, not guessed defaults for generated output. The verifier
+checks the sanitized controls before interaction. Record files are bounded to
+1 MiB and bindings to 4 KiB; selectors, extra keys and ambiguous options fail.
+Do not include provider credentials or run-access keys in either file.
+
+Each of the 24 frozen packet cases gets a fresh page, opaque frame and Worker at
+375 and 1280 pixels. The report retains all 48 outcomes, explicit observed/pass/
+fail counts, actual output, and separate loader/edit checks. A semantic failure
+does not stop later cases; any failed check exits nonzero. The strict oracle is
+unchanged: exact wording mismatches remain failures and can be discussed
+separately from behavior defects. Source runs only in the isolated browser Worker.
+
+This is a local test-host renderer check of a caller-supplied record, not an
+authenticated provider read, a new model/Sandbox run or independent project
+acceptance. File integrity is not a provenance signature. The real application
+route, provider receipts, generated assertions and human decision remain separate.
 
 ## Runtime and persistence
 
@@ -209,6 +284,41 @@ IDs. Replies are `{patches:[{id,text?,value?,disabled?,hidden?,options?}]}`;
 options contain value/label pairs. These small tools use in-memory state and
 restart when the preview is reopened. Node checks cover generated logic;
 browser interactions and suitability still need live observation.
+
+The DOM bridge sends one request at a time and retains up to 32 pending native
+events in order, with field values captured when each event occurs. A reply
+computed before a newer input/change event is discarded so it cannot overwrite
+the user's newer fields or publish a result for old values. The event is still
+handled in the Worker, then the next captured request is sent. Each dispatched
+request keeps the existing five-second deadline. Overflow, timeout, invalid
+reply or script error stops the Worker, clears pending events and reports an
+explicit failure. Reopening is the only restart; there is no automatic retry.
+
+The provider-free authored preview verifier also uses a deliberately slow
+authored handler for three event-order scenarios at 375 px and 1280 px: Check
+followed by an edit, two example loaders, and a loader followed by an edit.
+These six bridge checks have their own denominator and source digest; they
+are separate from the unchanged 48 packet checks and never alter or stand in
+for retained model source.
+
+The parent review page keeps its status subscription for the entire active
+iframe lifetime. The first valid ready message clears only the eight-second
+startup deadline; a later failure changes the parent status and ends the
+subscription. Close, component destruction, record replacement and reopening
+remove the old listener and deadline. Reopening replaces the iframe rather
+than reusing its WindowProxy, and closing returns keyboard focus to its Open
+preview trigger. Only the current opaque frame's exact two-field message
+shape is accepted.
+
+The default authored verifier also mounts the actual compiled review component
+in an isolated browser workspace with an explicitly synthetic run reference.
+It checks later Worker failure, a fresh frame on reopen and close-focus return
+at both widths, plus page-error/network guards: eight separately counted
+parent checks. The reference's modeled usage/check receipt is not provider
+evidence; only the preview API is served by the synthetic host and every other
+API is disabled. No real workspace is changed. Explicit retained-record mode
+continues to qualify its unchanged files in the renderer without seeding the
+synthetic parent workspace or requiring compiled UI assets.
 
 ### Saved-record compatibility
 

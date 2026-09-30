@@ -430,7 +430,7 @@
 	.challenge-brand:focus-visible,
 	.challenge-nav-control:focus-visible,
 	.workflow-tools-link:focus-visible {
-		outline: 2px dashed var(--worn-focus);
+		outline: 2px solid var(--challenge-focus-mint);
 		outline-offset: 2px;
 	}
 

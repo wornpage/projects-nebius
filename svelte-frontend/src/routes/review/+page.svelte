@@ -514,7 +514,7 @@
 			cells={webMcpScopeReceipt.cells}
 		/>
 	{/if}
-	{#if executionFocusPack}
+	{#if __NEBIUS_EDITION__ && executionFocusPack}
 		<NebiusRunReview pack={executionFocusPack} />
 	{/if}
 

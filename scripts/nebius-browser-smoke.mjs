@@ -79,15 +79,16 @@ try {
       if (new URL(route.request().url()).origin !== origin) { unexpected.push(route.request().url()); return route.abort(); }
       return route.continue();
     });
-    await context.addInitScript(({ storageKey }) => {
+    const taskSeed = [
+      { id: 'nebius-test', title: 'Plan the project handoff', status: 'active', owner: 'Mira', purpose: 'Agree the delivery plan.', next: 'Review', nextStep: 'Draft a date proposal.', blocker: 'Deadline not confirmed', doneWhen: 'Mira confirms the date.', memory: ['DO_NOT_SEND'], activity: [] },
+      { id: 'nebius-extra', title: 'Check the agenda', status: 'active', next: 'Open', blocker: 'none', purpose: 'Prepare the meeting.', doneWhen: 'Agenda approved.' },
+    ];
+    await context.addInitScript(({ storageKey, packs }) => {
       if (!localStorage.getItem(storageKey)) localStorage.setItem(storageKey, JSON.stringify({
-        packs: [
-          { id: 'nebius-test', title: 'Plan the project handoff', status: 'active', owner: 'Mira', purpose: 'Agree the delivery plan.', next: 'Review', nextStep: 'Draft a date proposal.', blocker: 'Deadline not confirmed', doneWhen: 'Mira confirms the date.', memory: ['DO_NOT_SEND'], activity: [] },
-          { id: 'nebius-extra', title: 'Check the agenda', status: 'active', next: 'Open', blocker: 'none', purpose: 'Prepare the meeting.', doneWhen: 'Agenda approved.' },
-        ],
+        packs,
         selectedId: 'nebius-test', pendingNextActionDrafts: [],
       }));
-    }, { storageKey });
+    }, { storageKey, packs: taskSeed });
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     page.setDefaultTimeout(10000);
     await page.goto(`${origin}/work`);
@@ -96,7 +97,10 @@ try {
     await page.screenshot({ path: path.resolve(`dist/nebius-work-${width}.png`), fullPage: true });
     await page.locator('[data-nebius-work-entry]').getByRole('link', { name: 'Open next step' }).click();
     await page.waitForURL('**/next?pack=nebius-test');
-    assert.equal(await page.getByRole('heading', { name: 'Next step', exact: true }).count(), 1);
+    const taskHeading = page.getByRole('heading', { level: 1, name: taskSeed[0].title, exact: true });
+    await taskHeading.waitFor();
+    assert.equal(await taskHeading.count(), 1);
+    assert.equal(await page.getByLabel('Switch task', { exact: true }).inputValue(), taskSeed[0].id);
     assert.equal(await page.locator('[data-nebius-saved-next-step]').innerText(), 'Draft a date proposal.');
     assert.equal(new URL(page.url()).searchParams.get('pack'), 'nebius-test');
     const workSelector = page.getByLabel('Switch task');
@@ -140,7 +144,7 @@ try {
     await page.locator('.context-picker summary').click();
     await page.locator('.context-choice').filter({ hasText: 'PRIVATE_NOTE_TWO' }).locator('input').check();
     await page.locator('.context-choice').filter({ hasText: 'Meeting agenda excerpt' }).locator('input').check();
-    const generate = page.getByRole('button', { name: 'Generate suggestion', exact: true });
+    const generate = page.locator('[data-nebius-suggestion]').getByRole('button', { name: 'Generate suggestion', exact: true, includeHidden: true });
     await generate.waitFor();
     await page.screenshot({ path: path.resolve(`dist/nebius-workbench-${width}.png`), fullPage: true });
     const before = await page.evaluate(key => localStorage.getItem(key), storageKey), count = posts.length;
@@ -200,8 +204,10 @@ try {
     await page.getByRole('button', { name: 'Clear update', exact: true }).click();
     proposalMode = 'next-step';
     const beforeReview = await page.evaluate(key => localStorage.getItem(key), storageKey), reviewCount = reviewPosts.length;
-    await page.locator('[data-nebius-evidence-review] > summary').focus();
-    await page.keyboard.press('Enter');
+    await reachByTab(page, page.getByRole('tab', { name: 'Next step', exact: true }));
+    await page.keyboard.press('End');
+    assert.equal(await page.getByRole('tab', { name: 'Evidence', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(await page.getByRole('tab', { name: 'Evidence', exact: true }).evaluate(element => element === document.activeElement), true);
     assert.equal(await page.locator('[data-nebius-evidence-review]').evaluate(element => element.open), true);
     await page.locator('#nebius-review-evidence').fill('Mira sent a proposed date. Confirmation is still pending.');
     assert.equal(await workSelector.isDisabled(), true, 'unsaved evidence protects task selection');
@@ -233,13 +239,16 @@ try {
     const recorded = await page.evaluate(key => { const saved = JSON.parse(localStorage.getItem(key)); return saved.state || saved; }, storageKey);
     assert.notEqual(recorded.packs[0].status, 'done');
     await page.reload();
+    await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
     await page.locator('#nebius-review-evidence').waitFor();
     assert.equal(await page.locator('#nebius-review-evidence').inputValue(), recorded.packs[0].completionEvidence, 'saved evidence survives a return visit');
     assert.equal(await page.locator('#nebius-written-step').count(), 1, 'saved written step remains editable after reload');
     const beforeOffline = posts.length + reviewPosts.length;
+    await page.getByRole('tab', { name: 'Next step', exact: true }).click();
     await page.locator('#nebius-task-update').fill('Preserve this update while offline.');
     await context.setOffline(true);
     await page.getByText('You are offline. Browser-local edits remain available.', { exact: false }).waitFor();
+    await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
     await page.getByText('Offline · you can still record evidence', { exact: false }).waitFor();
     assert.equal(await page.locator('#nebius-task-update').inputValue(), 'Preserve this update while offline.');
     await page.getByRole('link', { name: 'Finish or clear the update', exact: true }).click();
@@ -252,11 +261,13 @@ try {
     await page.getByRole('button', { name: 'Apply changes', exact: true }).click();
     await page.waitForFunction(key => { const saved = JSON.parse(localStorage.getItem(key)); return (saved.state || saved).packs[0].blocker === 'Deadline still unconfirmed after an offline edit.'; }, storageKey);
     assert.equal(await generate.isDisabled(), true);
+    await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
     await page.locator('[data-nebius-optional-review] > summary').click();
     assert.equal(await page.getByRole('button', { name: 'Review with Nebius', exact: true }).isDisabled(), true);
     assert.equal(posts.length + reviewPosts.length, beforeOffline, 'going offline must not start inference');
     await context.setOffline(false);
     await page.getByText('You are offline. Browser-local edits remain available.', { exact: false }).waitFor({ state: 'detached' });
+    await page.getByRole('tab', { name: 'Next step', exact: true }).click();
     await generate.waitFor(); failInference = true;
     await generate.click(); await page.getByText('A suggestion is unavailable. Reload the preview to try again.', { exact: true }).waitFor();
     assert.equal(await page.locator('[data-nebius-result]').count(), 0);
@@ -296,6 +307,8 @@ try {
     await page.getByRole('button', { name: 'Discard edits', exact: true }).click();
     await page.waitForFunction(() => document.activeElement?.matches('[data-nebius-task-editor] > summary'));
     await page.reload();
+    await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
+    await otherPage.getByRole('tab', { name: 'Evidence', exact: true }).click();
     await page.locator('#nebius-review-evidence').fill('First-tab evidence that must not overwrite another saved version.');
     await otherPage.locator('#nebius-review-evidence').fill('Mira sent a proposed date. The other tab recorded a later observation.');
     await otherPage.getByRole('button', { name: 'Save evidence', exact: true }).click();
@@ -363,7 +376,7 @@ try {
     assert.equal(newTask.status, oldTask.status);
     if (action === 'approve') await legacyPanel.getByText('Next action set to "Focus".', { exact: true }).waitFor({ state: 'visible' });
     recoveryCases.push({ action, pendingCleared: true, taskStatusPreserved: true });
-    await legacyPage.locator('[data-nebius-evidence-review] > summary').click();
+    await legacyPage.getByRole('tab', { name: 'Evidence', exact: true }).click();
     assert.equal(await legacyPage.locator('[data-nebius-saved-criteria-absent]').innerText(), 'No completion criteria saved for this task.');
     assert.equal(await legacyPage.locator('[data-nebius-optional-review]').evaluate(element => element.open), false);
     await legacyContext.close();
@@ -417,8 +430,10 @@ try {
   await freshPage.keyboard.press('Tab');
   await freshPage.keyboard.press('Enter');
   await freshPage.getByText('Changes applied.', { exact: true }).waitFor();
-  await reachByTab(freshPage, freshPage.locator('[data-nebius-evidence-review] > summary'));
-  await freshPage.keyboard.press('Enter');
+  await reachByTab(freshPage, freshPage.getByRole('tab', { name: 'Next step', exact: true }));
+  await freshPage.keyboard.press('End');
+  assert.equal(await freshPage.getByRole('tab', { name: 'Evidence', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await freshPage.getByRole('tab', { name: 'Evidence', exact: true }).evaluate(element => element === document.activeElement), true);
   await reachByTab(freshPage, freshPage.locator('#nebius-review-evidence'));
   await freshPage.keyboard.type('Keyboard traversal observation: Work and Next controls were reachable. Dialog checks remain incomplete.');
   await reachByTab(freshPage, freshPage.locator('[data-nebius-optional-review] > summary'));
@@ -430,6 +445,10 @@ try {
   await freshPage.keyboard.press('Enter');
   await freshPage.getByText('Supplied evidence recorded. The task was not marked done.', { exact: true }).waitFor();
   assert.equal(await freshPage.locator('#nebius-button-action-panel').isVisible(), false, 'normal Nebius work uses the unified task editor');
+  await reachByTab(freshPage, freshPage.getByRole('tab', { name: 'Evidence', exact: true }));
+  await freshPage.keyboard.press('Home');
+  assert.equal(await freshPage.getByRole('tab', { name: 'Next step', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await freshPage.getByRole('tab', { name: 'Next step', exact: true }).evaluate(element => element === document.activeElement), true);
   await reachByTab(freshPage, freshPage.getByRole('button', { name: 'Advanced options', exact: true }));
   await freshPage.keyboard.press('Enter');
   await reachByTab(freshPage, freshPage.locator('details.worn-accordion > summary').filter({ hasText: 'Choose another item' }));

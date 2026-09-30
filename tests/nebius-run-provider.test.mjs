@@ -12,8 +12,9 @@ const fixture = () => [
   ]},
   {path:'checks.cjs',lines:[
     "const assert = require('node:assert/strict');",
-    "const {validate} = require('./app.js');",
+    "const {validate, handleMessage} = require('./app.js');",
     "assert.equal(validate('ok'), 'ok');",
+    "assert.equal(handleMessage({type:'event',event:'input',id:'input',values:{input:'ok'}})[0].text, 'ok');",
   ]},
 ];
 
@@ -39,6 +40,11 @@ test('native file blocks become materialized files with one server runtime bridg
     assert.equal(request.max_tokens, 8000);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
+    assert.match(request.messages[0].content, /call the actual exported validate and handleMessage functions/u);
+    assert.match(request.messages[0].content, /Never keep a readiness or success result for an earlier input/u);
+    assert.match(request.messages[0].content, /an invalid enum must produce an input error/u);
+    assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
+    assert.doesNotMatch(request.messages[0].content, /Input error:|1 gap:|demo-42/u);
   });
   for (const file of result.files) {
     const logic=files.find(source=>source.path===file.path).lines.join('\n');
@@ -94,16 +100,19 @@ test('repair preserves the maximum line count and canonical content exactly', as
     assert.equal(prompt.includes('self.onmessage'),false);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
     assert.equal(request.max_tokens,8000);
+    assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
   }, {files:generated.files,check:{exitCode:1,stderr:'A controlled check failed.'}});
   assert.deepEqual(repaired.files,generated.files);
 });
 
-test('server bridge dispatches worker messages and exports the actual validation function', async () => {
+test('server bridge dispatches worker messages and exports both actual functions', async () => {
   const {files}=await generate(fixture());
   const script=files.find(file=>file.path==='app.js').content;
   const node={module:{exports:{}}};
   runInNewContext(script,node,{timeout:1000});
   assert.equal(node.module.exports.validate('ok'),'ok');
+  assert.deepEqual(Object.keys(node.module.exports).sort(),['handleMessage','validate']);
+  assert.equal(node.module.exports.handleMessage({type:'event',event:'input',id:'input',values:{input:'changed'}})[0].text,'changed');
   let reply;
   const worker={self:{postMessage:value=>{reply=value;}}};
   runInNewContext(script,worker,{timeout:1000});

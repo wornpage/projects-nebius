@@ -31,11 +31,14 @@ use its normal account credits; starting the app does not initiate a model run.
 
 ## Run without credentials
 
-Requires **Node.js 24 with npm** and network access for the locked dependency
-installs. `.node-version` records the original 24.18.0 baseline. From the
-repository root:
+Use the exact **Node.js version in `.node-version` (24.18.0)** with its bundled
+npm. The package's `engines.node` range permits newer Node versions; the pin is
+the reproducible setup target. Locked installs require public npm and GitHub
+codeload access. From the repository root, confirm the versions before installing:
 
 ```sh
+node --version
+npm --version
 npm ci --ignore-scripts
 npm --prefix svelte-frontend ci --ignore-scripts
 npm run dev:nebius
@@ -121,6 +124,7 @@ executable; for example, in PowerShell 7:
 
 ```powershell
 $env:CHROME_EXECUTABLE_PATH = "C:/path/to/chrome.exe"
+npm run test:nebius:tool-preview
 npm run test:nebius:projects
 npm run test:nebius:browser
 npm run test:nebius:offline
@@ -128,6 +132,19 @@ npm run test:nebius:offline
 
 These suites use isolated test workspaces and synthetic responses. Run them
 after `verify:nebius`, which creates the required Nebius build.
+The tool-preview suite exercises the production renderer with an authored
+checker and a synthetic parent run. Passing it does not establish the quality
+of a Nebius-generated tool.
+
+Local Windows qualification has used Node 24.18.0, its bundled npm 11.16.0 and
+Chromium 153.0.8010.12. Those observations do not qualify other environments.
+The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
+defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
+both locked installs and its own hosted Chrome lookup, then runs
+`verify:nebius` and all four browser suites above in order. It supplies no
+provider credentials or deployment step. Local qualification, a prepared
+workflow and an observed passing GitHub run remain separate results; this
+candidate has not yet passed hosted CI.
 
 ## Source and prior work
 
@@ -151,7 +168,7 @@ and for the planned public submission. Earlier public or private MIT grants
 remain effective; dependencies retain their own licenses and notices. Public
 release requires separate owner authorization during submission week.
 
-The current source inventory contains 201/201 paths. The historical filename
+The current source inventory contains 207/207 paths. The historical filename
 `PUBLIC_SOURCE_MANIFEST.txt` describes an inventory, not permission to publish
 private source. [WEBMCP_BASELINE.md](WEBMCP_BASELINE.md) records the corresponding
 verification denominators and the earlier demo's documentation.
