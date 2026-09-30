@@ -418,6 +418,7 @@ test('Review accepts only one exact Decision Workspace focus request and leaves 
 	const focusOwner = routeSource.match(/async function focusReviewScopeDestination[\s\S]*?\n\t\}/u)?.[0] ?? '';
 	assert.match(focusOwner, /requestedItemId = ''[\s\S]*?currentReviewView\?\.upNext[\s\S]*?item\?\.id === requestedItemId/u);
 	// A saved execution card is an exact target too; both paths retain the DOM identity guard.
+	assert.match(routeSource, /\{#if __NEBIUS_EDITION__ && executionFocusPack\}[\s\S]*?<NebiusRunReview pack=\{executionFocusPack\}/u);
 	assert.match(focusOwner, /const executionCard = requestedItemId && executionFocusPack\?\.id === requestedItemId/u);
 	assert.match(focusOwner, /\[data-nebius-run-review\]\[data-pack-id="\$\{CSS\.escape\(requestedItemId\)\}"\]/u);
 	assert.match(focusOwner, /requestedItemId && \(!requestedCard \|\| requestedCard\.dataset\.packId !== requestedItemId \|\| \(!executionCard && !requestedItem\)\)\) return null;/u);
