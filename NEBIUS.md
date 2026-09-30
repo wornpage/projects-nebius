@@ -76,8 +76,10 @@ activity history and included in workspace backups.
 
 ### Setup and verification
 
-Use Node.js 24 and npm. Install both root and frontend dependencies from the
-lockfiles; public npm/GitHub access is required. No private Projects service or
+Use the exact Node.js version in `.node-version` (24.18.0) and its bundled npm.
+Confirm `node --version` and `npm --version` before installing. Install both root
+and frontend dependencies from the lockfiles; public npm/GitHub access is
+required. No private Projects service or
 Cloudflare account is required for local manual use.
 
 The Nebius edition starts with four synthetic Projects work items. Its source
@@ -106,10 +108,18 @@ Browser checks additionally require an existing compatible Chromium executable.
 its absolute path (see the PowerShell example in [README.md](README.md)), then:
 
 ```sh
+npm run test:nebius:tool-preview
 npm run test:nebius:browser
 npm run test:nebius:projects
 npm run test:nebius:offline
 ```
+
+Run these after `verify:nebius` creates the Nebius build. The tool-preview gate
+uses an authored checker through the production renderer and a synthetic
+parent run; it does not establish model-generated tool quality. The observed
+Windows qualification used Node 24.18.0, bundled npm 11.16.0 and Chromium
+153.0.8010.12. The current GitHub workflow runs the preserved WebMCP gates,
+not these Nebius commands; local qualification does not establish hosted CI.
 
 On Windows, stop an existing local preview before rebuilding; its asset watcher
 can keep the generated output directory open.
