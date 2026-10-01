@@ -260,10 +260,9 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
         messages: [{ role: 'system', content: repair?.rejected ? REJECTED_REPAIR_SYSTEM : repair ? REPAIR_SYSTEM : SYSTEM }, { role: 'user', content: userContent }],
         temperature: 1.0, top_p: 0.95,
         max_tokens: RUN_LIMITS.maxOutputTokens, stream: false,
-        // Request shorter reasoning under the existing output ceiling using
-        // NVIDIA's documented low-effort mode. Never ask the parser to substitute an
-        // unfinished reasoning trace when no final answer was produced.
-        chat_template_kwargs: { enable_thinking: true, low_effort: true, force_nonempty_content: false },
+        // Use standard reasoning for code generation within the existing output
+        // ceiling. Never substitute an unfinished reasoning trace for final files.
+        chat_template_kwargs: { enable_thinking: true, force_nonempty_content: false },
       }),
     });
     if (!response.ok) {

@@ -275,18 +275,20 @@ and interactive preview results remain required. The request retains the
 configured NVIDIA model, existing sampling settings and the
 8,000-output-token ceiling; it makes no extra inference call.
 
-The request uses `enable_thinking: true`, `low_effort: true` and
-`force_nonempty_content: false` for both generation and repair. NVIDIA documents
-the low-effort mode in its [model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/blob/main/README.md).
+The request uses `enable_thinking: true` and `force_nonempty_content: false` for
+both generation and repair. It omits the low-effort hint to request the standard
+reasoning mode documented in NVIDIA's [model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/blob/main/README.md).
 Its [reasoning parser](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/blob/main/super_v3_reasoning_parser.py)
 can substitute an unfinished reasoning trace for absent final content when
 `force_nonempty_content` is true. This code-file workflow does not request that
 substitution. A length-limited response still fails, and the app never extracts
-files from reasoning fields. The mode requests less reasoning; it is not a hard
-sub-budget, a guarantee of code quality, or proof of the exact parser deployed
-by Nebius. The live trial on 91ad4ee exhausted its repair output limit with prose
-in the content field; its records are preserved as observed. The revised profile
-has no live qualification yet.
+files from reasoning fields. This is not proof of the exact parser deployed by
+Nebius. The live trial on 91ad4ee exhausted its repair output limit with prose in
+the content field. Subsequent low-effort trials on f70f72d and 98ed25e returned
+complete files but failed the required incomplete-input result. Their records
+are preserved. Standard reasoning is an unverified comparison, not an established
+fix; it may consume more reasoning tokens or hit the unchanged output ceiling.
+This revised profile has no live qualification yet.
 
 Checks record the observed provider operation ID, resulting checkpoint ID if
 available, exit code, bounded stdout/stderr, attempt and source digest. These

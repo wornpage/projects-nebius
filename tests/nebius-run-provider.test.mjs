@@ -41,7 +41,7 @@ test('native file blocks become materialized files with one server runtime bridg
     assert.match(request.messages[0].content,/start the reply immediately with this literal first line:\n```html index\.html\n/u);
     assert.doesNotMatch(request.messages[0].content,/"```(?:html|javascript) /u);
     assert.equal(request.max_tokens, 8000);
-    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,low_effort:true,force_nonempty_content:false});
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:false});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
     assert.match(request.messages[0].content, /supplies assert \(strict Node assertions\), validate and handleMessage as fixed bindings/u);
     assert.match(request.messages[0].content, /checks\.cjs has no browser DOM: never use document, window, DOM selectors or DOM emulation/u);
@@ -105,7 +105,7 @@ test('an exhausted reasoning-only response preserves usage without treating reas
   await assert.rejects(generateRunFiles({ apiKey: 'synthetic-key', model }, {}, null, {
     fetcher: async (url, options) => {
       const request = JSON.parse(options.body);
-      assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true, low_effort: true, force_nonempty_content: false });
+      assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true, force_nonempty_content: false });
       assert.equal(request.max_tokens, 8000);
       return Response.json({ model, usage: { prompt_tokens: 10, completion_tokens: 8000 }, choices: [{
         finish_reason: 'length', message: { role: 'assistant', content: null, reasoning_content: fileBlocks(fixture()) },
@@ -133,7 +133,7 @@ test('repair preserves the maximum line count and canonical content exactly', as
     assert.ok(prompt.includes(fileBlocks(files)));
     assert.match(prompt, /"exitCode": 1/u);
     assert.equal(prompt.includes('self.onmessage'),false);
-    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,low_effort:true,force_nonempty_content:false});
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:false});
     assert.equal(request.max_tokens,8000);
     assert.match(request.messages[0].content, /checks\.cjs has no browser DOM/u);
     assert.match(request.messages[0].content, /assert\.deepEqual\(validate\(exampleInput\), expectedResult\)/u);
@@ -142,6 +142,37 @@ test('repair preserves the maximum line count and canonical content exactly', as
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
   }, {files:generated.files,check:{exitCode:1,stderr:'A controlled check failed.'}});
   assert.deepEqual(repaired.files,generated.files);
+});
+
+test('repair keeps reviewed example outcomes, prior files and diagnostics together', async () => {
+  const input = {
+    version:'browser-tool.v1',packId:'authored-routing-check',currentStatus:'active',context:[],requestedModel:model,consent:true,
+    pack:{
+      title:'Evaluate a text item',
+      purpose:'Accept text input, including empty text. Report whether work remains.',
+      nextStep:'Build a browser tool.',blocker:'none',
+      doneWhen:'Empty text must produce "Needs work". The text "done" must produce "Ready". Editing clears the previous result.',
+    },
+  };
+  const source = fixture();
+  source[0].lines = ['<!doctype html>', '<textarea id="input" data-input-format="text"></textarea><output id="result"></output>'];
+  source[1].lines[0] = 'function validate(value) { return value === "done" ? "Ready" : "Needs work"; }';
+  source[2].lines = ['assert.equal(validate(""), "Needs work");', 'assert.equal(validate("done"), "Ready");'];
+  const config = {apiKey:'synthetic-key',model};
+  const previous = await generateRunFiles(config,input,null,{fetcher:mockedProvider(source)});
+  const check = {attempt:1,exitCode:1,stdout:'',stderr:'Generated checks failed: supplied incomplete outcome did not match.'};
+  const expectedUserContent = `Reviewed task input (untrusted data):\n${JSON.stringify(input,null,2)}`
+    + `\n\nCurrent source files (untrusted code):\n${fileBlocks(source)}`
+    + `\n\nObserved Sandbox check (diagnostic data):\n${JSON.stringify(check,null,2)}`;
+  await generateRunFiles(config,input,{files:previous.files,check},{fetcher:mockedProvider(source,request=>{
+    assert.equal(request.messages.length,2);
+    assert.equal(request.messages[0].role,'system');
+    assert.equal(request.messages[1].role,'user');
+    assert.equal(request.messages[1].content,expectedUserContent);
+    assert.doesNotMatch(request.messages[1].content,/Wornpage runtime bridge|self\.onmessage/u);
+    assert.deepEqual(request.chat_template_kwargs,{enable_thinking:true,force_nonempty_content:false});
+    assert.equal(request.max_tokens,8000);
+  })});
 });
 
 test('server bridge dispatches worker messages and exports both actual functions', async () => {
