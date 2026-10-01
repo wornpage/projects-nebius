@@ -1,6 +1,8 @@
 import type { NebiusTask, NebiusContextItem } from './nebius-contract.mjs';
 export const RUN_VERSION: 'browser-tool.v1';
-export const RUN_RECORD_FORMAT: 'run-diagnostics.v1';
+export const RUN_RECORD_FORMAT: 'run-diagnostics.v2';
+export const RUN_EVIDENCE_LIMITS: Readonly<{ responseBytes: 65536; recordBytes: 491520 }>;
+export function runJsonBytes(value: unknown): number;
 export const RUN_LIMITS: Readonly<{ maxModelCalls: 2; maxSandboxRuns: 2; maxOutputTokens: 8000; sandboxSeconds: 30; runSeconds: 600; maxFileBytes: 32768; maxTotalFileBytes: 65536 }>;
 export type RunStatus = 'queued' | 'generating' | 'checking' | 'repairing' | 'cancelling' | 'ready' | 'failed' | 'cancelled' | 'uncertain';
 export type RunFile = { path: 'index.html' | 'app.js' | 'checks.cjs'; content: string };
@@ -9,7 +11,8 @@ export type RunCheck = { attempt: number; operationId: string; checkpointId: str
 export type RunFailureStage = 'configuration' | 'generation' | 'response' | 'tool_files' | 'tool_page' | 'tool_worker' | 'tool_checks' | 'preview' | 'sandbox' | 'orchestration';
 export type RunFailure = { code: string; stage: RunFailureStage };
 export type RunUsage = { modelCalls: number; inputTokens: number | null; outputTokens: number | null; totalsComplete: boolean };
-export type RunRecord = Omit<RunInput, 'consent'> & { id: string; status: RunStatus; attempt: number; createdAt: string; updatedAt: string; events: { at: string; message: string }[]; files: RunFile[]; checks: RunCheck[]; usage: RunUsage; error: string | null; failure: RunFailure | null };
+export type RunGeneration = { attempt: number; outcome: 'accepted' | 'rejected'; responseText: string | null; retention: 'retained' | 'size_limit'; diagnostic: (RunFailure & { message: string }) | null };
+export type RunRecord = Omit<RunInput, 'consent'> & { id: string; status: RunStatus; attempt: number; createdAt: string; updatedAt: string; events: { at: string; message: string }[]; files: RunFile[]; checks: RunCheck[]; usage: RunUsage; error: string | null; failure: RunFailure | null; generationAttempts: RunGeneration[] };
 export type RunConfig = { available: true; version: typeof RUN_VERSION; requestedModel: string; limits: typeof RUN_LIMITS };
 export const RUN_FILES: readonly RunFile['path'][];
 export const RUN_STATUSES: readonly RunStatus[];

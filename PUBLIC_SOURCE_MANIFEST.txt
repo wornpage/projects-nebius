@@ -180,6 +180,7 @@ tests/nebius-replan-state.test.mjs
 tests/nebius-replan.test.mjs
 tests/nebius-routing.test.mjs
 tests/nebius-run-provider.test.mjs
+tests/nebius-run-state.test.mjs
 tests/nebius-sandbox.test.mjs
 tests/nebius-tool-traversal.test.mjs
 tests/next-webmcp-page-contract.test.mjs

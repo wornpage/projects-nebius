@@ -42,9 +42,11 @@ function runModule(source, filename, requireValue) {
   context.__module = moduleValue;
   context.__require = requireValue;
   const wrapped = '(function(module, exports, require) { "use strict";\n' + source + '\n})(__module, __module.exports, __require);';
-  new vm.Script(wrapped, { filename, lineOffset: -1 }).runInContext(context, { timeout: 4000 });
+  try { new vm.Script(wrapped, { filename, lineOffset: -1 }).runInContext(context, { timeout: 4000 }); }
+  finally { delete context.__module; delete context.__require; }
   return moduleValue.exports;
 }
+const checksWrapper = source => '(function() { "use strict"; const {assert, validate, handleMessage} = __checks;\n' + source + '\n})();';
 const contractDeny = message => { contractFailure ||= message; return deny(message); };
 const ownRecord = value => value !== null && typeof value === 'object' && !types.isProxy(value) && !Array.isArray(value);
 function plainData(value) {
@@ -110,8 +112,6 @@ function checkPatches(message, patches, elements, refreshed) {
         catch { return contractDeny('A declared JSON example loader returned malformed JSON.'); }
       }
     }
-    const updatesInput = ['input', 'change'].includes(message.event) || snapshot.some(patch => Object.hasOwn(patch, 'value'));
-    if (updatesInput && [...refreshed].some(id => !outputIds.includes(id))) return contractDeny('An input edit or loader must refresh every previously observed output.');
   }
   for (const id of outputIds) refreshed.add(id);
 }
@@ -139,7 +139,7 @@ try {
   const sources = new Map(['app.js', 'checks.cjs'].map(path => [path, fs.readFileSync(path, 'utf8')]));
   const syntaxFailures = [];
   for (const [path, source] of sources) {
-    try { new vm.Script('(function(module, exports, require) { "use strict";\n' + source + '\n});', { filename: path, lineOffset: -1 }); }
+    try { new vm.Script(path === 'checks.cjs' ? checksWrapper(source) : '(function(module, exports, require) { "use strict";\n' + source + '\n});', { filename: path, lineOffset: -1 }); }
     catch (error) { syntaxFailures.push(path + ': ' + boundedMessage(error) + sourceLocations(error)); }
   }
   if (syntaxFailures.length) throw new Error('JavaScript syntax failed: ' + syntaxFailures.join('\n'));
@@ -178,19 +178,12 @@ try {
       return patches;
     })
   }));
-  const assertions = assertFacade(realAssert);
-  const strictAssertions = assertFacade(realAssert.strict);
-  assertions.strict = strictAssertions;
-  strictAssertions.strict = strictAssertions;
+  const assertions = assertFacade(realAssert.strict);
+  assertions.strict = assertions;
   Object.freeze(assertions);
-  Object.freeze(strictAssertions);
-  const requireCheck = harden(name => {
-    if (name === './app.js') return appFacade;
-    if (name === 'node:assert') return assertions;
-    if (name === 'node:assert/strict') return strictAssertions;
-    return deny('checks.cjs may import only ./app.js and synchronous node:assert methods.');
-  });
-  runModule(sources.get('checks.cjs'), 'checks.cjs', requireCheck);
+  context.__checks = Object.freeze(Object.assign(Object.create(null), { assert: assertions, ...appFacade }));
+  new vm.Script(checksWrapper(sources.get('checks.cjs')), { filename: 'checks.cjs', lineOffset: -1 }).runInContext(context, { timeout: 4000 });
+  delete context.__checks;
   if (contractFailure) throw new Error('Control contract failed: ' + contractFailure);
   if (assertionFailed || assertionCalls < 1 || validateCalls < 1 || handleMessageCalls < 1) {
     throw new Error('Checks must execute at least one successful Node assertion and successfully call the exported validate and handleMessage functions; no assertion may fail.');
@@ -205,6 +198,7 @@ try {
   const jsonLoaders = loaders.filter(element => elements.get(element.exampleFor).format === 'json');
   process.stdout.write('Control events observed: ' + requiredEvents.length + '/' + requiredEvents.length + '; declared JSON example loaders: ' + jsonLoaders.length + '/' + loaders.length + '; inputs without a declared format: ' + page.elements.filter(element => element.valueControl && element.format === null).length + '\n');
   process.stdout.write('Post-output edits observed: ' + requiredEdits.length + '/' + requiredEdits.length + '\n');
+  process.stdout.write('Output invalidation is supplied by the preview; task-specific output correctness is not certified by this structural gate.\n');
   process.exit(0);
 } catch (error) {
   process.stderr.write('Generated checks failed: ' + boundedMessage(error) + sourceLocations(error) + '\n');

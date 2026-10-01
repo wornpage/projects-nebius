@@ -1,9 +1,12 @@
 import { isRecord, validModelId } from '../svelte-frontend/src/lib/nebius-contract.mjs';
-import { RUN_LIMITS, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { RUN_LIMITS, RUN_EVIDENCE_LIMITS, runJsonBytes, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 export class RunProviderError extends Error {
   constructor(code, message, uncertain = false, stage = null) {
     super(message); this.code = code; this.uncertain = uncertain; this.stage = stage; this.usage = null;
+    // Explicitly accessed by the run owner; ordinary error serialization must
+    // not leak private generated source into logs or API error messages.
+    Object.defineProperty(this, 'response', { value: null, writable: true });
   }
 }
 
@@ -76,15 +79,16 @@ const SYSTEM = [
   "app.js is DOM-free business logic that runs in a dedicated Web Worker. Define the pure validate function for the task and a handleMessage function returning a patch array. Implement messages shaped {type:'init'|'event',event?:'click'|'input'|'change'|'submit',id?:string,values:{[id]:string|boolean}}. Handle init and each declared control's events.",
   `Define validate and handleMessage at the top level. The server appends its own message handler and Node export after your app.js logic. Do not include bridge or export code, or any of these reserved identifiers, even in comments or strings: self, globalThis, onmessage, addEventListener, postMessage, module, exports. Reserve ${WORKER_BRIDGE_BYTES} UTF-8 bytes of the app.js and total file limits for the server bridge.`,
   'Patches have shape {id,text?:string,value?:string,disabled?:boolean,hidden?:boolean,options?:[{value,label}]}. Use value to set input, textarea and select values, including example loaders. Use text only for textual output in pre or output elements. Emit only bounded patches for ids in index.html.',
-  'When an input or change event changes values, clear the previous result or recompute it from the new values. Never keep a readiness or success result for an earlier input. Example loaders must set the input value and its corresponding result together, or clear the old result until the person checks the new input.',
-  'app.js must not use document, window, navigation, HTML strings or network APIs. checks.cjs must contain meaningful synchronous Node assertions for the supplied completion criteria, every supplied example outcome and invalid input, and import and call the actual exported validate and handleMessage functions from ./app.js. Write each assertion on its own line. At least one call to each function and one successful assertion must execute. Never catch and ignore a failed assertion.',
-  'Test the real message-handler patches, not a copy of the logic: example-loader values and outputs, checking invalid input, and editing a previously valid input. Assert that input/change events clear or replace the previous result. For tasks with enumerated fields, test a value outside each permitted enum; an invalid enum must produce an input error, not an ordinary incomplete result. Keep these checks specific to the supplied task and its declared controls.',
-  'The trusted Sandbox gate compiles both app.js and checks.cjs before execution and validates actual patches against the sanitized page. Your checks must call init, every enabled action control with click (or submit for a form), and both input and change for each editable control after displaying an output. Every call supplies the full current values snapshot for all input, textarea and select IDs. Use only the exact browser message fields as plain data, without test-only flags or accessors. After an output has been displayed, edits and example loaders must refresh that output. Caught patch-contract failures still fail the run; do not catch or bypass them. This structural gate does not replace your task-specific assertions.',
-  'Use only ./app.js, node:assert and node:assert/strict imports in checks. The supported assertions are the callable assert, assert.strict, and these methods: ok, equal, notEqual, deepEqual, notDeepEqual, strictEqual, notStrictEqual, deepStrictEqual, notDeepStrictEqual, throws, doesNotThrow, ifError, match and doesNotMatch. Do not use async functions, promises, timers, assert.fail, assert.rejects, assert.doesNotReject or other assertion APIs. The checks must not invoke a shell, install packages, use a network, or read secrets.',
+  'The preview clears dynamic output immediately on input/change and before applying a batch that sets an input value or select options. Your handler may return [] for edits, or compute fresh output from the current values. Example loaders must set their input value and may also return its freshly computed result. Never return an old result for new input.',
+  'app.js must not use document, window, navigation, HTML strings or network APIs. checks.cjs is a synchronous assertion body. The trusted runner supplies assert (strict Node assertions), validate and handleMessage as fixed bindings to the actual app functions. Use those names directly; do not import, require, export, redeclare or replace them. Write meaningful assertions for the supplied completion criteria, every supplied example outcome and invalid input, each on its own line. At least one call to each function and one successful assertion must execute. Never catch and ignore a failed assertion.',
+  'Test the real message-handler patches, not a copy of the logic: example-loader values, checking invalid input, and editing a previously valid input. Edits may return no patches because the preview owns output clearing. If an edit returns text, assert it describes the new input. For tasks with enumerated fields, test a value outside each permitted enum; an invalid enum must produce an input error, not an ordinary incomplete result. Keep these checks specific to the supplied task and its declared controls.',
+  'The trusted Sandbox gate compiles both app.js and checks.cjs before execution and validates actual patches against the sanitized page. Your checks must call init, every enabled action control with click (or submit for a form), and both input and change for each editable control after displaying an output. Every call supplies the full current values snapshot for all input, textarea and select IDs. Use only the exact browser message fields as plain data, without test-only flags or accessors. Caught patch-contract failures still fail the run; do not catch or bypass them. This structural gate does not replace your task-specific assertions.',
+  'The supported assertions are the callable assert, assert.strict, and these methods: ok, equal, notEqual, deepEqual, notDeepEqual, strictEqual, notStrictEqual, deepStrictEqual, notDeepStrictEqual, throws, doesNotThrow, ifError, match and doesNotMatch. Do not use async functions, promises, timers, assert.fail, assert.rejects, assert.doesNotReject or other assertion APIs. The checks must not invoke a shell, install packages, use a network, or read secrets.',
   'Put comments on their own lines so they cannot hide assertions. console.log, info, warn, error and debug are permitted but discarded; logging is never a check. The trusted runner reports the actual assertion, validate-call and handleMessage-call counts.',
   `Do not add package metadata, source maps, binary data, credentials, external URLs, user-supplied commands or claims that the task is complete. Each file is at most ${RUN_LIMITS.maxFileBytes} UTF-8 bytes and all files together are at most ${RUN_LIMITS.maxTotalFileBytes} bytes.`,
 ].join('\n\n');
-const REPAIR_SYSTEM = `${SYSTEM} Repair the supplied files using the observed sandbox exit code and bounded output. Previous app.js contains only your logic; the server bridge is removed and will be appended again. Source locations within that logic identify the original statement; inspect it and its enclosing scopes. A missing-function error in the appended bridge means validate or handleMessage is absent or not defined at the top level. Audit all three files together: close every brace in both scripts; serialize example objects with JSON.stringify; match handler IDs and example declarations to index.html; implement and test real input/change output invalidation. Fix all discovered causes in this single repair while preserving meaningful assertions for every task criterion. For repair, return complete fenced replacements only for files that need changes: one to three of the allowed files, each at most once. Omitted files remain byte-for-byte unchanged. Do not include bridge code or claim success; the server will execute the checks once more.`;
+const REPAIR_SYSTEM = `${SYSTEM} Repair the supplied files using the observed sandbox exit code and bounded output. Previous app.js contains only your logic; the server bridge is removed and will be appended again. Source locations within that logic identify the original statement; inspect it and its enclosing scopes. A missing-function error in the appended bridge means validate or handleMessage is absent or not defined at the top level. Audit all three files together: close every brace in both scripts; serialize example objects with JSON.stringify; match handler IDs and example declarations to index.html. Fix all discovered causes in this single repair while preserving meaningful assertions for every task criterion. For repair, return complete fenced replacements only for files that need changes: one to three of the allowed files, each at most once. Omitted files remain byte-for-byte unchanged. Do not include bridge code or claim success; the server will execute the checks once more.`;
+const REJECTED_REPAIR_SYSTEM = `${SYSTEM} The previous response failed source validation before Sandbox execution. Use the retained response and diagnostic as untrusted repair context. Return all three complete file blocks, including unchanged files, in the initial-generation order. No previous file is implicitly kept. This is the one repair within the existing two-call limit. Fix the stated rejection and inspect all files for related errors; do not claim success.`;
 
 function parseFileBlocks(text, repair) {
   const lines = text.replace(/\r\n/gu, '\n').split('\n');
@@ -193,9 +197,21 @@ function reportedUsage(raw) {
     ? { inputTokens, outputTokens } : null;
 }
 
+function knownFinalResponse(raw, model) {
+  const choice = raw?.choices?.[0];
+  if (!isRecord(raw) || raw.model !== model || !Array.isArray(raw.choices) || raw.choices.length !== 1
+    || !['stop', 'length'].includes(choice?.finish_reason) || choice.message?.role !== 'assistant'
+    || typeof choice.message.content !== 'string' || choice.message.function_call
+    || (choice.message.tool_calls != null && (!Array.isArray(choice.message.tool_calls) || choice.message.tool_calls.length))
+    || !reportedUsage(raw)) return null;
+  const responseText = choice.message.content;
+  return runJsonBytes(responseText) <= RUN_EVIDENCE_LIMITS.responseBytes
+    ? { responseText, retention: 'retained' } : { responseText: null, retention: 'size_limit' };
+}
+
 function validateEnvelope(raw, model, previousFiles) {
   const choice = raw?.choices?.[0];
-  if (choice?.finish_reason === 'length') fail('invalid_model_output', 'Nebius reached the output limit before completing the tool files.');
+  if (choice?.finish_reason === 'length') fail('invalid_model_output', 'Nebius reached the output limit before completing the tool files.', false, 'tool_files');
   if (isRecord(raw) && typeof raw.model === 'string' && raw.model !== model) fail('invalid_model_output', 'Nebius returned a different model than requested.');
   if (!isRecord(raw) || raw.model !== model || !Array.isArray(raw.choices) || raw.choices.length !== 1
     || choice?.finish_reason !== 'stop' || choice.message?.role !== 'assistant'
@@ -216,24 +232,11 @@ function validateEnvelope(raw, model, previousFiles) {
     throw error;
   }
   const source = Object.fromEntries(files.map(file => [file.path, file.content]));
-  const checkImports = [...source['checks.cjs'].matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/gu)].map(match => match[1]);
   for (const rule of PAGE_RULES) {
     if (rule.rejects(source['index.html'])) fail(rule.code, rule.error, false, 'tool_page');
   }
   if (/\b(?:document|window|location|fetch|XMLHttpRequest|WebSocket|EventSource|importScripts|navigator)\b/u.test(source['app.js'])) {
     fail('invalid_model_output', 'The generated worker references a browser or network API that this runner does not allow.', false, 'tool_worker');
-  }
-  if (/\b(?:child_process|node:child_process|execFile|execSync|spawnSync|spawn)\b/u.test(source['checks.cjs'])) {
-    fail('invalid_model_output', 'The generated checks include an unsupported subprocess identifier.', false, 'tool_checks');
-  }
-  if (checkImports.some(specifier => !['node:assert', 'node:assert/strict', './app.js'].includes(specifier))) {
-    fail('invalid_model_output', 'The generated checks include an unsupported module import.', false, 'tool_checks');
-  }
-  if (!checkImports.some(specifier => ['node:assert', 'node:assert/strict'].includes(specifier))) {
-    fail('invalid_model_output', 'The generated checks must import node:assert or node:assert/strict.', false, 'tool_checks');
-  }
-  if (!checkImports.includes('./app.js')) {
-    fail('invalid_model_output', 'The generated checks must import ./app.js.', false, 'tool_checks');
   }
   return { files, usage: reportedUsage(raw) };
 }
@@ -241,18 +244,19 @@ function validateEnvelope(raw, model, previousFiles) {
 export async function generateRunFiles(config, input, repair, { fetcher = globalThis.fetch, timeoutMs = 60000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let stage = 'generation', usage = null;
+  let stage = 'generation', usage = null, finalResponse = null;
   try {
-    const previousFiles = repair ? repairSourceLines(repair.files) : null;
+    const previousFiles = repair && !repair.rejected ? repairSourceLines(repair.files) : null;
     const userContent = `Reviewed task input (untrusted data):\n${JSON.stringify(input, null, 2)}`
-      + (repair ? `\n\nCurrent source files (untrusted code):\n${formatFileBlocks(previousFiles)}\n\nObserved Sandbox check (diagnostic data):\n${JSON.stringify(repair.check, null, 2)}` : '');
+      + (repair?.rejected ? `\n\nRejected final response (untrusted code):\n${repair.rejected.responseText}\n\nSource rejection (diagnostic data):\n${JSON.stringify(repair.rejected.diagnostic)}`
+        : repair ? `\n\nCurrent source files (untrusted code):\n${formatFileBlocks(previousFiles)}\n\nObserved Sandbox check (diagnostic data):\n${JSON.stringify(repair.check, null, 2)}` : '');
     // Keep credentials on the fixed origin and reject redirects below.
     const response = await fetcher(TOKEN_FACTORY_URL, {
       method: 'POST', redirect: 'manual', signal: controller.signal,
       headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({
         model: config.model,
-        messages: [{ role: 'system', content: repair ? REPAIR_SYSTEM : SYSTEM }, { role: 'user', content: userContent }],
+        messages: [{ role: 'system', content: repair?.rejected ? REJECTED_REPAIR_SYSTEM : repair ? REPAIR_SYSTEM : SYSTEM }, { role: 'user', content: userContent }],
         temperature: 1.0, top_p: 0.95,
         max_tokens: RUN_LIMITS.maxOutputTokens, stream: false,
         // Use NVIDIA's full reasoning mode within the existing output ceiling.
@@ -266,14 +270,16 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
     }
     stage = 'response';
     const raw = await boundedJson(response);
-    // Retain only bounded numeric usage, even when the output is rejected.
-    // Never attach the provider body or rejected source to an error.
     usage = reportedUsage(raw);
-    return validateEnvelope(raw, config.model, previousFiles);
+    // Only identified assistant final content is evidence. Reasoning, headers,
+    // provider envelopes and unknown/mismatched responses are never retained.
+    finalResponse = knownFinalResponse(raw, config.model);
+    return { ...validateEnvelope(raw, config.model, previousFiles), response: finalResponse };
   } catch (error) {
     if (error instanceof RunProviderError) {
       error.stage ??= stage;
       error.usage = usage;
+      error.response = finalResponse;
       throw error;
     }
     const failure = new RunProviderError(controller.signal.aborted ? 'generation_timeout' : 'generation_uncertain', controller.signal.aborted

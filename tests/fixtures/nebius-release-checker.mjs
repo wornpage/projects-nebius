@@ -116,9 +116,7 @@ function handleMessage(message) {
   }
   return [];
 }` },
-    { path: 'checks.cjs', content: `const assert = require('node:assert/strict');
-const { validate, handleMessage } = require('./app.js');
-const incomplete = { candidate: 'demo-42', health: 'missing', review: 'pending', rollback: '' };
+    { path: 'checks.cjs', content: `const incomplete = { candidate: 'demo-42', health: 'missing', review: 'pending', rollback: '' };
 const corrected = { candidate: 'demo-42', health: 'passing', review: 'approved', rollback: 'Restore demo-41' };
 assert.equal(validate(JSON.stringify(incomplete)), '3 gaps: Health must be passing; Review must be approved; Rollback step is required');
 assert.equal(validate(JSON.stringify(corrected)), '0 gaps: Ready for human review');

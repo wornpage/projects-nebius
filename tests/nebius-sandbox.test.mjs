@@ -12,32 +12,32 @@ import { authoredCheckerFiles, materializeAuthoredChecker } from './fixtures/neb
 // Exercise the actual trusted runner with authored fixtures only. Never execute
 // model-generated files on the host: Nebius container isolation is still required.
 const cases = [
-  ['real functions and deep assertion', "const assert=require('node:assert/strict'); const {validate,handleMessage}=require('./app.js'); handleMessage({type:'init',values:{}}); assert.deepStrictEqual(validate('ok'),{value:'ok'});", 0],
-  ['commented-out assertions', "const assert=require('node:assert'); const {validate}=require('./app.js'); // assert.ok(validate('ok'));", 1],
-  ['assertion without validate', "const assert=require('node:assert'); assert.ok(true);", 1],
-  ['caught assertion failure', "const assert=require('node:assert'); const {validate,handleMessage}=require('./app.js'); handleMessage({type:'init',values:{}}); try { assert.strictEqual(validate('ok').value,'wrong'); } catch {} assert.ok(true);", 1],
-  ['callable strict assertions', "const assert=require('node:assert').strict; const {validate,handleMessage}=require('./app.js'); handleMessage({type:'init',values:{}}); assert(validate('ok').value==='ok');", 0],
-  ['comments and discarded logging with real assertions', "const assert=require('node:assert/strict'); const {validate,handleMessage}=require('./app.js');\n// Ordinary check commentary\nconsole.log('Untrusted success claim');\nhandleMessage({type:'init',values:{}});\nassert.equal(validate('ok').value,'ok');", 0],
-  ['logging cannot replace commented-out assertions', "const assert=require('node:assert'); const {validate}=require('./app.js');\nconsole.log('Untrusted success claim'); // assert.ok(validate('ok'));", 1],
+  ['real functions and deep assertion', "handleMessage({type:'init',values:{}}); assert.deepStrictEqual(validate('ok'),{value:'ok'});", 0],
+  ['commented-out assertions', "// assert.ok(validate('ok'));", 1],
+  ['assertion without validate', "assert.ok(true);", 1],
+  ['caught assertion failure', "handleMessage({type:'init',values:{}}); try { assert.strictEqual(validate('ok').value,'wrong'); } catch {} assert.ok(true);", 1],
+  ['callable strict assertions', "handleMessage({type:'init',values:{}}); assert(validate('ok').value==='ok');", 0],
+  ['comments and discarded logging with real assertions', "\n// Ordinary check commentary\nconsole.log('Untrusted success claim');\nhandleMessage({type:'init',values:{}});\nassert.equal(validate('ok').value,'ok');", 0],
+  ['logging cannot replace commented-out assertions', "\nconsole.log('Untrusted success claim'); // assert.ok(validate('ok'));", 1],
   ['unapproved import', "require('node:fs');", 1],
   ['runtime errors identify original source lines',
-    "const assert=require('node:assert/strict');\nconst {validate}=require('./app.js');\nassert.equal(validate(),1);", 1,
+    "\n\nassert.equal(validate(),1);", 1,
     'function validate() {\n  if (true) {\n    const scoped = 1;\n  }\n  return scoped;\n}\nfunction handleMessage() { return []; }\nmodule.exports = {validate,handleMessage};',
     /Generated checks failed: scoped is not defined/u],
-  ['validate assertions without a handler call', "const assert=require('node:assert/strict'); const {validate}=require('./app.js'); assert.equal(validate('ok').value,'ok');", 1],
-  ['handler assertions without a validate call', "const assert=require('node:assert/strict'); const {handleMessage}=require('./app.js'); assert.deepEqual(handleMessage({type:'init',values:{}}),[]);", 1],
-  ['a caught validate throw is not a successful call', "const assert=require('node:assert/strict'); const {validate,handleMessage}=require('./app.js'); assert.throws(()=>validate('bad')); handleMessage({type:'init',values:{}});", 1,
+  ['validate assertions without a handler call', "assert.equal(validate('ok').value,'ok');", 1],
+  ['handler assertions without a validate call', "assert.deepEqual(handleMessage({type:'init',values:{}}),[]);", 1],
+  ['a caught validate throw is not a successful call', "assert.throws(()=>validate('bad')); handleMessage({type:'init',values:{}});", 1,
     "function validate() { throw new Error('bad'); }\nfunction handleMessage() { return []; }\nmodule.exports={validate,handleMessage};"],
-  ['a caught handler throw is not a successful call', "const assert=require('node:assert/strict'); const {validate,handleMessage}=require('./app.js'); validate('ok'); assert.throws(()=>handleMessage({type:'init',values:{}}));", 1,
+  ['a caught handler throw is not a successful call', "validate('ok'); assert.throws(()=>handleMessage({type:'init',values:{}}));", 1,
     "function validate(value) { return value; }\nfunction handleMessage() { throw new Error('bad'); }\nmodule.exports={validate,handleMessage};"],
-  ['a non-array handler reply cannot be counted', "const assert=require('node:assert/strict'); const {validate,handleMessage}=require('./app.js'); assert.equal(validate('ok'),'ok'); assert.ok(handleMessage({type:'init',values:{}}));", 1,
+  ['a non-array handler reply cannot be counted', "assert.equal(validate('ok'),'ok'); assert.ok(handleMessage({type:'init',values:{}}));", 1,
     "function validate(value) { return value; }\nfunction handleMessage() { return {}; }\nmodule.exports={validate,handleMessage};", /handleMessage must return a patch array/u],
-  ['an async handler reply cannot be counted', "const assert=require('node:assert/strict'); const {validate,handleMessage}=require('./app.js'); assert.equal(validate('ok'),'ok'); assert.ok(handleMessage({type:'init',values:{}}));", 1,
+  ['an async handler reply cannot be counted', "assert.equal(validate('ok'),'ok'); assert.ok(handleMessage({type:'init',values:{}}));", 1,
     "function validate(value) { return value; }\nfunction handleMessage() { return Promise.resolve([]); }\nmodule.exports={validate,handleMessage};", /handleMessage must return a patch array/u],
-  ['missing handler export fails before checks', "const assert=require('node:assert/strict'); const {validate}=require('./app.js'); assert.ok(validate('ok'));", 1,
+  ['missing handler export fails before checks', "assert.ok(validate('ok'));", 1,
     'module.exports.validate = value => value;', /app.js must export a handleMessage function/u],
-  ['the actual function facade cannot be replaced', "const assert=require('node:assert/strict'); const app=require('./app.js'); app.handleMessage=()=>[]; assert.ok(app.validate('ok'));", 1,
-    undefined, /Cannot assign to read only property/u],
+  ['the actual function facade cannot be replaced', "handleMessage=()=>[]; assert.ok(validate('ok'));", 1,
+    undefined, /Assignment to constant variable/u],
 ];
 
 function runAuthoredChecks(t, appSource, checks, html = '<!doctype html>\n<html><body></body></html>') {
@@ -69,7 +69,7 @@ for (const [name, checks, expectedExit, appSource, expectedFailure] of cases) {
     if (expectedExit === 0) {
       assert.match(result.stdout, /Observed successful assertions: 1; validate calls: 1; handleMessage calls: 1/u);
     } else {
-      assert.match(result.stderr, expectedFailure ?? /Generated checks failed: (Checks must execute|checks\.cjs may import only)/u);
+      assert.match(result.stderr, expectedFailure ?? /Generated checks failed: (Checks must execute|require is not defined)/u);
       if (name === 'runtime errors identify original source lines') {
         assert.match(result.stderr, /\bapp\.js:5:\d+/u);
         assert.match(result.stderr, /\bchecks\.cjs:3:\d+/u);
@@ -139,26 +139,27 @@ for (const [name, before, after, expected] of [
 
 test('caught patch contract failures remain sticky', t => {
   const app = checkerApp.replaceAll("id: 'result'", "id: 'ghost'");
-  const checks = "const assert = require('node:assert/strict');\nconst {validate, handleMessage} = require('./app.js');\ntry { handleMessage({type:'init',values:{packet:''}}); } catch {}\nassert.match(validate('{'), /^Input error:/);";
+  const checks = "\n\ntry { handleMessage({type:'init',values:{packet:''}}); } catch {}\nassert.match(validate('{'), /^Input error:/);";
   const result = runAuthoredChecks(t, app, checks, checkerHtml);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Control contract failed: A patch targets an ID absent/u);
 });
 
 test('function call counts alone cannot replace complete control event coverage', t => {
-  const checks = "const assert = require('node:assert/strict');\nconst {validate, handleMessage} = require('./app.js');\nhandleMessage({type:'init',values:{packet:''}});\nassert.match(validate('{'), /^Input error:/);";
+  const checks = "\n\nhandleMessage({type:'init',values:{packet:''}});\nassert.match(validate('{'), /^Input error:/);";
   const result = runAuthoredChecks(t, checkerApp, checks, checkerHtml);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Control event coverage is incomplete: 1\/6/u);
   assert.match(result.stderr, /Missing input:packet, change:packet/u);
 });
 
-test('real edit responses must refresh an already observed output even if model assertions accept a no-op', t => {
+test('edit handlers may return no patches because the preview owns clearing', t => {
   const app = checkerApp.replace("return [{ id: 'result', text: 'Input changed. Check packet again.' }];", 'return [];');
-  const checks = "const assert = require('node:assert/strict');\nconst {validate, handleMessage} = require('./app.js');\nhandleMessage({type:'init',values:{packet:''}});\nassert.match(validate('{'), /^Input error:/);\nassert.deepEqual(handleMessage({type:'event',event:'input',id:'packet',values:{packet:'{'}}),[]);";
+  const checks = checkerChecks.replace("assert.equal(patches.find(patch => patch.id === 'result').text, 'Input changed. Check packet again.');", 'assert.deepEqual(patches, []);')
+    .replace('assert.doesNotMatch(patches.find(patch => patch.id === \'result\').text, /Ready for human review|0 gaps/);', 'assert.equal(patches.length, 0);');
   const result = runAuthoredChecks(t, app, checks, checkerHtml);
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /input edit or loader must refresh every previously observed output/u);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Output invalidation is supplied by the preview/u);
 });
 
 test('a valid empty output patch clears the result', t => {
@@ -182,7 +183,7 @@ for (const [name, message, expected] of [
   ['unknown value key', "{type:'init',values:{other:''}}", /snapshot must match the declared input controls/u],
 ]) {
   test(`control contract rejects handler check with ${name}`, t => {
-    const checks = "const {handleMessage}=require('./app.js');\nhandleMessage(" + message + ');';
+    const checks = "\nhandleMessage(" + message + ');';
     const result = runAuthoredChecks(t, checkerApp, checks, checkerHtml);
     assert.equal(result.status, 1);
     assert.match(result.stderr, expected);
@@ -203,7 +204,7 @@ test('server contract is derived from sanitized markup, including declared loade
 test('edit events before the first output do not qualify post-output invalidation', t => {
   const html = '<!doctype html>\n<textarea id="field" data-input-format="text"></textarea><button id="check">Check</button><output id="result"></output>';
   const app = "function validate(value){return value;}\nfunction handleMessage(message){return message.id==='check'?[{id:'result',text:'Observed answer'}]:[];}\nmodule.exports={validate,handleMessage};";
-  const checks = "const assert=require('node:assert/strict');\nconst {validate,handleMessage}=require('./app.js');\nassert.equal(validate('x'),'x');\nhandleMessage({type:'init',values:{field:''}});\nfor(const event of ['input','change'])handleMessage({type:'event',event,id:'field',values:{field:'changed'}});\nhandleMessage({type:'event',event:'click',id:'check',values:{field:'changed'}});";
+  const checks = "\n\nassert.equal(validate('x'),'x');\nhandleMessage({type:'init',values:{field:''}});\nfor(const event of ['input','change'])handleMessage({type:'event',event,id:'field',values:{field:'changed'}});\nhandleMessage({type:'event',event:'click',id:'check',values:{field:'changed'}});";
   const result = runAuthoredChecks(t, app, checks, html);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Post-output edit coverage is incomplete: 0\/2/u);
@@ -222,7 +223,7 @@ for (const [name, message] of [
   ['value accessor', "{type:'init',get values(){return {packet:''};}}"],
 ]) {
   test(`plain browser messages reject ${name}`, t => {
-    const checks = "const {handleMessage}=require('./app.js');\nhandleMessage(" + message + ');';
+    const checks = "\nhandleMessage(" + message + ');';
     const result = runAuthoredChecks(t, checkerApp, checks, checkerHtml);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /only the browser message fields as plain data|real init or event message shape/u);
@@ -277,7 +278,7 @@ for (const [name, replacement, expected] of [
 
 test('a caught revoked-proxy response still fails the complete run', t => {
   const app = checkerApp.replace('function handleMessage(message) {', "function handleMessage(message) {\n  if(message.values.packet==='revoked'){const pair=Proxy.revocable([],{});pair.revoke();return pair.proxy;}");
-  const checks = "const {handleMessage:probe}=require('./app.js');\ntry{probe({type:'init',values:{packet:'revoked'}});}catch{}\n" + checkerChecks;
+  const checks = "const probe=handleMessage;\ntry{probe({type:'init',values:{packet:'revoked'}});}catch{}\n" + checkerChecks;
   const result = runAuthoredChecks(t, app, checks, checkerHtml);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Control contract failed: handleMessage must return a patch array/u);
@@ -285,7 +286,7 @@ test('a caught revoked-proxy response still fails the complete run', t => {
 });
 
 test('a caught revoked-proxy message still fails the complete run', t => {
-  const checks = "const {handleMessage:probe}=require('./app.js');\nconst pair=Proxy.revocable({},{});pair.revoke();\ntry{probe(pair.proxy);}catch{}\n" + checkerChecks;
+  const checks = "const probe=handleMessage;\nconst pair=Proxy.revocable({},{});pair.revoke();\ntry{probe(pair.proxy);}catch{}\n" + checkerChecks;
   const result = runAuthoredChecks(t, checkerApp, checks, checkerHtml);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Control contract failed: A handler check must use the real init or event message shape/u);

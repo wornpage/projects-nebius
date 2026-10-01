@@ -97,6 +97,9 @@ export async function renderRunPreview(rawFiles) {
   const encoded = btoa(String.fromCharCode(...appBytes));
   const bootstrap = `(()=>{
     const elements = new Map(Array.from(document.body.querySelectorAll('[id]')).slice(0,200).map(el=>[el.id,el]));
+    const outputs = new Set(Array.from(elements.values()).filter(el=>el.tagName==='OUTPUT'||(el.tagName==='PRE'&&el.dataset.output==='true')));
+    const clearOutputs = ()=>{for(const el of outputs)el.textContent='';};
+    const valueControl = el=>el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement||el instanceof HTMLSelectElement;
     const status = document.createElement('p'); status.setAttribute('role','status'); document.body.append(status);
     const bytes = Uint8Array.from(atob("${encoded}"), c=>c.charCodeAt(0));
     const notify = state=>{if(parent!==window)parent.postMessage({type:'nebius-tool-preview',status:state},'*');};
@@ -126,16 +129,22 @@ export async function renderRunPreview(rawFiles) {
       // A response computed before a newer field edit cannot overwrite that
       // edit or publish an answer for the previous values. Still validate its
       // envelope, then deliver the queued event with its captured values.
-      if(activeRevision===editRevision)for(const patch of data.patches){
+      if(activeRevision===editRevision){
+        // Clear the old result once before the entire batch, independent of
+        // whether the new result patch precedes its input-value patch.
+        if(data.patches.some(patch=>patch&&valueControl(elements.get(patch.id))&&
+          ((typeof patch.value==='string'&&patch.value.length<=4000)||(elements.get(patch.id) instanceof HTMLSelectElement&&Array.isArray(patch.options)&&patch.options.length<=100))))clearOutputs();
+        for(const patch of data.patches){
         if(!patch||typeof patch!=='object'||typeof patch.id!=='string')continue;
         const el=elements.get(patch.id);if(!el)continue;
-        if(typeof patch.text==='string'&&patch.text.length<=16000)el.textContent=patch.text;
+        if(typeof patch.text==='string'&&patch.text.length<=16000&&(el.tagName==='PRE'||el.tagName==='OUTPUT')){outputs.add(el);el.textContent=patch.text;}
         if(typeof patch.value==='string'&&patch.value.length<=4000&&(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement||el instanceof HTMLSelectElement))el.value=patch.value;
         if(typeof patch.disabled==='boolean'&&(el instanceof HTMLButtonElement||el instanceof HTMLInputElement||el instanceof HTMLSelectElement||el instanceof HTMLTextAreaElement))el.disabled=patch.disabled;
         if(typeof patch.hidden==='boolean')el.hidden=patch.hidden;
         if(el instanceof HTMLSelectElement&&Array.isArray(patch.options)&&patch.options.length<=100){
           const options=patch.options.filter(item=>item&&typeof item.value==='string'&&item.value.length<=500&&typeof item.label==='string'&&item.label.length<=500);
           el.replaceChildren(...options.map(item=>new Option(item.label,item.value)));
+        }
         }
       }
       notify('ready');busy=false;
@@ -145,7 +154,7 @@ export async function renderRunPreview(rawFiles) {
       if(eventName==='submit')event.preventDefault();
       const el=event.target instanceof Element ? event.target.closest('[id]') : null;
       if(el&&elements.get(el.id)===el){
-        if(eventName==='input'||eventName==='change')editRevision++;
+        if(eventName==='input'||eventName==='change'){editRevision++;clearOutputs();}
         send({type:'event',event:eventName,id:el.id});
       }
     });

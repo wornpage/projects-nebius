@@ -274,7 +274,7 @@
 	<p class="task-run-scope">{configState === 'available' ? 'Turn this task into a small browser tool. Nemotron generates the files, Nebius Sandbox runs the checks, and you review the result.' : 'Preview how this task can become a browser tool: generate files with Nemotron, run checks in Nebius Sandbox, then review the result.'}</p>
 	<ol class="task-run-stages" aria-label="How a task run works">
 		<li><span aria-hidden="true">1</span><div><strong>Build</strong><small>Generate the tool files</small></div></li>
-		<li><span aria-hidden="true">2</span><div><strong>Check</strong><small>Run checks, with one repair</small></div></li>
+		<li><span aria-hidden="true">2</span><div><strong>Check</strong><small>One repair if needed</small></div></li>
 		<li><span aria-hidden="true">3</span><div><strong>Review</strong><small>Preview and decide what to keep</small></div></li>
 	</ol>
 	<p class="task-run-muted">Checks are written by the model. You decide whether to save evidence or mark the task done.</p>
@@ -282,7 +282,7 @@
 		<p class="task-run-muted"><strong>Preview only — execution disabled.</strong> No tool or Sandbox result has been generated for this task.</p>
 		<details class="task-run-input">
 			<summary>What Sandbox will do</summary>
-			<p>Run the generated tool's Node checks in an isolated Nebius Sandbox. If a check fails, the workflow allows one repair and another check. Return the files and recorded check output for your review.</p>
+			<p>Validate the generated files, then run their Node checks in an isolated Nebius Sandbox. One source or check failure can be repaired within the two-call limit. Review the files, responses and check output afterward.</p>
 			<p>Example use: build a release checklist that flags missing health, reviewer and rollback evidence. This is a proposed use, not an executed result.</p>
 		</details>
 	{/if}

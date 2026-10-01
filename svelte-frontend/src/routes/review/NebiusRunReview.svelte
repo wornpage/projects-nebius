@@ -263,7 +263,7 @@
 				{:else}
 					{#each record.checks as check (check.attempt)}
 						<details>
-							<summary>Attempt {check.attempt} · exit {check.exitCode}</summary>
+							<summary>Model attempt {check.attempt} · Sandbox exit {check.exitCode}</summary>
 							<dl><dt>Operation</dt><dd>{check.operationId}</dd><dt>Checkpoint</dt><dd>{check.checkpointId || 'Unknown'}</dd><dt>Source digest</dt><dd>{check.sourceDigest}</dd></dl>
 							<h4>stdout</h4><pre>{check.stdout || '(empty)'}</pre>
 							<h4>stderr</h4><pre>{check.stderr || '(empty)'}</pre>
@@ -271,6 +271,23 @@
 					{/each}
 				{/if}
 			</section>
+
+			{#if verified?.generationAttempts.length}
+				<details data-run-generation-history>
+					<summary>Generation responses ({verified.generationAttempts.length})</summary>
+					<p class="run-muted">Private source history. Passing source validation does not mean the tool passed its checks.</p>
+					{#each verified.generationAttempts as generation (generation.attempt)}
+						<details>
+							<summary>Model attempt {generation.attempt} · {generation.outcome === 'accepted' ? 'source validation passed' : 'source rejected'}</summary>
+							{#if generation.diagnostic}<p>{generation.diagnostic.message}</p><p class="run-muted">{generation.diagnostic.stage} · {generation.diagnostic.code}</p>{/if}
+							{#if generation.retention === 'retained'}<pre>{generation.responseText}</pre>
+							{:else}<p class="run-muted">Response text exceeded the retention size limit and was not saved.</p>{/if}
+						</details>
+					{/each}
+				</details>
+			{:else if verified && verified.usage.modelCalls > 0}
+				<p class="run-muted">No identified generation response was retained for this run.</p>
+			{/if}
 
 			{#if verified?.files.length}
 				<section class="run-files" aria-labelledby="run-files-title">

@@ -1,7 +1,10 @@
 import { isRecord, validateTask, validateSelectedContext, validModelId } from './nebius-contract.mjs';
 
 export const RUN_VERSION = 'browser-tool.v1';
-export const RUN_RECORD_FORMAT = 'run-diagnostics.v1';
+export const RUN_RECORD_FORMAT = 'run-diagnostics.v2';
+// Serialized byte limits include JSON escaping. Leave room below the client's
+// 512 KiB response ceiling for the enclosing API object.
+export const RUN_EVIDENCE_LIMITS = Object.freeze({ responseBytes: 65536, recordBytes: 491520 });
 export const RUN_LIMITS = Object.freeze({ maxModelCalls: 2, maxSandboxRuns: 2, maxOutputTokens: 8000, sandboxSeconds: 30, runSeconds: 600, maxFileBytes: 32768, maxTotalFileBytes: 65536 });
 export const RUN_FILES = Object.freeze(['index.html', 'app.js', 'checks.cjs']);
 export const RUN_STATUSES = Object.freeze(['queued', 'generating', 'checking', 'repairing', 'cancelling', 'ready', 'failed', 'cancelled', 'uncertain']);
@@ -15,6 +18,7 @@ const text = (value, limit) => typeof value === 'string' && value.length <= limi
 const iso = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(value) && Number.isFinite(Date.parse(value));
 const hash = value => typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
 const integer = (value, maximum) => Number.isSafeInteger(value) && value >= 0 && value <= maximum;
+export const runJsonBytes = value => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 const fail = message => { throw new TypeError(message); };
 
 export function validateRunInput(value) {
@@ -48,6 +52,7 @@ export function validateRunFiles(value) {
 export function validateRunRecord(value) {
   const keys = ['id', 'version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'status', 'attempt', 'createdAt', 'updatedAt', 'events', 'files', 'checks', 'usage', 'error'];
   if (isRecord(value) && Object.hasOwn(value, 'failure')) keys.push('failure');
+  if (isRecord(value) && Object.hasOwn(value, 'generationAttempts')) keys.push('generationAttempts');
   if (!exact(value, keys)
     || !validRunId(value.id) || !RUN_STATUSES.includes(value.status) || !integer(value.attempt, 2)
     || !iso(value.createdAt) || !iso(value.updatedAt) || Date.parse(value.updatedAt) < Date.parse(value.createdAt)
@@ -59,7 +64,8 @@ export function validateRunRecord(value) {
   const files = value.files.length ? validateRunFiles(value.files) : [];
   if (!Array.isArray(value.checks) || value.checks.length > 2 || value.checks.some((check, index) =>
     !exact(check, ['attempt', 'operationId', 'checkpointId', 'exitCode', 'stdout', 'stderr', 'sourceDigest'])
-    || check.attempt !== index + 1 || !validProviderId(check.operationId)
+    || !integer(check.attempt, RUN_LIMITS.maxModelCalls) || check.attempt <= (value.checks[index - 1]?.attempt ?? 0)
+    || !validProviderId(check.operationId)
     || !(check.checkpointId === null || validProviderId(check.checkpointId))
     || !Number.isSafeInteger(check.exitCode) || check.exitCode < 0 || check.exitCode > 255
     || !text(check.stdout, 4096) || !text(check.stderr, 4096) || !hash(check.sourceDigest))) fail('The execution check record is invalid.');
@@ -74,6 +80,21 @@ export function validateRunRecord(value) {
   const usage = { ...value.usage, totalsComplete: legacyUsage
     ? value.usage.inputTokens !== null && value.usage.outputTokens !== null : value.usage.totalsComplete };
   if (typeof usage.totalsComplete !== 'boolean' || (usage.totalsComplete && (usage.inputTokens === null || usage.outputTokens === null))) fail('The execution usage coverage is invalid.');
+  if (value.attempt > usage.modelCalls || value.checks.some(check => check.attempt > value.attempt)) fail('The execution attempt counts are invalid.');
+  // Historical runs have no retained generation response. Do not invent one.
+  const generationAttempts = Object.hasOwn(value, 'generationAttempts') ? value.generationAttempts : [];
+  if (!Array.isArray(generationAttempts) || generationAttempts.length > RUN_LIMITS.maxModelCalls || generationAttempts.some((entry, index) =>
+    !exact(entry, ['attempt', 'outcome', 'responseText', 'retention', 'diagnostic'])
+    || !integer(entry.attempt, usage.modelCalls) || entry.attempt <= (generationAttempts[index - 1]?.attempt ?? 0)
+    || !['accepted', 'rejected'].includes(entry.outcome)
+    || !['retained', 'size_limit'].includes(entry.retention)
+    || (entry.retention === 'retained' ? typeof entry.responseText !== 'string' || runJsonBytes(entry.responseText) > RUN_EVIDENCE_LIMITS.responseBytes : entry.responseText !== null)
+    || (entry.outcome === 'accepted' ? entry.diagnostic !== null
+      : !exact(entry.diagnostic, ['code', 'stage', 'message']) || typeof entry.diagnostic.code !== 'string' || !/^[a-z][a-z0-9_]{0,79}$/u.test(entry.diagnostic.code)
+        || !RUN_FAILURE_STAGES.includes(entry.diagnostic.stage) || !text(entry.diagnostic.message, 500)))) fail('The generation evidence is invalid.');
+  if (value.checks.some(check => generationAttempts.some(entry => entry.attempt === check.attempt && entry.outcome === 'rejected'))) {
+    fail('An execution check cannot reference rejected generation source.');
+  }
   const failure = Object.hasOwn(value, 'failure') ? value.failure : null;
   if (failure !== null && (!exact(failure, ['code', 'stage']) || typeof failure.code !== 'string'
     || !/^[a-z][a-z0-9_]{0,79}$/u.test(failure.code) || !RUN_FAILURE_STAGES.includes(failure.stage)
@@ -81,7 +102,9 @@ export function validateRunRecord(value) {
   if (value.status === 'ready' && (!files.length || value.checks.at(-1)?.exitCode !== 0 || value.checks.at(-1)?.attempt !== value.attempt
     || usage.modelCalls !== value.attempt || !usage.totalsComplete || value.error !== null || failure !== null)) fail('A ready result needs observed successful checks and complete usage.');
   const { consent, ...snapshot } = input;
-  return { ...value, ...snapshot, files, usage, failure };
+  const record = { ...value, ...snapshot, files, usage, failure, generationAttempts };
+  if (runJsonBytes(record) > RUN_EVIDENCE_LIMITS.recordBytes) fail('The saved execution record exceeds its serialized size limit.');
+  return record;
 }
 
 export function isRunConfig(value) {

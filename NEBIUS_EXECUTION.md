@@ -77,7 +77,7 @@ Generated preview responses retain their own `no-referrer` policy and opaque
 sandbox. The WebMCP build retains its original host-page policy.
 
 JSON run requests, including configuration, send
-`X-Nebius-Run-Format: run-diagnostics.v1`. The shared browser client owns this
+`X-Nebius-Run-Format: run-diagnostics.v2`. The shared browser client owns this
 header. An older or missing format is rejected with a clear page-reload message
 before request admission. This keeps an already-open page from starting a run
 whose diagnostic fields its old parser cannot read. The HTML preview form
@@ -88,14 +88,15 @@ projection), currentStatus, context (zero to three selected notes/sources),
 requestedModel and consent. Only draft/active tasks with completion criteria
 can start. The browser additionally refuses archived, blocked, dependent,
 dirty or pending-approval tasks. The server owns the submitted snapshot, not
-the browser workspace. Saved input is sent to the model; files and check
-output are also sent for the single repair when needed.
+the browser workspace. Saved input is sent to the model; rejected final text
+and its diagnostic, or validated files and check output, are also sent for the
+single repair when needed.
 
 RunRecord has id, version, packId, pack, currentStatus, context, requestedModel,
-status, attempt, createdAt, updatedAt, events, files, checks, usage and error.
+status, attempt, createdAt, updatedAt, events, files, checks, usage, generationAttempts and error.
 The record also includes `failure: {code, stage} | null`. Its readable `error`
-message stays separate. Provider bodies and rejected generated files are not
-stored in diagnostics. Usage includes `totalsComplete`: false means token
+message stays separate. Identified final responses have a separate bounded
+generation history; raw provider envelopes are not stored. Usage includes `totalsComplete`: false means token
 counts are recorded subtotals or unknown, not complete billing totals. A repair
 keeps previously recorded usage while its new response is pending. Valid
 provider usage is retained on output rejection and before preview validation.
@@ -106,9 +107,10 @@ expected header's response line, a repeated or missing allowed file, an
 unclosed/nested fence, a source-line limit, or the shared file-size rejection.
 They keep `invalid_model_output` at `tool_files`. Diagnostics contain only
 server-authored descriptions, allowed filenames and numeric positions; unknown
-headers, rejected source and provider reasoning are not echoed or retained.
-This does not reconstruct a reason discarded by an older run, retry generation,
-relax the file format or establish that a tool works.
+headers and rejected source are not echoed through the error message. Retained
+final source is available only in the separate history; reasoning is excluded.
+This does not reconstruct a reason discarded by an older run or establish that
+a tool works.
 
 Statuses: queued, generating, checking, repairing, cancelling, ready, failed,
 cancelled, uncertain. Files are exactly index.html, app.js and checks.cjs;
@@ -176,9 +178,12 @@ required. A caught assertion or patch-contract failure still fails the check.
 
 Checks must exercise init, each enabled action's click (or a form's submit),
 and both input and change for every editable input after output exposure.
-Edits before the first output do not satisfy that separate denominator. An edit
-or example value patch must refresh previously observed outputs. An empty text
-patch is valid clearing. Every output element and pre with `data-output="true"`
+Edits before the first output do not satisfy that separate denominator. The
+trusted preview clears dynamic output immediately on input/change and before
+applying a batch that changes an input value or select options. Clearing happens
+once before the batch, so a fresh result is kept even when its patch precedes
+the value patch. An edit handler may return no patches. Stale replies remain
+discarded by the existing edit revision check. Every output element and pre with `data-output="true"`
 receives an observed text patch; static pre samples need no refresh. Messages
 have exact own browser fields and are normalized as plain JSON data before app
 execution. Observations are captured before generated checks can mutate them.
@@ -204,14 +209,44 @@ after a valid result and invalid enum input. The authored checker fixture tests
 those behaviors through this same runner; deliberate broken fixtures must fail.
 The independent packet cases remain separate and are not sent to the model.
 
-The checks-import source guard accepts whitespace, including LF, between
-`require` and its opening parenthesis. Its module allowlist is unchanged.
-Rejections distinguish a subprocess identifier, an unsupported captured import,
-a missing Node assertion import, and a missing app import using fixed messages
-at `invalid_model_output` / `tool_checks`. Unknown specifiers and rejected source
-are never echoed or retained. This regex is a limited source check; the trusted
-runner still enforces imports and actual synchronous assertions. Older generic
-rejections do not identify which condition failed and are not reinterpreted.
+`checks.cjs` is a synchronous assertion body. The trusted runner supplies
+immutable lexical bindings for strict `assert`, `validate`, and `handleMessage`.
+Generated checks use them directly; there is no generated-import requirement
+or import-regex admission path. Unsupported imports, redeclarations and binding
+replacement fail inside the existing isolated runner. Assertion failure remains
+sticky even if caught. Source line numbers still identify the original body.
+
+### Retained generation responses and bounded repair
+
+The run format is `run-diagnostics.v2`. Older clients must reload before starting
+a run. Historical records with no generation evidence normalize to an empty
+history; their missing source and causes remain unknown.
+
+Each identified model response records its producing attempt, source-validation
+outcome, safe diagnostic and exact final assistant text. Only a matching model,
+single assistant choice, numeric usage and final content qualify for retention.
+Reasoning, raw provider envelopes, headers and credentials are excluded. Rejected
+text is inert escaped text in the authenticated run review, never a preview.
+Each response has a 64 KiB serialized JSON limit; the entire run record has a
+480 KiB limit below the browser's 512 KiB response ceiling. New text is explicitly
+omitted when it cannot fit, reserving room for remaining checks and events.
+The existing run access key and seven-day server retention apply.
+
+A known source rejection can use the second model call before Sandbox. The
+rejected response and exact diagnostic are retained before repair is scheduled.
+That repair returns all three complete files and passes the same validation.
+After an actual Sandbox failure, repair may replace selected validated files.
+Both paths share the same two-call ceiling: calls are counted by submitted model
+requests, not by completed Sandbox checks. Cancellation, unknown submission
+outcomes, configuration errors, unavailable response text, quota refusal and
+elapsed deadlines cannot initiate a repair. Existing terminal runs are not retried.
+
+`record.attempt` and `check.attempt` identify the model call producing the files.
+Thus a rejected first response followed by a valid repair has one Sandbox check
+with attempt 2. `checks.length` is the physical check count. Readiness still needs
+a successful observed check bound to the latest files' digest, complete recorded
+usage and no failure. Source validation or a successful mocked sequence does not
+establish useful live model output.
 
 This bridge revision does not add an old-suffix repair fallback. Before applying
 it to a runtime, confirm no earlier nonterminal run may still need repair.
@@ -253,9 +288,9 @@ semantic native controls remain valid without CSS. The removed
 `page_style_missing` gate rejected a cosmetic omission before Sandbox; historical
 receipts retain that code. Visual quality is assessed in the human preview.
 
-Invalid output stops the run. Repair remains limited to an observed first
-Sandbox check failure. Rejected source is not retained or silently rewritten,
-and no new run is started automatically.
+Known source rejections and observed first Sandbox failures share one repair
+within the run. Every replacement passes the same validation; no separate run
+is started automatically and no third model call is allowed.
 
 ### Offline preview qualification
 
@@ -357,9 +392,11 @@ reply or script error stops the Worker, clears pending events and reports an
 explicit failure. Reopening is the only restart; there is no automatic retry.
 
 The provider-free authored preview verifier also uses a deliberately slow
-authored handler for three event-order scenarios at 375 px and 1280 px: Check
-followed by an edit, two example loaders, and a loader followed by an edit.
-These six bridge checks have their own denominator and source digest; they
+authored handler for four scenarios at 375 px and 1280 px: Check
+followed by an edit, two example loaders with result-before-value patch order,
+a loader followed by an edit, and an input-only loader. This fixture returns
+no edit patches, so clearing must come from the real preview.
+These eight bridge checks have their own denominator and source digest; they
 are separate from the unchanged 48 packet checks and never alter or stand in
 for retained model source.
 
@@ -374,8 +411,9 @@ shape is accepted.
 
 The default authored verifier also mounts the actual compiled review component
 in an isolated browser workspace with an explicitly synthetic run reference.
-It checks later Worker failure, a fresh frame on reopen and close-focus return
-at both widths, plus page-error/network guards: eight separately counted
+It checks later Worker failure, a fresh frame on reopen, close-focus return,
+inert rejected-source history and stale-result inspection at both widths,
+plus page-error/network guards: twelve separately counted
 parent checks. The reference's modeled usage/check receipt is not provider
 evidence; only the preview API is served by the synthetic host and every other
 API is disabled. No real workspace is changed. Explicit retained-record mode
@@ -390,8 +428,8 @@ Compatibility retained:
 - Owner: `validateRunRecord` and the existing Durable Object load path.
 - Removal condition: retire v1 backup imports through an explicit migration
   after all retained v1 runs have expired or been migrated.
-- Test coverage: no new tests added or run in this correction; source review
-  uses the retained old records, which omit failure metadata and completeness.
+- Test coverage: the shared validator and orchestration tests cover absent
+  historical generation evidence, usage coverage and contradictory new evidence.
 - Why hard cutover is unsafe now: rejecting those records would hide the user's
   saved failures and break existing backups. Their missing diagnostics normalize
   to null and unknown counts remain unknown. New writes use the current shape.

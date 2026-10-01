@@ -12,8 +12,6 @@ const fixture = () => [
     "function handleMessage(message) { return [{id:'result',text:validate(message.values.input)}]; }",
   ]},
   {path:'checks.cjs',lines:[
-    "const assert = require('node:assert/strict');",
-    "const {validate, handleMessage} = require('./app.js');",
     "assert.equal(validate('ok'), 'ok');",
     "assert.equal(handleMessage({type:'event',event:'input',id:'input',values:{input:'ok'}})[0].text, 'ok');",
   ]},
@@ -45,8 +43,8 @@ test('native file blocks become materialized files with one server runtime bridg
     assert.equal(request.max_tokens, 8000);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
-    assert.match(request.messages[0].content, /call the actual exported validate and handleMessage functions/u);
-    assert.match(request.messages[0].content, /Never keep a readiness or success result for an earlier input/u);
+    assert.match(request.messages[0].content, /supplies assert \(strict Node assertions\), validate and handleMessage as fixed bindings/u);
+    assert.match(request.messages[0].content, /Never return an old result for new input/u);
     assert.match(request.messages[0].content, /an invalid enum must produce an input error/u);
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
     assert.doesNotMatch(request.messages[0].content, /Input error:|1 gap:|demo-42/u);
@@ -93,34 +91,12 @@ test('ordinary comments and logging reach the trusted runtime assertion gate', a
   assert.equal(result.files[2].content,files[2].lines.join('\n'));
 });
 
-for (const [name, whitespace] of [['space',' '],['tab','\t'],['newline','\n']]) {
-  test(`checks accept valid require calls with ${name} before the parenthesis`, async () => {
-    const files=fixture();
-    files[2].lines=files[2].lines.join('\n').replaceAll('require(', 'require'+whitespace+'(').split('\n');
-    const result=await generate(files);
-    assert.equal(result.files[2].content,files[2].lines.join('\n'));
-    assert.deepEqual(result.usage,{inputTokens:10,outputTokens:20});
-  });
-}
-
-for (const [name, mutate, message] of [
-  ['subprocess identifier', files=>files[2].lines.push('const spawn = 1;'), 'The generated checks include an unsupported subprocess identifier.'],
-  ['unsupported import', files=>files[2].lines.push("require ('PRIVATE_UNSUPPORTED_MODULE');"), 'The generated checks include an unsupported module import.'],
-  ['missing assertion import', files=>files[2].lines.shift(), 'The generated checks must import node:assert or node:assert/strict.'],
-  ['missing app import', files=>files[2].lines.splice(1,1), 'The generated checks must import ./app.js.'],
-]) {
-  test(`checks retain a safe specific reason for ${name}`, async () => {
-    const files=fixture(); mutate(files);
-    await assert.rejects(generate(files), error=>{
-      assert.equal(error.code,'invalid_model_output');
-      assert.equal(error.stage,'tool_checks');
-      assert.equal(error.message,message);
-      assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
-      assert.doesNotMatch(error.message,/PRIVATE_UNSUPPORTED_MODULE/u);
-      return true;
-    });
-  });
-}
+test('checks use server-owned bindings without generated imports', async () => {
+  const files=fixture();
+  const result=await generate(files);
+  assert.equal(result.files[2].content,files[2].lines.join('\n'));
+  assert.doesNotMatch(result.files[2].content,/\brequire\b/u);
+});
 
 test('repair preserves the maximum line count and canonical content exactly', async () => {
   const files=fixture();

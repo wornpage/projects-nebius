@@ -1,11 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
-  RUN_LIMITS, RUN_VERSION, RUN_RECORD_FORMAT, TERMINAL_RUN_STATUSES, runFilesDigest, runSnapshotFromRecord,
+  RUN_LIMITS, RUN_VERSION, RUN_RECORD_FORMAT, RUN_EVIDENCE_LIMITS, TERMINAL_RUN_STATUSES, runFilesDigest, runJsonBytes, runSnapshotFromRecord,
   validRunId, validRunKey, validateRunInput, validateRunIntegrity, validateRunRecord,
 } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 import { RunProviderError, generateRunFiles, runModelConfiguration } from './nebius-run-provider.mjs';
 import { SandboxError, cancelSandboxOperation, readSandboxOperation, sandboxConfiguration, spawnSandbox } from './nebius-sandbox.mjs';
-import { renderRunPreview } from './nebius-run-preview.mjs';
+import { renderRunPreview, runPageContract } from './nebius-run-preview.mjs';
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const POLL_MS = 1500;
@@ -229,6 +229,34 @@ function retainModelUsage(state, observed) {
   } } };
 }
 
+function retainGeneration(state, response, error = null) {
+  if (!response) return state;
+  if (state.record.generationAttempts.some(entry => entry.attempt === state.record.usage.modelCalls)) return state;
+  const entry = { attempt: state.record.usage.modelCalls, outcome: error ? 'rejected' : 'accepted', ...response,
+    diagnostic: error ? { ...failureDetails(error, state.phase), message: safeMessage(error, 'Source validation failed.') } : null };
+  // Reserve space for two bounded Sandbox outputs and remaining run events.
+  // Earlier evidence is immutable; omit the new text explicitly if needed.
+  let record = { ...state.record, generationAttempts: [...state.record.generationAttempts, entry] };
+  if (runJsonBytes(record) > RUN_EVIDENCE_LIMITS.recordBytes - 114688) {
+    entry.responseText = null;
+    entry.retention = 'size_limit';
+  }
+  return { ...state, record: validateRunRecord(record) };
+}
+
+const sourceRejection = error => error instanceof RunProviderError && !error.uncertain
+  && ['tool_files', 'tool_page', 'tool_worker', 'tool_checks', 'preview'].includes(error.stage);
+
+async function validateGeneratedPreview(files) {
+  try {
+    runPageContract(files);
+    await renderRunPreview(files);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    throw new RunProviderError('invalid_model_output', safeMessage(error, 'The generated page could not be prepared for preview.'), false, 'preview');
+  }
+}
+
 function terminalState(state, status, message, error = null, stage = null) {
   const at = nextIso(state.record.updatedAt);
   let usage = state.record.usage;
@@ -400,6 +428,23 @@ export class NebiusRun extends DurableObject {
     return budget.reserveExecution(state.record.id, state.admissionId, attempt, state.dailyCallLimit);
   }
 
+  async retainLateGeneration(attempt, usage, response, error) {
+    // A cancellation/interrupted-submission stop may win while its original
+    // response is still returning. Enrich only that terminal attempt; never
+    // reopen it, promote readiness, or schedule another provider operation.
+    await this.ctx.storage.transaction(async transaction => {
+      let current = await transaction.get('state');
+      if (!current || current.phase !== 'retained' || current.record.usage.modelCalls !== attempt) return;
+      current.record = validateRunRecord(current.record);
+      const newResponse = response && !current.record.generationAttempts.some(entry => entry.attempt === attempt);
+      if (!newResponse && !(usage && current.usageBase)) return;
+      if (usage) current = retainModelUsage(current, usage);
+      if (newResponse) current = retainGeneration(current, response, error);
+      current.record = validateRunRecord(addEvent(current.record, 'Recorded a late generation response; the stopped run remains terminal.'));
+      await transaction.put('state', current);
+    });
+  }
+
   async handleCancellation(state, sandboxConfig) {
     if (!state.operationId) {
       if (['model-submitting', 'sandbox-submitting'].includes(state.phase)) {
@@ -428,6 +473,8 @@ export class NebiusRun extends DurableObject {
   async alarm() {
     let state = await this.load();
     let failureStage = 'orchestration';
+    let generatedResponse = null;
+    let submittedAttempt = null, generatedUsage = null;
     if (!state) return;
     if (state.phase === 'retained') {
       if (Date.now() >= state.retentionAt) { await this.ctx.storage.deleteAlarm(); await this.ctx.storage.deleteAll(); }
@@ -456,37 +503,55 @@ export class NebiusRun extends DurableObject {
 
       if (state.phase === 'model-ready') {
         failureStage = 'generation';
-        const attempt = state.record.checks.length + 1;
+        const attempt = state.record.usage.modelCalls + 1;
+        if (attempt > RUN_LIMITS.maxModelCalls) {
+          await this.finish(state, 'failed', 'The model-call limit was reached.', new RunApiError(429, 'run_limit', 'The run has used both model calls.'));
+          return;
+        }
         const reserved = await this.reserveInference(state, attempt);
         state = await this.load();
         if (!state || state.phase === 'retained') return;
         if (state.phase !== 'model-ready') return;
         if (state.cancelRequested) { await this.handleCancellation(state, null); return; }
+        if (Date.now() >= state.deadline) { await this.finish(state, 'failed', 'The run reached its orchestration deadline.', 'The run did not finish within ten minutes.'); return; }
         if (reserved === false) { await this.finish(state, 'failed', 'Run stopped at the daily inference ceiling.', new RunApiError(429, 'daily_limit', 'The demo has reached its daily generation limit.')); return; }
         if (reserved !== true) throw new Error('Inference budget unavailable.');
         const config = runModelConfiguration(this.env, state.record.requestedModel);
         const usageBase = { ...state.record.usage };
         const submitting = { ...state, phase: 'model-submitting', usageBase, record: { ...addEvent(state.record,
-          attempt === 1 ? 'Generating the three browser tool files.' : 'Repairing the files once from observed check output.'),
+          attempt === 1 ? 'Generating the three browser tool files.' : 'Using the second model call to repair the observed failure.'),
           status: attempt === 1 ? 'generating' : 'repairing', usage: { modelCalls: attempt,
             inputTokens: attempt === 1 ? null : usageBase.inputTokens,
             outputTokens: attempt === 1 ? null : usageBase.outputTokens, totalsComplete: false } } };
         await this.ctx.storage.put('state', submitting);
-        const repair = attempt === 1 ? null : { files: state.record.files, check: state.record.checks.at(-1) };
+        submittedAttempt = attempt;
+        const rejected = state.record.generationAttempts.at(-1);
+        const repair = attempt === 1 ? null : rejected?.outcome === 'rejected'
+          ? { rejected } : { files: state.record.files, check: state.record.checks.at(-1) };
         const generated = await generateRunFiles(config, runSnapshotFromRecord(state.record), repair, { timeoutMs: remainingMs(state, 60000) });
+        generatedResponse = generated.response;
+        generatedUsage = generated.usage;
         state = await this.load();
-        if (!state || state.phase !== 'model-submitting') return;
+        if (!state) return;
+        if (state.phase === 'retained') {
+          await validateGeneratedPreview(generated.files);
+          await this.retainLateGeneration(attempt, generated.usage, generatedResponse, null);
+          return;
+        }
+        if (state.phase !== 'model-submitting') return;
         state = retainModelUsage(state, generated.usage);
-        // Persist the observed usage before preview validation or cancellation.
-        // Rejected source is never saved in this checkpoint.
+        // Persist usage before any subsequent source validation.
         await this.save(state);
-        if (state.cancelRequested) { await this.finish(state, 'cancelled', 'Run cancelled after generation; generated output was discarded.'); return; }
         failureStage = 'preview';
-        await renderRunPreview(generated.files);
+        await validateGeneratedPreview(generated.files);
         const digest = await runFilesDigest(generated.files);
         state = await this.load();
-        if (!state || state.phase === 'retained' || state.phase !== 'model-submitting') return;
-        if (state.cancelRequested) { await this.finish(state, 'cancelled', 'Run cancelled after generation; generated output was discarded.'); return; }
+        if (!state) return;
+        if (state.phase === 'retained') { await this.retainLateGeneration(attempt, generated.usage, generatedResponse, null); return; }
+        if (state.phase !== 'model-submitting') return;
+        state = retainGeneration({ ...state, record: { ...state.record, attempt, files: generated.files } }, generatedResponse);
+        await this.save(state);
+        if (state.cancelRequested) { await this.finish(state, 'cancelled', 'Run cancelled after generation; source was retained without executing it.'); return; }
         state = { ...state, phase: 'sandbox-ready', sourceDigest: digest,
           record: { ...addEvent(state.record, 'Generated files are ready for isolated syntax, control-contract and model-authored checks.'), attempt,
             status: 'checking', files: generated.files }, usageBase: null };
@@ -530,7 +595,7 @@ export class NebiusRun extends DurableObject {
           await this.finish(state, 'ready', 'Observed syntax, control-contract and model-authored checks passed in the isolated sandbox.');
           return;
         }
-        if (state.record.attempt === 1) {
+        if (state.record.usage.modelCalls < RUN_LIMITS.maxModelCalls) {
           state = { ...state, phase: 'model-ready', operationId: null, sourceDigest: null, cancelSubmitted: false,
             record: { ...addEvent(state.record, 'The first isolated check failed; one repair is available.'), status: 'repairing' } };
           await this.save(state, Date.now() + 100);
@@ -542,6 +607,25 @@ export class NebiusRun extends DurableObject {
       state = await this.load() || state;
       if (error instanceof RunProviderError && error.usage && state.phase === 'model-submitting') {
         state = retainModelUsage(state, error.usage);
+      }
+      if (state.phase === 'retained') {
+        if (submittedAttempt !== null && error instanceof RunProviderError) {
+          await this.retainLateGeneration(submittedAttempt, error.usage || generatedUsage, error.response || generatedResponse, error);
+        }
+        return;
+      }
+      if (state.phase === 'model-submitting') {
+        state = retainGeneration(state, error instanceof RunProviderError ? error.response || generatedResponse : null, error);
+        await this.save(state);
+        const rejected = state.record.generationAttempts.at(-1);
+        if (!state.cancelRequested && Date.now() < state.deadline && sourceRejection(error)
+          && state.record.usage.modelCalls < RUN_LIMITS.maxModelCalls && state.record.usage.totalsComplete
+          && rejected?.attempt === state.record.usage.modelCalls && rejected.retention === 'retained') {
+          state = { ...state, phase: 'model-ready', record: { ...addEvent(state.record,
+            'Source validation rejected the first response; retained it and scheduled the one repair before Sandbox.'), status: 'repairing' } };
+          await this.save(state, Date.now() + 100);
+          return;
+        }
       }
       if (state.cancelRequested && state.operationId && error instanceof SandboxError && !error.uncertain) {
         await this.finish(state, 'uncertain', 'Cancellation could not confirm the sandbox operation state.', error);

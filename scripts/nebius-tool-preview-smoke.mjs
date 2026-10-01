@@ -100,19 +100,22 @@ try {
     await access(path.join(staticRoot, 'review.html')).catch(() => { throw new Error('Build the current review UI with npm run build:nebius before authored preview qualification.'); });
     parentReference = await authoredPreviewReference(files);
     report.scope = 'production renderer and compiled review UI in a local test host with synthetic API; not authenticated app routes or provider evidence';
-    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 10,
+    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 12,
       component: 'svelte-frontend/src/routes/review/NebiusRunReview.svelte', recordIsProviderEvidence: false };
     // A deliberately slow authored handler proves event ordering in the real
     // renderer. This is never inserted into a retained RunRecord or model file.
     const bridgeFiles = authoredCheckerFiles();
+    bridgeFiles[0].content = bridgeFiles[0].content.replace('</main>', '<button id="load-input-only" data-example-for="packet">Load input only</button></main>');
     bridgeFiles[1].content = bridgeFiles[1].content.replace('function handleMessage(message) {', `function handleMessage(message) {
+  if (message.type === 'event' && ['input', 'change'].includes(message.event)) return [];
   if (message.type === 'event' && message.event === 'click') {
     const start = Date.now();
     while (Date.now() - start < 1000) {}
-  }`);
+    if (message.id === 'load-input-only') return [{ id: 'packet', value: JSON.stringify({ candidate: 'probe', health: 'missing', review: 'pending', rollback: '' }) }];
+  }`).replace("return [{ id: 'packet', value }, { id: 'result', text: validate(value) }];", "return [{ id: 'result', text: validate(value) }, { id: 'packet', value }];");
     const materialized = await materializeAuthoredChecker(bridgeFiles);
     bridgePreview = await renderRunPreview(materialized);
-    report.bridgeFixture = { kind: 'authored-slow-handler', delayMilliseconds: 1000, sourceDigest: await runFilesDigest(materialized), expectedChecks: 6 };
+    report.bridgeFixture = { kind: 'authored-slow-handler-without-edit-patches', delayMilliseconds: 1000, sourceDigest: await runFilesDigest(materialized), expectedChecks: 8 };
     await writeFile(path.join(output, 'bridge-files.json'), JSON.stringify(materialized, null, 2) + '\n');
   }
   assert.match(preview.csp, /connect-src 'none'/u);
@@ -301,14 +304,14 @@ addEventListener('message', event => {
       } finally { await interaction.page.close(); }
 
       if (bridgePreview) {
-        for (const scenario of ['check then edit', 'two example loaders', 'example loader then edit']) {
+        for (const scenario of ['check then edit', 'two example loaders', 'example loader then edit', 'input-only loader']) {
           const detail = { width, category: 'bridge', case: scenario, fixtureKind: 'authored-slow-handler', actualInput: null, actualOutput: null, replies: null, nativeEvents: null };
           let tool;
           let before = 0, eventCount = 0;
           await observe('busy bridge: ' + scenario, detail, async () => {
             tool = await openTool(true);
             try {
-              if (scenario === 'check then edit') {
+              if (scenario === 'check then edit' || scenario === 'input-only loader') {
                 await tool.fill(CORRECTED);
                 assert.equal(await tool.check(), READY);
               }
@@ -318,19 +321,26 @@ addEventListener('message', event => {
                 await tool.control('check').focus();
                 await tool.page.keyboard.press('Enter');
                 await tool.control('input').fill('{');
+                assert.equal(await tool.text(), '', 'Old readiness must clear before the slow Worker replies.');
               } else if (scenario === 'two example loaders') {
                 await tool.control('incomplete').focus();
                 await tool.page.keyboard.press('Enter');
                 await tool.control('corrected').focus();
                 await tool.page.keyboard.press('Space');
-              } else {
+              } else if (scenario === 'example loader then edit') {
                 await tool.control('corrected').focus();
                 await tool.page.keyboard.press('Space');
                 await tool.control('input').fill('{');
+              } else {
+                await tool.frame.locator('#load-input-only').focus();
+                await tool.page.keyboard.press('Enter');
               }
-              const expected = scenario === 'two example loaders' ? READY : 'Input changed. Check packet again.';
+              const minimumReplies = scenario === 'input-only loader' ? 1 : 2;
+              await tool.page.waitForFunction(({ before, minimumReplies }) => window.fixtureMessages.length >= before + minimumReplies, { before, minimumReplies });
+              const expected = scenario === 'two example loaders' ? READY : '';
               await tool.frame.waitForFunction(({ id, expected }) => document.getElementById(id).textContent === expected, { id: bindings.output, expected });
               if (scenario === 'two example loaders') assert.deepEqual(JSON.parse(await tool.control('input').inputValue()), JSON.parse(CORRECTED));
+              else if (scenario === 'input-only loader') assert.equal(JSON.parse(await tool.control('input').inputValue()).candidate, 'probe');
               else assert.equal(await tool.control('input').inputValue(), '{', 'A late reply must not overwrite newer user input.');
               assert.notEqual(await tool.page.locator('#preview-status').textContent(), 'failed');
             } finally {
@@ -429,6 +439,36 @@ addEventListener('message', event => {
           });
           await page?.close();
         }
+        await observe('compiled parent: rejected generation remains inert and keyboard readable', { width, category: 'parent', case: 'rejected-source-history', fixtureKind: 'authored-synthetic-run-reference' }, async () => {
+          const page = await context.newPage(); page.setDefaultTimeout(4000);
+          page.on('pageerror', error => pageErrors.push(error.message));
+          const failedSeed = structuredClone(seed);
+          const raw = '</pre><img id="injected-generation" src="x" onerror="window.generationInjected=true">';
+          const record = failedSeed.packs[0].executionRun.record;
+          Object.assign(record, { status: 'failed', attempt: 0, files: [], checks: [],
+            error: 'Authored source rejection fixture.', failure: { code: 'invalid_model_output', stage: 'tool_files' },
+            generationAttempts: [{ attempt: 1, outcome: 'rejected', responseText: raw, retention: 'retained',
+              diagnostic: { code: 'invalid_model_output', stage: 'tool_files', message: 'Authored source rejection fixture.' } }] });
+          await validateRunIntegrity(record);
+          await page.addInitScript(({ key, seed }) => { if (window === top) localStorage.setItem(key, JSON.stringify(seed)); }, { key: storageKey, seed: failedSeed });
+          try {
+            await page.goto(origin + '/review?focus=' + encodeURIComponent(parentReference.input.packId));
+            const review = page.locator('[data-nebius-run-review]');
+            const history = review.locator('[data-run-generation-history]');
+            await history.waitFor({ state: 'visible' });
+            const summary = history.locator(':scope > summary');
+            for (let count = 0; count < 120 && !await summary.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
+            assert.equal(await summary.evaluate(element => element === document.activeElement), true);
+            await page.keyboard.press('Enter');
+            await history.locator('details > summary').focus(); await page.keyboard.press('Enter');
+            assert.equal(await history.locator('pre').textContent(), raw);
+            assert.equal(await review.locator('#injected-generation, iframe').count(), 0);
+            assert.equal(await page.evaluate(() => Boolean(window.generationInjected)), false);
+            assert.equal(await review.getByRole('button', { name: 'Try your tool', exact: true }).count(), 0);
+            assert.equal(await review.getByRole('button', { name: 'Save run evidence', exact: true }).count(), 0);
+            await page.screenshot({ path: path.join(output, 'rejected-source-history-' + width + '.png') });
+          } finally { await page.close(); }
+        });
         await observe('compiled parent: stale result remains inspection only', { width, category: 'parent', case: 'stale', fixtureKind: 'authored-synthetic-run-reference' }, async () => {
           const page = await context.newPage(); page.setDefaultTimeout(4000);
           page.on('pageerror', error => pageErrors.push(error.message));

@@ -55,20 +55,16 @@ for (const scenario of PACKET_CASES) {
   });
 }
 
-test('authored checks import and exercise both actual materialized functions', () => {
-  let imports = 0, assertions = 0;
+test('authored checks exercise both supplied actual materialized functions', () => {
+  let assertions = 0;
   const validate = loadAuthoredModule();
   const handleMessage = workerBridge();
   const countedAssert = new Proxy(assert, { get(target, key) {
     if (typeof target[key] !== 'function') return target[key];
     return (...args) => { assertions += 1; return target[key](...args); };
   } });
-  const context = createContext({ require: name => {
-    if (name === 'node:assert/strict') return countedAssert;
-    assert.equal(name, './app.js'); imports += 1; return { validate, handleMessage };
-  } });
+  const context = createContext({ assert: countedAssert, validate, handleMessage });
   runInContext(files.find(file => file.path === 'checks.cjs').content, context, { timeout: 1000 });
-  assert.equal(imports, 1);
   assert.equal(assertions, 15);
 });
 
@@ -178,7 +174,7 @@ test('retained preview rejects ambiguous or untrusted input before browser execu
 // The real browser verifier separately runs the authored code in its Worker.
 async function domBridgeHarness() {
   class Element {
-    constructor(id = '') { this.id = id; this.textContent = ''; }
+    constructor(id = '', tagName = 'DIV') { this.id = id; this.tagName = tagName; this.dataset = {}; this.textContent = ''; }
     closest() { return this; }
     setAttribute() {}
   }
@@ -187,7 +183,7 @@ async function domBridgeHarness() {
   class Select extends Element {}
   class Button extends Element {}
   const elements = new Map([
-    ['packet', new Textarea('packet')], ['result', new Element('result')],
+    ['packet', new Textarea('packet')], ['result', new Element('result', 'OUTPUT')],
     ['load-incomplete', new Button('load-incomplete')], ['load-corrected', new Button('load-corrected')],
     ['check-packet', new Button('check-packet')], ['packet-form', new Element('packet-form')],
   ]);
@@ -259,11 +255,22 @@ test('DOM bridge delivers both queued example actions instead of dropping the se
 test('DOM bridge discards stale value and answer patches after a newer user edit', async () => {
   const bridge = await domBridgeHarness(); bridge.reply([{ id: 'result', text: 'Initial result' }]);
   bridge.emit('click', 'load-corrected'); bridge.emit('input', 'packet', '{');
+  assert.equal(bridge.elements.get('result').textContent, '', 'Clear synchronously before the pending reply.');
   bridge.reply([{ id: 'packet', value: CORRECTED }, { id: 'result', text: READY }]);
   assert.equal(bridge.elements.get('packet').value, '{');
-  assert.equal(bridge.elements.get('result').textContent, 'Initial result');
+  assert.equal(bridge.elements.get('result').textContent, '');
   bridge.reply([{ id: 'result', text: 'Input changed' }]);
   assert.equal(bridge.elements.get('result').textContent, 'Input changed');
+});
+
+test('DOM bridge clears old results before a value-patch batch, regardless of patch order', async () => {
+  const bridge = await domBridgeHarness(); bridge.reply([{ id: 'result', text: READY }]);
+  bridge.emit('click', 'load-incomplete');
+  bridge.reply([{ id: 'packet', value: INCOMPLETE }]);
+  assert.equal(bridge.elements.get('result').textContent, '', 'A loader need not supply an explicit clear patch.');
+  bridge.emit('click', 'load-corrected');
+  bridge.reply([{ id: 'result', text: READY }, { id: 'packet', value: CORRECTED }]);
+  assert.equal(bridge.elements.get('result').textContent, READY, 'Pre-clearing must not erase the new result.');
 });
 
 test('DOM bridge handles click and submit as separate ordered native events', async () => {
