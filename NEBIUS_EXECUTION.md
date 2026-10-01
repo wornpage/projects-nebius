@@ -204,6 +204,15 @@ after a valid result and invalid enum input. The authored checker fixture tests
 those behaviors through this same runner; deliberate broken fixtures must fail.
 The independent packet cases remain separate and are not sent to the model.
 
+The checks-import source guard accepts whitespace, including LF, between
+`require` and its opening parenthesis. Its module allowlist is unchanged.
+Rejections distinguish a subprocess identifier, an unsupported captured import,
+a missing Node assertion import, and a missing app import using fixed messages
+at `invalid_model_output` / `tool_checks`. Unknown specifiers and rejected source
+are never echoed or retained. This regex is a limited source check; the trusted
+runner still enforces imports and actual synchronous assertions. Older generic
+rejections do not identify which condition failed and are not reinterpreted.
+
 This bridge revision does not add an old-suffix repair fallback. Before applying
 it to a runtime, confirm no earlier nonterminal run may still need repair.
 Older retained runs stay readable and previewable with their original checked

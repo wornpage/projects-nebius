@@ -216,17 +216,24 @@ function validateEnvelope(raw, model, previousFiles) {
     throw error;
   }
   const source = Object.fromEntries(files.map(file => [file.path, file.content]));
-  const checkImports = [...source['checks.cjs'].matchAll(/\brequire\(\s*['"]([^'"]+)['"]\s*\)/gu)].map(match => match[1]);
+  const checkImports = [...source['checks.cjs'].matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/gu)].map(match => match[1]);
   for (const rule of PAGE_RULES) {
     if (rule.rejects(source['index.html'])) fail(rule.code, rule.error, false, 'tool_page');
   }
   if (/\b(?:document|window|location|fetch|XMLHttpRequest|WebSocket|EventSource|importScripts|navigator)\b/u.test(source['app.js'])) {
     fail('invalid_model_output', 'The generated worker references a browser or network API that this runner does not allow.', false, 'tool_worker');
   }
-  if (/\b(?:child_process|node:child_process|execFile|execSync|spawnSync|spawn)\b/u.test(source['checks.cjs'])
-    || !checkImports.some(specifier => ['node:assert', 'node:assert/strict'].includes(specifier)) || !checkImports.includes('./app.js')
-    || checkImports.some(specifier => !['node:assert', 'node:assert/strict', './app.js'].includes(specifier))) {
-    fail('invalid_model_output', 'The generated checks must use the app script and Node assertions without other imports or subprocesses.', false, 'tool_checks');
+  if (/\b(?:child_process|node:child_process|execFile|execSync|spawnSync|spawn)\b/u.test(source['checks.cjs'])) {
+    fail('invalid_model_output', 'The generated checks include an unsupported subprocess identifier.', false, 'tool_checks');
+  }
+  if (checkImports.some(specifier => !['node:assert', 'node:assert/strict', './app.js'].includes(specifier))) {
+    fail('invalid_model_output', 'The generated checks include an unsupported module import.', false, 'tool_checks');
+  }
+  if (!checkImports.some(specifier => ['node:assert', 'node:assert/strict'].includes(specifier))) {
+    fail('invalid_model_output', 'The generated checks must import node:assert or node:assert/strict.', false, 'tool_checks');
+  }
+  if (!checkImports.includes('./app.js')) {
+    fail('invalid_model_output', 'The generated checks must import ./app.js.', false, 'tool_checks');
   }
   return { files, usage: reportedUsage(raw) };
 }

@@ -93,6 +93,35 @@ test('ordinary comments and logging reach the trusted runtime assertion gate', a
   assert.equal(result.files[2].content,files[2].lines.join('\n'));
 });
 
+for (const [name, whitespace] of [['space',' '],['tab','\t'],['newline','\n']]) {
+  test(`checks accept valid require calls with ${name} before the parenthesis`, async () => {
+    const files=fixture();
+    files[2].lines=files[2].lines.join('\n').replaceAll('require(', 'require'+whitespace+'(').split('\n');
+    const result=await generate(files);
+    assert.equal(result.files[2].content,files[2].lines.join('\n'));
+    assert.deepEqual(result.usage,{inputTokens:10,outputTokens:20});
+  });
+}
+
+for (const [name, mutate, message] of [
+  ['subprocess identifier', files=>files[2].lines.push('const spawn = 1;'), 'The generated checks include an unsupported subprocess identifier.'],
+  ['unsupported import', files=>files[2].lines.push("require ('PRIVATE_UNSUPPORTED_MODULE');"), 'The generated checks include an unsupported module import.'],
+  ['missing assertion import', files=>files[2].lines.shift(), 'The generated checks must import node:assert or node:assert/strict.'],
+  ['missing app import', files=>files[2].lines.splice(1,1), 'The generated checks must import ./app.js.'],
+]) {
+  test(`checks retain a safe specific reason for ${name}`, async () => {
+    const files=fixture(); mutate(files);
+    await assert.rejects(generate(files), error=>{
+      assert.equal(error.code,'invalid_model_output');
+      assert.equal(error.stage,'tool_checks');
+      assert.equal(error.message,message);
+      assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
+      assert.doesNotMatch(error.message,/PRIVATE_UNSUPPORTED_MODULE/u);
+      return true;
+    });
+  });
+}
+
 test('repair preserves the maximum line count and canonical content exactly', async () => {
   const files=fixture();
   files[0].lines=[...files[0].lines,...Array(1022).fill('')];
