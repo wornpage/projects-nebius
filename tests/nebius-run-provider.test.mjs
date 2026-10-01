@@ -44,6 +44,9 @@ test('native file blocks become materialized files with one server runtime bridg
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,low_effort:true,force_nonempty_content:false});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
     assert.match(request.messages[0].content, /supplies assert \(strict Node assertions\), validate and handleMessage as fixed bindings/u);
+    assert.match(request.messages[0].content, /checks\.cjs has no browser DOM: never use document, window, DOM selectors or DOM emulation/u);
+    assert.match(request.messages[0].content, /assert\.deepEqual\(validate\(exampleInput\), expectedResult\)/u);
+    assert.match(request.messages[0].content, /Distinguish malformed input from valid but incomplete task states/u);
     assert.match(request.messages[0].content, /Never return an old result for new input/u);
     assert.match(request.messages[0].content, /an invalid enum must produce an input error/u);
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
@@ -132,6 +135,10 @@ test('repair preserves the maximum line count and canonical content exactly', as
     assert.equal(prompt.includes('self.onmessage'),false);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,low_effort:true,force_nonempty_content:false});
     assert.equal(request.max_tokens,8000);
+    assert.match(request.messages[0].content, /checks\.cjs has no browser DOM/u);
+    assert.match(request.messages[0].content, /assert\.deepEqual\(validate\(exampleInput\), expectedResult\)/u);
+    assert.match(request.messages[0].content, /Distinguish malformed input from valid but incomplete task states/u);
+    assert.match(request.messages[0].content, /never change expected task outcomes to match faulty logic/u);
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
   }, {files:generated.files,check:{exitCode:1,stderr:'A controlled check failed.'}});
   assert.deepEqual(repaired.files,generated.files);
