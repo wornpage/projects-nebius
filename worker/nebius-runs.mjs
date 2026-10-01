@@ -488,7 +488,7 @@ export class NebiusRun extends DurableObject {
         if (!state || state.phase === 'retained' || state.phase !== 'model-submitting') return;
         if (state.cancelRequested) { await this.finish(state, 'cancelled', 'Run cancelled after generation; generated output was discarded.'); return; }
         state = { ...state, phase: 'sandbox-ready', sourceDigest: digest,
-          record: { ...addEvent(state.record, 'Generated files are ready for isolated syntax and model-authored checks.'), attempt,
+          record: { ...addEvent(state.record, 'Generated files are ready for isolated syntax, control-contract and model-authored checks.'), attempt,
             status: 'checking', files: generated.files }, usageBase: null };
         await this.save(state, Date.now() + 100);
         return;
@@ -527,7 +527,7 @@ export class NebiusRun extends DurableObject {
           record: { ...state.record, checks: [...state.record.checks, check] } };
         if (state.cancelRequested) { await this.finish(state, 'cancelled', 'The check finished during cancellation; its observed result was retained but not accepted.'); return; }
         if (observed.exitCode === 0 && observed.status === 'SUCCESS') {
-          await this.finish(state, 'ready', 'Observed syntax and model-authored checks passed in the isolated sandbox.');
+          await this.finish(state, 'ready', 'Observed syntax, control-contract and model-authored checks passed in the isolated sandbox.');
           return;
         }
         if (state.record.attempt === 1) {
@@ -536,7 +536,7 @@ export class NebiusRun extends DurableObject {
           await this.save(state, Date.now() + 100);
           return;
         }
-        await this.finish(state, 'failed', 'The isolated checks still failed after the one repair.', 'The generated browser tool did not pass its model-authored checks.');
+        await this.finish(state, 'failed', 'The isolated checks still failed after the one repair.', 'The generated browser tool did not pass its isolated checks.');
       }
     } catch (error) {
       state = await this.load() || state;

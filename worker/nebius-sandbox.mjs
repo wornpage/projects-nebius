@@ -1,5 +1,6 @@
 import { isRecord } from '../svelte-frontend/src/lib/nebius-contract.mjs';
 import { RUN_LIMITS, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { runPageContract } from './nebius-run-preview.mjs';
 
 export class SandboxError extends Error {
   constructor(code, message, uncertain = false) { super(message); this.code = code; this.uncertain = uncertain; }
@@ -15,7 +16,9 @@ export const CHECK_RUNNER = String.raw`'use strict';
 const fs = require('node:fs');
 const vm = require('node:vm');
 const realAssert = require('node:assert');
+const { types } = require('node:util');
 let validateCalls = 0, handleMessageCalls = 0, assertionCalls = 0, assertionFailed = false;
+let contractFailure = null;
 const harden = value => Object.freeze(Object.setPrototypeOf(value, null));
 // Generated logging is discarded; only trusted assertion counts reach stdout.
 const quietLog = harden(() => {});
@@ -26,6 +29,7 @@ const context = vm.createContext(Object.assign(Object.create(null), { console: q
   codeGeneration: { strings: false, wasm: false }
 });
 const ContextError = vm.runInContext('Error', context);
+const parseMessage = vm.runInContext('((parse) => value => parse(value))(JSON.parse)', context);
 const boundedMessage = error => String(error && error.message || error).slice(0, 800);
 const sourceLocations = error => {
   const stack = String(error && error.stack || '').slice(0, 4096);
@@ -40,6 +44,76 @@ function runModule(source, filename, requireValue) {
   const wrapped = '(function(module, exports, require) { "use strict";\n' + source + '\n})(__module, __module.exports, __require);';
   new vm.Script(wrapped, { filename, lineOffset: -1 }).runInContext(context, { timeout: 4000 });
   return moduleValue.exports;
+}
+const contractDeny = message => { contractFailure ||= message; return deny(message); };
+const ownRecord = value => value !== null && typeof value === 'object' && !types.isProxy(value) && !Array.isArray(value);
+function plainData(value) {
+  if (!ownRecord(value)) return null;
+  const descriptors = Object.getOwnPropertyDescriptors(value), data = Object.create(null);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = descriptors[key];
+    if (typeof key !== 'string' || !descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+    data[key] = descriptor.value;
+  }
+  return data;
+}
+function dataArray(value, limit) {
+  if (types.isProxy(value) || !Array.isArray(value) || value.length > limit) return null;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== value.length + 1 || keys.some(key => typeof key !== 'string' || (key !== 'length' && !/^(?:0|[1-9]\d*)$/.test(key)))) return null;
+  const data = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+    data.push(descriptor.value);
+  }
+  return data;
+}
+function checkPatches(message, patches, elements, refreshed) {
+  const patchData = dataArray(patches, 100);
+  if (!patchData) return contractDeny('handleMessage must return a patch array containing bounded plain-data patches.');
+  const snapshot = [];
+  for (const rawPatch of patchData) {
+    const patch = plainData(rawPatch);
+    if (!patch) return contractDeny('Patch fields must be own enumerable plain data.');
+    if (typeof patch.id !== 'string' || !elements.has(patch.id)) return contractDeny('A patch targets an ID absent from the sanitized index.html.');
+    const element = elements.get(patch.id), keys = Object.keys(patch);
+    if (keys.length < 2 || keys.some(key => key !== 'id' && !element.fields.includes(key))) return contractDeny('A patch field is incompatible with its declared element.');
+    const observed = { id: patch.id };
+    for (const field of keys.filter(key => key !== 'id')) {
+      const value = patch[field];
+      if (field === 'text' || field === 'value') {
+        if (typeof value !== 'string' || value.length > (field === 'text' ? 16000 : 4000)) return contractDeny('A patch string exceeds its type or size limit.');
+        observed[field] = value;
+      } else if (field === 'hidden' || field === 'disabled') {
+        if (typeof value !== 'boolean') return contractDeny('A patch toggle must be boolean.');
+        observed[field] = value;
+      } else if (field === 'options') {
+        const items = dataArray(value, 100);
+        if (!items || items.some(rawItem => {
+          const item = plainData(rawItem);
+          return !item || Object.keys(item).sort().join(',') !== 'label,value' || typeof item.label !== 'string'
+            || typeof item.value !== 'string' || item.label.length > 500 || item.value.length > 500;
+        })) return contractDeny('Select options exceed the supported patch shape.');
+      }
+    }
+    snapshot.push(observed);
+  }
+  const outputIds = snapshot.filter(patch => Object.hasOwn(patch, 'text')).map(patch => patch.id);
+  if (message.type === 'event') {
+    const control = elements.get(message.id);
+    if (control.exampleFor !== null) {
+      const example = snapshot.filter(patch => patch.id === control.exampleFor && Object.hasOwn(patch, 'value')).at(-1);
+      if (!example) return contractDeny('A declared example loader must supply its target input value.');
+      if (elements.get(control.exampleFor).format === 'json') {
+        try { JSON.parse(example.value); }
+        catch { return contractDeny('A declared JSON example loader returned malformed JSON.'); }
+      }
+    }
+    const updatesInput = ['input', 'change'].includes(message.event) || snapshot.some(patch => Object.hasOwn(patch, 'value'));
+    if (updatesInput && [...refreshed].some(id => !outputIds.includes(id))) return contractDeny('An input edit or loader must refresh every previously observed output.');
+  }
+  for (const id of outputIds) refreshed.add(id);
 }
 function assertFacade(target) {
   const wrap = fn => harden((...args) => {
@@ -56,14 +130,50 @@ function assertFacade(target) {
   return callable;
 }
 try {
-  const app = runModule(fs.readFileSync('app.js', 'utf8'), 'app.js', harden(() => deny('app.js must not import modules.')));
+  const page = JSON.parse(fs.readFileSync('control-contract.json', 'utf8'));
+  if (page.version !== 1 || !Array.isArray(page.elements) || page.elements.length > 200) throw new Error('The server control contract is invalid.');
+  const elements = new Map(page.elements.map(element => [element.id, element]));
+  const observedEvents = new Set(), postOutputEdits = new Set(), refreshed = new Set();
+  const requiredEvents = ['init', ...page.elements.flatMap(element => element.events.map(event => event + ':' + element.id))];
+  const requiredEdits = page.elements.flatMap(element => element.events.filter(event => ['input', 'change'].includes(event)).map(event => event + ':' + element.id));
+  const sources = new Map(['app.js', 'checks.cjs'].map(path => [path, fs.readFileSync(path, 'utf8')]));
+  const syntaxFailures = [];
+  for (const [path, source] of sources) {
+    try { new vm.Script('(function(module, exports, require) { "use strict";\n' + source + '\n});', { filename: path, lineOffset: -1 }); }
+    catch (error) { syntaxFailures.push(path + ': ' + boundedMessage(error) + sourceLocations(error)); }
+  }
+  if (syntaxFailures.length) throw new Error('JavaScript syntax failed: ' + syntaxFailures.join('\n'));
+  const app = runModule(sources.get('app.js'), 'app.js', harden(() => deny('app.js must not import modules.')));
   if (typeof app.validate !== 'function') throw new Error('app.js must export a validate function.');
   if (typeof app.handleMessage !== 'function') throw new Error('app.js must export a handleMessage function.');
   const appFacade = Object.freeze(Object.assign(Object.create(null), {
     validate: harden((...args) => { const result = app.validate(...args); validateCalls += 1; return result; }),
     handleMessage: harden((...args) => {
-      const patches = app.handleMessage(...args);
-      if (!Array.isArray(patches)) return deny('handleMessage must return a patch array.');
+      const message = plainData(args[0]);
+      if (args.length !== 1 || !ownRecord(message) || !ownRecord(message.values)
+        || !['init', 'event'].includes(message.type)) return contractDeny('A handler check must use the real init or event message shape.');
+      const messageKeys = message.type === 'init' ? 'type,values' : 'event,id,type,values';
+      if (Object.keys(message).sort().join(',') !== messageKeys) return contractDeny('A handler message must contain only the browser message fields as plain data.');
+      if (message.type === 'event' && (!elements.has(message.id) || !['click', 'input', 'change', 'submit'].includes(message.event))) return contractDeny('A handler event must name a declared page ID and real event type.');
+      if (Object.keys(message.values).length !== page.elements.filter(element => element.valueControl).length) return contractDeny('A handler check must supply the complete page input snapshot.');
+      message.values = plainData(message.values);
+      if (!message.values) return contractDeny('Handler input values must be own plain data.');
+      for (const [id, value] of Object.entries(message.values)) {
+        const element = elements.get(id);
+        if (!element?.valueControl || (element.booleanValue ? typeof value !== 'boolean' : typeof value !== 'string' || value.length > 4000)) return contractDeny('A handler values snapshot must match the declared input controls.');
+      }
+      // Keep observations outside generated objects before calling the app. The
+      // app and checks may mutate their messages or return values afterwards.
+      const observedMessage = message.type === 'init' ? { type: 'init', values: { ...message.values } }
+        : { type: 'event', event: message.event, id: message.id, values: { ...message.values } };
+      const afterOutput = refreshed.size > 0;
+      let normalized;
+      try { normalized = parseMessage(JSON.stringify(observedMessage)); }
+      catch { return contractDeny('The handler message could not be normalized to browser data.'); }
+      const patches = app.handleMessage(normalized);
+      checkPatches(observedMessage, patches, elements, refreshed);
+      observedEvents.add(observedMessage.type === 'init' ? 'init' : observedMessage.event + ':' + observedMessage.id);
+      if (afterOutput && ['input', 'change'].includes(observedMessage.event)) postOutputEdits.add(observedMessage.event + ':' + observedMessage.id);
       handleMessageCalls += 1;
       return patches;
     })
@@ -80,11 +190,21 @@ try {
     if (name === 'node:assert/strict') return strictAssertions;
     return deny('checks.cjs may import only ./app.js and synchronous node:assert methods.');
   });
-  runModule(fs.readFileSync('checks.cjs', 'utf8'), 'checks.cjs', requireCheck);
+  runModule(sources.get('checks.cjs'), 'checks.cjs', requireCheck);
+  if (contractFailure) throw new Error('Control contract failed: ' + contractFailure);
   if (assertionFailed || assertionCalls < 1 || validateCalls < 1 || handleMessageCalls < 1) {
     throw new Error('Checks must execute at least one successful Node assertion and successfully call the exported validate and handleMessage functions; no assertion may fail.');
   }
+  const missingEvents = requiredEvents.filter(event => !observedEvents.has(event));
+  if (missingEvents.length) throw new Error('Control event coverage is incomplete: ' + (requiredEvents.length - missingEvents.length) + '/' + requiredEvents.length + '. Missing ' + missingEvents.slice(0, 8).join(', '));
+  const missingEdits = requiredEdits.filter(event => !postOutputEdits.has(event));
+  if (missingEdits.length) throw new Error('Post-output edit coverage is incomplete: ' + (requiredEdits.length - missingEdits.length) + '/' + requiredEdits.length + '.');
+  if (page.elements.some(element => element.requiresText && !refreshed.has(element.id))) throw new Error('Each declared textual output must receive an observed refresh patch.');
   process.stdout.write('Observed successful assertions: ' + assertionCalls + '; validate calls: ' + validateCalls + '; handleMessage calls: ' + handleMessageCalls + '\n');
+  const loaders = page.elements.filter(element => element.exampleFor !== null);
+  const jsonLoaders = loaders.filter(element => elements.get(element.exampleFor).format === 'json');
+  process.stdout.write('Control events observed: ' + requiredEvents.length + '/' + requiredEvents.length + '; declared JSON example loaders: ' + jsonLoaders.length + '/' + loaders.length + '; inputs without a declared format: ' + page.elements.filter(element => element.valueControl && element.format === null).length + '\n');
+  process.stdout.write('Post-output edits observed: ' + requiredEdits.length + '/' + requiredEdits.length + '\n');
   process.exit(0);
 } catch (error) {
   process.stderr.write('Generated checks failed: ' + boundedMessage(error) + sourceLocations(error) + '\n');
@@ -101,10 +221,7 @@ process.stdin.on('end', () => {
     const payload = JSON.parse(source);
     process.chdir(fs.mkdtempSync('/tmp/wornpage-run-'));
     for (const file of payload.files) fs.writeFileSync(file.path, file.content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    const syntax = cp.spawnSync(process.execPath, ['--check', 'app.js'], { encoding: 'utf8', timeout: 12000, maxBuffer: 4096 });
-    if (syntax.stdout) process.stdout.write(syntax.stdout);
-    if (syntax.stderr) process.stderr.write(syntax.stderr);
-    if (syntax.error || syntax.status !== 0) process.exit(Number.isInteger(syntax.status) ? syntax.status : 124);
+    fs.writeFileSync('control-contract.json', JSON.stringify(payload.pageContract), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     const checks = cp.spawnSync(process.execPath, ['-e', ${JSON.stringify(CHECK_RUNNER)}], { encoding: 'utf8', timeout: 12000, maxBuffer: 4096 });
     if (checks.stdout) process.stdout.write(checks.stdout);
     if (checks.stderr) process.stderr.write(checks.stderr);
@@ -170,11 +287,13 @@ function operationIdFromLocation(location) {
 }
 
 export async function spawnSandbox(config, files, { fetcher = globalThis.fetch, timeoutMs = 15000 } = {}) {
+  const admittedFiles = validateRunFiles(files);
+  const pageContract = runPageContract(admittedFiles);
   const body = {
     command: '/usr/local/bin/node', args: ['-e', HARNESS], shell: false,
     image: config.imageId, disposable: false, preserve_env: false, cwd: '/tmp', uid: 1000, gid: 1000,
     env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, resources_limits: { max_layer_bytes: 8388608 },
-    networking: { enabled: false }, stdin: { value: encodeBase64(JSON.stringify({ files: validateRunFiles(files) })), encoding: 'base64', close: true },
+    networking: { enabled: false }, stdin: { value: encodeBase64(JSON.stringify({ files: admittedFiles, pageContract })), encoding: 'base64', close: true },
     timeout: RUN_LIMITS.sandboxSeconds, truncate_output_at: 4096,
   };
   const controller = new AbortController();

@@ -154,13 +154,50 @@ logic line numbers are preserved. The server never runs generated source while
 decoding or materializing it. Missing required functions fail when the Sandbox
 loads app.js and can use the existing single repair.
 
-The trusted check runner exposes only the actual exported `validate` and
+### Deterministic control contract
+
+Each new Sandbox submission derives a control manifest from the exact files'
+sanitized body using the production preview sanitizer. It records unique IDs,
+control kinds, compatible patch fields and required events. Duplicate IDs,
+controls without IDs and exceeding the bridge's 200-element binding limit are
+rejected before submission. Generated source is never evaluated by this step.
+The manifest travels as trusted data in the existing operation's stdin, with
+the same three source files, timeout, network isolation and operation ceiling.
+
+The trusted runner compiles **both app.js and checks.cjs** before either executes,
+so one diagnostic can identify syntax failures in both files. The runner then
+exposes only the actual exported `validate` and
 `handleMessage` functions through frozen wrappers. Each call is counted only
-after it returns successfully; a handler reply must be an array. At least one
+after it returns successfully; a handler reply must be a bounded array of patches
+for existing page IDs and compatible fields. Handler messages need real event
+types and the full current input snapshot. At least one
 successful call to each function and one successful synchronous assertion are
-required. A caught assertion failure still fails the check. stdout records
-assertion, validate-call and handleMessage-call counts. These counts establish
-observed calls, not independent semantic acceptance.
+required. A caught assertion or patch-contract failure still fails the check.
+
+Checks must exercise init, each enabled action's click (or a form's submit),
+and both input and change for every editable input after output exposure.
+Edits before the first output do not satisfy that separate denominator. An edit
+or example value patch must refresh previously observed outputs. An empty text
+patch is valid clearing. Every output element and pre with `data-output="true"`
+receives an observed text patch; static pre samples need no refresh. Messages
+have exact own browser fields and are normalized as plain JSON data before app
+execution. Observations are captured before generated checks can mutate them.
+An output patch establishes a refresh; it does not prove correct recomputation.
+
+The prompt declares textual inputs with `data-input-format="text"` or `"json"`
+and example buttons with `data-example-for="<input id>"`. Only explicitly
+declared JSON example loaders are parsed as JSON, using the final effective
+value when a response patches an input more than once. Invalid user input and clear
+actions remain valid interactions and are not mistakenly treated as examples.
+Missing format declarations are reported as unknown, not JSON qualification.
+Label text and task wording are not used to infer input types or loader roles.
+
+stdout records assertion/actual-function-call counts, observed/required control
+events and post-output edits, JSON-declared/all example loaders, and inputs without a
+declared format. These separate denominators describe structural observations,
+not independent task-semantic acceptance. Neither model assertions nor this gate
+establish that the release-packet outputs are correct. The frozen independent
+case set and actual rendered preview remain the separate qualification gate.
 
 The generation prompt asks for assertions on example-loader patches, edits
 after a valid result and invalid enum input. The authored checker fixture tests
@@ -182,8 +219,9 @@ configured NVIDIA model, full reasoning, existing sampling settings and the
 Checks record the observed provider operation ID, resulting checkpoint ID if
 available, exit code, bounded stdout/stderr, attempt and source digest. These
 are agent-authored checks, not independent acceptance or a guarantee that all
-requirements are met. The fixed server harness writes the selected files as
-data, checks JavaScript syntax, then runs checks.cjs. Generated code executes
+requirements are met. The fixed server harness writes the selected files and
+derived manifest as data, compiles both scripts, validates observed control
+interactions, then runs the model assertions. Generated code executes
 only inside the remote sandbox or a dedicated worker in the explicitly opened
 isolated preview. A ready result's source digest must match the checked files.
 

@@ -20,17 +20,75 @@ function sanitize(node) {
   return node;
 }
 
-/** Untrusted generated markup is never inserted into the host application. */
-export async function renderRunPreview(rawFiles) {
-  const files = validateRunFiles(rawFiles);
-  const source = Object.fromEntries(files.map(file => [file.path, file.content]));
-  const document = parse(source['index.html']);
+function sanitizedPage(html) {
+  const document = parse(html);
   const root = document.childNodes.find(node => node.tagName === 'html');
   const head = root?.childNodes?.find(node => node.tagName === 'head');
   const body = root?.childNodes?.find(node => node.tagName === 'body');
   if (!head || !body) throw new TypeError('The generated page cannot be previewed.');
   sanitize(head);
   sanitize(body);
+  return { head, body };
+}
+
+// Derived from the same sanitized body the browser sees. No generated script is
+// evaluated here. This manifest is trusted runner data, never a model assertion.
+export function runPageContract(rawFiles) {
+  const files = validateRunFiles(rawFiles);
+  const { body } = sanitizedPage(files.find(file => file.path === 'index.html').content);
+  const elements = [], ids = new Set();
+  function visit(node, ancestorDisabled = false) {
+    if (!node.tagName) return;
+    const attrs = Object.fromEntries((node.attrs || []).map(attr => [attr.name, attr.value]));
+    const inputType = (attrs.type || 'text').toLowerCase();
+    const valueControl = ['input', 'select', 'textarea'].includes(node.tagName);
+    const disabled = ancestorDisabled || (['button', 'input', 'select', 'textarea', 'fieldset'].includes(node.tagName) && Object.hasOwn(attrs, 'disabled'));
+    const action = node.tagName === 'button' || (node.tagName === 'input' && ['button', 'submit', 'reset', 'image'].includes(inputType));
+    const readonly = Object.hasOwn(attrs, 'readonly') && (node.tagName === 'textarea'
+      || (node.tagName === 'input' && !['hidden', 'range', 'color', 'checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file'].includes(inputType)));
+    const requiresText = node.tagName === 'output' || (node.tagName === 'pre' && attrs['data-output'] === 'true');
+    const control = ['button', 'input', 'select', 'textarea', 'form', 'output'].includes(node.tagName) || requiresText;
+    if (control && !attrs.id) throw new TypeError('Every generated control and output needs an ID.');
+    if (attrs.id) {
+      if (attrs.id.length > 200 || ids.has(attrs.id)) throw new TypeError('Generated page IDs must be unique and bounded.');
+      ids.add(attrs.id);
+      if (ids.size > 200) throw new TypeError('The generated page exceeds its 200-element binding limit.');
+      const editable = valueControl && !action && inputType !== 'hidden' && !disabled && !readonly;
+      const fields = ['hidden'];
+      if (['pre', 'output'].includes(node.tagName)) fields.push('text');
+      if (valueControl) fields.push('value', 'disabled');
+      if (node.tagName === 'button') fields.push('disabled');
+      if (node.tagName === 'select') fields.push('options');
+      const events = disabled ? [] : editable ? ['input', 'change']
+        : action ? ['click'] : node.tagName === 'form' ? ['submit'] : [];
+      if (attrs['data-input-format'] !== undefined && (!valueControl || !['text', 'json'].includes(attrs['data-input-format']))) {
+        throw new TypeError('A declared input format must be text or json on a value control.');
+      }
+      if (attrs['data-example-for'] !== undefined && (!action || !attrs['data-example-for'])) {
+        throw new TypeError('An example-loader declaration needs an action and target input.');
+      }
+      elements.push({ id: attrs.id, tag: node.tagName, fields, events, valueControl, requiresText,
+        booleanValue: node.tagName === 'input' && ['checkbox', 'radio'].includes(inputType),
+        format: attrs['data-input-format'] ?? null, exampleFor: attrs['data-example-for'] ?? null });
+    }
+    const legend = node.tagName === 'fieldset' ? node.childNodes?.find(child => child.tagName === 'legend') : null;
+    const childDisabled = ancestorDisabled || (node.tagName === 'fieldset' && Object.hasOwn(attrs, 'disabled'));
+    for (const child of node.childNodes || []) visit(child, child === legend ? ancestorDisabled : childDisabled);
+  }
+  for (const child of body.childNodes || []) visit(child);
+  for (const element of elements) {
+    if (element.exampleFor !== null && !elements.some(target => target.id === element.exampleFor && target.valueControl && !target.booleanValue)) {
+      throw new TypeError('An example-loader target must be a declared text value control.');
+    }
+  }
+  return { version: 1, elements };
+}
+
+/** Untrusted generated markup is never inserted into the host application. */
+export async function renderRunPreview(rawFiles) {
+  const files = validateRunFiles(rawFiles);
+  const source = Object.fromEntries(files.map(file => [file.path, file.content]));
+  const { head, body } = sanitizedPage(source['index.html']);
   // Only this fixed bridge has DOM access. Generated code runs in a Worker:
   // workers have no browsing context to navigate, and Blob workers inherit
   // this document's CSP (including connect-src none). No generated markup,

@@ -36,10 +36,10 @@ output { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padding
 <h1>Release-packet checker</h1>
 <p>Authored test fixture, not AI-generated output. Checks supplied text only.</p>
 <label for="packet">Packet JSON</label>
-<textarea id="packet" rows="8" spellcheck="false"></textarea>
+<textarea id="packet" rows="8" spellcheck="false" data-input-format="json"></textarea>
 <div>
-<button id="load-incomplete" type="button">Load incomplete example</button>
-<button id="load-corrected" type="button">Load corrected example</button>
+<button id="load-incomplete" type="button" data-example-for="packet">Load incomplete example</button>
+<button id="load-corrected" type="button" data-example-for="packet">Load corrected example</button>
 <button id="check-packet" type="button">Check packet</button>
 </div>
 <output id="result" for="packet" aria-live="polite"></output>
