@@ -223,9 +223,11 @@ a run. Historical records with no generation evidence normalize to an empty
 history; their missing source and causes remain unknown.
 
 Each identified model response records its producing attempt, source-validation
-outcome, safe diagnostic and exact final assistant text. Only a matching model,
-single assistant choice, numeric usage and final content qualify for retention.
-Reasoning, raw provider envelopes, headers and credentials are excluded. Rejected
+outcome, safe diagnostic and exact assistant `content` text. Only a matching model,
+single assistant choice, numeric usage and a content string qualify for retention.
+Separate reasoning fields, raw provider envelopes, headers and credentials are
+excluded. Provider parsing may already have placed explanatory or reasoning-like
+text into `content`; the history preserves that text as received. Rejected
 text is inert escaped text in the authenticated run review, never a preview.
 Each response has a 64 KiB serialized JSON limit; the entire run record has a
 480 KiB limit below the browser's 512 KiB response ceiling. New text is explicitly
@@ -270,8 +272,21 @@ Native code blocks remove the need for the model to JSON-escape every source
 line. This is a coding-format choice, not proof that structured JSON caused the
 previous syntax failures or that the new output will pass. Real Sandbox checks
 and interactive preview results remain required. The request retains the
-configured NVIDIA model, full reasoning, existing sampling settings and the
+configured NVIDIA model, existing sampling settings and the
 8,000-output-token ceiling; it makes no extra inference call.
+
+The request uses `enable_thinking: true`, `low_effort: true` and
+`force_nonempty_content: false` for both generation and repair. NVIDIA documents
+the low-effort mode in its [model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/blob/main/README.md).
+Its [reasoning parser](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/blob/main/super_v3_reasoning_parser.py)
+can substitute an unfinished reasoning trace for absent final content when
+`force_nonempty_content` is true. This code-file workflow does not request that
+substitution. A length-limited response still fails, and the app never extracts
+files from reasoning fields. The mode requests less reasoning; it is not a hard
+sub-budget, a guarantee of code quality, or proof of the exact parser deployed
+by Nebius. The live trial on 91ad4ee exhausted its repair output limit with prose
+in the content field; its records are preserved as observed. The revised profile
+has no live qualification yet.
 
 Checks record the observed provider operation ID, resulting checkpoint ID if
 available, exit code, bounded stdout/stderr, attempt and source digest. These

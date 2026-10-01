@@ -275,7 +275,7 @@
 			{#if verified?.generationAttempts.length}
 				<details data-run-generation-history>
 					<summary>Generation responses ({verified.generationAttempts.length})</summary>
-					<p class="run-muted">Private source history. Passing source validation does not mean the tool passed its checks.</p>
+					<p class="run-muted">Private response history. Passing source validation does not mean the tool passed its checks.</p>
 					{#each verified.generationAttempts as generation (generation.attempt)}
 						<details>
 							<summary>Model attempt {generation.attempt} · {generation.outcome === 'accepted' ? 'source validation passed' : 'source rejected'}</summary>

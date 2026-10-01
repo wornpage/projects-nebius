@@ -41,7 +41,7 @@ test('native file blocks become materialized files with one server runtime bridg
     assert.match(request.messages[0].content,/start the reply immediately with this literal first line:\n```html index\.html\n/u);
     assert.doesNotMatch(request.messages[0].content,/"```(?:html|javascript) /u);
     assert.equal(request.max_tokens, 8000);
-    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,low_effort:true,force_nonempty_content:false});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
     assert.match(request.messages[0].content, /supplies assert \(strict Node assertions\), validate and handleMessage as fixed bindings/u);
     assert.match(request.messages[0].content, /Never return an old result for new input/u);
@@ -98,6 +98,28 @@ test('checks use server-owned bindings without generated imports', async () => {
   assert.doesNotMatch(result.files[2].content,/\brequire\b/u);
 });
 
+test('an exhausted reasoning-only response preserves usage without treating reasoning as files', async () => {
+  await assert.rejects(generateRunFiles({ apiKey: 'synthetic-key', model }, {}, null, {
+    fetcher: async (url, options) => {
+      const request = JSON.parse(options.body);
+      assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true, low_effort: true, force_nonempty_content: false });
+      assert.equal(request.max_tokens, 8000);
+      return Response.json({ model, usage: { prompt_tokens: 10, completion_tokens: 8000 }, choices: [{
+        finish_reason: 'length', message: { role: 'assistant', content: null, reasoning_content: fileBlocks(fixture()) },
+      }] });
+    },
+  }), error => {
+    assert.equal(error.code, 'invalid_model_output');
+    assert.equal(error.stage, 'tool_files');
+    assert.match(error.message, /output limit/u);
+    assert.deepEqual(error.usage, { inputTokens: 10, outputTokens: 8000 });
+    assert.equal(error.response, null);
+    assert.equal(error.uncertain, false);
+    assert.doesNotMatch(JSON.stringify(error), /function validate|reasoning_content/u);
+    return true;
+  });
+});
+
 test('repair preserves the maximum line count and canonical content exactly', async () => {
   const files=fixture();
   files[0].lines=[...files[0].lines,...Array(1022).fill('')];
@@ -108,7 +130,7 @@ test('repair preserves the maximum line count and canonical content exactly', as
     assert.ok(prompt.includes(fileBlocks(files)));
     assert.match(prompt, /"exitCode": 1/u);
     assert.equal(prompt.includes('self.onmessage'),false);
-    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,low_effort:true,force_nonempty_content:false});
     assert.equal(request.max_tokens,8000);
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
   }, {files:generated.files,check:{exitCode:1,stderr:'A controlled check failed.'}});

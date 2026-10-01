@@ -259,9 +259,10 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
         messages: [{ role: 'system', content: repair?.rejected ? REJECTED_REPAIR_SYSTEM : repair ? REPAIR_SYSTEM : SYSTEM }, { role: 'user', content: userContent }],
         temperature: 1.0, top_p: 0.95,
         max_tokens: RUN_LIMITS.maxOutputTokens, stream: false,
-        // Use NVIDIA's full reasoning mode within the existing output ceiling.
-        // Only the final content is validated or persisted.
-        chat_template_kwargs: { enable_thinking: true, force_nonempty_content: true },
+        // Request shorter reasoning under the existing output ceiling using
+        // NVIDIA's documented low-effort mode. Never ask the parser to substitute an
+        // unfinished reasoning trace when no final answer was produced.
+        chat_template_kwargs: { enable_thinking: true, low_effort: true, force_nonempty_content: false },
       }),
     });
     if (!response.ok) {
@@ -271,8 +272,9 @@ export async function generateRunFiles(config, input, repair, { fetcher = global
     stage = 'response';
     const raw = await boundedJson(response);
     usage = reportedUsage(raw);
-    // Only identified assistant final content is evidence. Reasoning, headers,
-    // provider envelopes and unknown/mismatched responses are never retained.
+    // Only the identified assistant content field is response evidence. Separate
+    // reasoning fields, headers, envelopes and mismatched responses are excluded.
+    // Provider parsing may already have put explanatory text into content.
     finalResponse = knownFinalResponse(raw, config.model);
     return { ...validateEnvelope(raw, config.model, previousFiles), response: finalResponse };
   } catch (error) {
