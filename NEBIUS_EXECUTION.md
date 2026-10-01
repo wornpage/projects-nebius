@@ -286,9 +286,17 @@ files from reasoning fields. This is not proof of the exact parser deployed by
 Nebius. The live trial on 91ad4ee exhausted its repair output limit with prose in
 the content field. Subsequent low-effort trials on f70f72d and 98ed25e returned
 complete files but failed the required incomplete-input result. Their records
-are preserved. Standard reasoning is an unverified comparison, not an established
-fix; it may consume more reasoning tokens or hit the unchanged output ceiling.
-This revised profile has no live qualification yet.
+are preserved. Standard reasoning may consume more reasoning tokens or hit the
+unchanged output ceiling. One retained trial on 179a00a, run
+`5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1`, passed Sandbox after one repair. Its unchanged
+files passed 24 independent packet cases at two browser widths (48 observations)
+and 60 total production-renderer checks in a local test host. Both examples and
+removal of a stale ready result were also observed in the authenticated local app.
+This is evidence for that run, not generation reliability or whole-app readiness.
+The Sandbox reported declared JSON-loader coverage of 0/2 because the generated
+textarea declared text; the browser case results do not change that denominator.
+The generated output has no explicit result label or live-region declaration,
+so screen-reader announcements and full accessibility remain unverified.
 
 Checks record the observed provider operation ID, resulting checkpoint ID if
 available, exit code, bounded stdout/stderr, attempt and source digest. These
