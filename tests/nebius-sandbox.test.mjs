@@ -121,6 +121,17 @@ test('malformed check syntax retains its original source location', t => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /JavaScript syntax failed: checks\.cjs: Unexpected token '\)'/u);
   assert.match(result.stderr, /Source locations: checks\.cjs:2/u);
+  assert.match(result.stderr, /Source excerpt checks\.cjs:2:\d+: const message/u);
+});
+
+test('a missing nested-message brace includes the bounded offending source excerpt', t => {
+  const checks = "const value = handleMessage({type:'init', values:{});\nassert.ok(value);";
+  const result = runAuthoredChecks(t, checkerApp, checks, checkerHtml);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unexpected token '\)'/u);
+  assert.match(result.stderr, /Source excerpt checks\.cjs:1:\d+: const value = handleMessage/u);
+  assert.ok(result.stderr.includes("values:{});"));
+  assert.ok(Buffer.byteLength(result.stderr) < 4096);
 });
 
 for (const [name, before, after, expected] of [

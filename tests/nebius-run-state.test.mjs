@@ -136,11 +136,30 @@ test('failed Sandbox then rejected repair keeps the checked first files and both
 });
 
 for (const exit of [0, 1]) test(`existing Sandbox repair remains bounded with second exit ${exit}`, async t => {
-  const h = await harness(t, { responses: [fixtureText(), fixtureText()], exits: [1, exit] });
+  // Transport/state test only: a changed response is not proof of a useful fix.
+  const files = authoredCheckerFiles(); files[1].content += '\n// Authored second response for state-machine coverage.';
+  const h = await harness(t, { responses: [fixtureText(), nativeFileBlocks(files)], exits: [1, exit] });
   const run = await h.finish();
   assert.equal(run.status, exit === 0 ? 'ready' : 'failed');
   assert.deepEqual(run.checks.map(check => check.attempt), [1, 2]);
   assert.deepEqual(h.counts(), { model: 2, sandbox: 2 });
+});
+
+test('byte-identical repair retains the rejection and skips a duplicate failed Sandbox check', async t => {
+  const h = await harness(t, { responses: [fixtureText(), fixtureText()], exits: [1] });
+  const run = await h.finish();
+  assert.equal(run.status, 'failed');
+  assert.equal(run.failure.code, 'unchanged_repair');
+  assert.equal(run.failure.stage, 'tool_files');
+  assert.deepEqual(h.counts(), { model: 2, sandbox: 1 });
+  assert.deepEqual(run.checks.map(check => check.attempt), [1]);
+  assert.equal(run.attempt, 1);
+  assert.deepEqual(run.generationAttempts.map(entry => entry.outcome), ['accepted', 'rejected']);
+  assert.equal(run.generationAttempts[1].responseText, fixtureText());
+  assert.equal(run.generationAttempts[1].diagnostic.code, 'unchanged_repair');
+  assert.deepEqual(run.usage, { modelCalls: 2, inputTokens: 20, outputTokens: 40, totalsComplete: true });
+  await h.step();
+  assert.deepEqual(h.counts(), { model: 2, sandbox: 1 });
 });
 
 test('source repair reaching its first failed Sandbox has no model call left', async t => {

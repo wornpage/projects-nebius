@@ -241,6 +241,19 @@ requests, not by completed Sandbox checks. Cancellation, unknown submission
 outcomes, configuration errors, unavailable response text, quota refusal and
 elapsed deadlines cannot initiate a repair. Existing terminal runs are not retried.
 
+A repair whose materialized file digest equals the preceding failed Sandbox
+check is rejected as `unchanged_repair` at `tool_files`, before another Sandbox
+submission. Both final responses and observed token totals remain recorded;
+the original files/check stay attached to their producing attempt. A different
+digest alone does not prove that a repair fixed anything.
+
+Sandbox syntax diagnostics include a bounded excerpt around the reported
+source position, alongside the original filename and line. This gives the
+repair call the offending statement without adding another compilation or
+executing generated code on the host. Compiler feedback still cannot establish
+task semantics; model-generated checks and the independent browser gate remain
+separate requirements.
+
 `record.attempt` and `check.attempt` identify the model call producing the files.
 Thus a rejected first response followed by a valid repair has one Sandbox check
 with attempt 2. `checks.length` is the physical check count. Readiness still needs

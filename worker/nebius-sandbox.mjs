@@ -36,6 +36,20 @@ const sourceLocations = error => {
   const locations = [...new Set(stack.match(/\b(?:app\.js|checks\.cjs):\d{1,6}(?::\d{1,6})?/g) || [])].slice(0, 4);
   return locations.length ? '\nSource locations: ' + locations.join(', ') : '';
 };
+const syntaxExcerpt = (error, filename, source) => {
+  const stack = String(error && error.stack || '').slice(0, 4096).split('\n');
+  const prefix = filename + ':';
+  const at = stack.findIndex(line => line.startsWith(prefix));
+  const lineNumber = at < 0 ? NaN : Number(stack[at].slice(prefix.length).split(':')[0]);
+  const line = Number.isSafeInteger(lineNumber) && lineNumber > 0 ? source.split('\n')[lineNumber - 1] : null;
+  if (typeof line !== 'string') return '';
+  const marker = stack[at + 2] || '';
+  const column = /^ *\^/.test(marker) ? marker.indexOf('^') : 0;
+  const start = Math.max(0, column - 80);
+  const excerpt = line.slice(start, start + 160).replace(/[\u0000-\u001f\u007f]/g, ' ');
+  return '\nSource excerpt ' + filename + ':' + lineNumber + ':' + (column + 1) + ': '
+    + (start ? '…' : '') + excerpt + (line.length > start + 160 ? '…' : '');
+};
 const deny = message => { throw new ContextError(message); };
 function runModule(source, filename, requireValue) {
   const moduleValue = vm.runInContext('({ exports: {} })', context);
@@ -140,7 +154,7 @@ try {
   const syntaxFailures = [];
   for (const [path, source] of sources) {
     try { new vm.Script(path === 'checks.cjs' ? checksWrapper(source) : '(function(module, exports, require) { "use strict";\n' + source + '\n});', { filename: path, lineOffset: -1 }); }
-    catch (error) { syntaxFailures.push(path + ': ' + boundedMessage(error) + sourceLocations(error)); }
+    catch (error) { syntaxFailures.push(path + ': ' + boundedMessage(error).slice(0, 120) + sourceLocations(error) + syntaxExcerpt(error, path, source)); }
   }
   if (syntaxFailures.length) throw new Error('JavaScript syntax failed: ' + syntaxFailures.join('\n'));
   const app = runModule(sources.get('app.js'), 'app.js', harden(() => deny('app.js must not import modules.')));

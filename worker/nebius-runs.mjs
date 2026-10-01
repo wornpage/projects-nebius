@@ -549,6 +549,10 @@ export class NebiusRun extends DurableObject {
         if (!state) return;
         if (state.phase === 'retained') { await this.retainLateGeneration(attempt, generated.usage, generatedResponse, null); return; }
         if (state.phase !== 'model-submitting') return;
+        const failedCheck = state.record.checks.at(-1);
+        if (failedCheck && failedCheck.exitCode !== 0 && failedCheck.sourceDigest === digest) {
+          throw new RunProviderError('unchanged_repair', 'The repair returned the same files that already failed Sandbox checks. No duplicate check was submitted.', false, 'tool_files');
+        }
         state = retainGeneration({ ...state, record: { ...state.record, attempt, files: generated.files } }, generatedResponse);
         await this.save(state);
         if (state.cancelRequested) { await this.finish(state, 'cancelled', 'Run cancelled after generation; source was retained without executing it.'); return; }
