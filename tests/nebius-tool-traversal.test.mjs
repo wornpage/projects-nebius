@@ -172,11 +172,23 @@ test('retained preview rejects ambiguous or untrusted input before browser execu
 // Run only the trusted renderer bootstrap against a controlled DOM and Worker
 // stub. Blob bytes are retained as data and never executed in host Node/vm.
 // The real browser verifier separately runs the authored code in its Worker.
-async function domBridgeHarness() {
+async function domBridgeHarness(prepare = () => {}) {
   class Element {
-    constructor(id = '', tagName = 'DIV') { this.id = id; this.tagName = tagName; this.dataset = {}; this.textContent = ''; }
-    closest() { return this; }
-    setAttribute() {}
+    constructor(id = '', tagName = 'DIV') {
+      this.id = id; this.tagName = tagName; this.dataset = {}; this.textContent = '';
+      this.attributes = new Map(); this.style = {}; this.childNodes = []; this.beforeNodes = []; this.labels = []; this.hidden = false;
+    }
+    closest(selector) {
+      if (selector === '[id]') return this;
+      for (let node = this; node; node = node.parentElement) if (node.hidden || node.getAttribute('aria-hidden') === 'true') return node;
+      return null;
+    }
+    getClientRects() { return this.hidden || this.style.display === 'none' ? [] : [{}]; }
+    setAttribute(name, value) { this.attributes.set(name, value); }
+    getAttribute(name) { return this.attributes.get(name) ?? null; }
+    removeAttribute(name) { this.attributes.delete(name); }
+    append(...nodes) { this.childNodes.push(...nodes); }
+    before(node) { this.beforeNodes.push(node); }
   }
   class Input extends Element {}
   class Textarea extends Element { value = ''; }
@@ -187,8 +199,9 @@ async function domBridgeHarness() {
     ['load-incomplete', new Button('load-incomplete')], ['load-corrected', new Button('load-corrected')],
     ['check-packet', new Button('check-packet')], ['packet-form', new Element('packet-form')],
   ]);
+  prepare(elements, Element);
   const listeners = new Map(), windowListeners = new Map(), timers = new Map();
-  const status = new Element(), messages = [], notifications = [];
+  const created = [], frames = [], messages = [], notifications = [];
   let worker, timerId = 0;
   class Worker {
     terminated = 0;
@@ -200,18 +213,23 @@ async function domBridgeHarness() {
   const bootstrap = rendered.html.match(/<script>([\s\S]*)<\/script><\/body><\/html>$/u)?.[1];
   assert.ok(bootstrap, 'The actual renderer must supply its fixed bootstrap.');
   const context = createContext({
-    document: { body: { querySelectorAll: () => [...elements.values()], append: () => {},
-      addEventListener: (name, listener) => listeners.set(name, listener) }, createElement: () => status },
+    document: { body: { querySelectorAll: selector => selector === '[id]' ? [...elements.values()] : [...elements.values()].filter(el=>el.getAttribute('aria-live')!==null||['status','alert','log','marquee','timer'].includes(el.getAttribute('role'))), append: () => {},
+      addEventListener: (name, listener) => listeners.set(name, listener) },
+      createElement: tag => { const element = new Element('', tag.toUpperCase()); created.push(element); return element; },
+      getElementById: id => elements.get(id) || null },
     Element, HTMLInputElement: Input, HTMLTextAreaElement: Textarea, HTMLSelectElement: Select, HTMLButtonElement: Button,
     window: {}, parent: { postMessage: data => notifications.push({ ...data, renderedOutput: elements.get('result').textContent }) },
     atob: text => Buffer.from(text, 'base64').toString('binary'), Uint8Array,
     Blob: class {}, URL: { createObjectURL: () => 'blob:authored-unused-by-stub', revokeObjectURL: () => {} }, Worker,
     setTimeout: (callback, milliseconds) => { const id = ++timerId; timers.set(id, { callback, milliseconds }); return id; },
     clearTimeout: id => timers.delete(id), addEventListener: (name, listener) => windowListeners.set(name, listener),
+    requestAnimationFrame: callback => { frames.push(callback); return frames.length; },
+    getComputedStyle: element => ({visibility:element.style.visibility || 'visible'}),
   });
   runInContext(bootstrap, context, { timeout: 1000 });
   return {
-    elements, worker, status, messages, notifications, timers,
+    elements, worker, status: created.find(el=>el.getAttribute('role')==='status'), created, messages, notifications, timers,
+    flushAnnouncements() { for (const callback of frames.splice(0)) callback(); },
     emit(name, id, value) {
       const target = elements.get(id); assert.ok(target);
       if (value !== undefined) target.value = value;
@@ -222,6 +240,156 @@ async function domBridgeHarness() {
     close() { windowListeners.get('pagehide')(); },
   };
 }
+
+test('renderer gives anonymous outputs names and one pre-existing announcement channel', async () => {
+  const bridge = await domBridgeHarness((elements, Element) => {
+    const second = new Element('second', 'PRE'); second.dataset.output = 'true';
+    elements.set('second', second);
+    elements.get('packet').dataset.inputFormat = 'json';
+  });
+  const { status } = bridge;
+  assert.equal(status.getAttribute('aria-live'), 'polite');
+  assert.equal(status.getAttribute('aria-atomic'), 'true');
+  assert.equal(status.textContent, '');
+  assert.equal(bridge.messages.length, 1);
+  assert.equal(bridge.elements.get('result').getAttribute('aria-label'), 'Result');
+  assert.equal(bridge.elements.get('second').getAttribute('aria-label'), 'Result 2');
+  for (const id of ['result', 'second']) {
+    assert.equal(bridge.elements.get(id).getAttribute('role'), 'group');
+    assert.equal(bridge.elements.get(id).getAttribute('aria-live'), 'off');
+    assert.equal(bridge.elements.get(id).beforeNodes.length, 1);
+  }
+  assert.equal(bridge.created.filter(el=>el.getAttribute('role')==='status').length, 1);
+  assert.equal(bridge.created.find(el=>el.tagName==='DD').textContent, 'JSON');
+  bridge.reply([{id:'result',text:'First result'},{id:'second',text:'Second result'}]);
+  assert.equal(status.textContent, '');
+  bridge.flushAnnouncements();
+  assert.equal(status.textContent, 'Result: First result\nResult 2: Second result');
+});
+
+test('renderer preserves supplied output names and reports historical input declarations', async () => {
+  for (const [format, expected] of [[undefined,'Not declared'],['text','Plain text'],['json','JSON']]) {
+    const bridge = await domBridgeHarness((elements, Element) => {
+      if (format !== undefined) elements.get('packet').dataset.inputFormat = format;
+      const label = new Element('result-label'); label.textContent = '  Packet outcome  ';
+      elements.set(label.id, label);
+      elements.get('result').setAttribute('aria-labelledby', label.id);
+      elements.get('result').setAttribute('aria-label', 'Lower precedence name');
+    });
+    assert.equal(bridge.elements.get('packet').dataset.inputFormat, format);
+    assert.equal(bridge.created.find(el=>el.tagName==='DD').textContent, expected);
+    assert.equal(bridge.elements.get('result').getAttribute('aria-label'), 'Packet outcome');
+    assert.equal(bridge.elements.get('result').beforeNodes.length, 0);
+  }
+});
+
+test('result announcements use complete patch batches and repeat unchanged results', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.reply([{id:'result',text:'Ready'}]); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Result: Ready');
+  bridge.emit('click','load-corrected');
+  bridge.reply([{id:'result',text:'Ready'},{id:'packet',value:'new input'}]);
+  assert.equal(bridge.status.textContent, '');
+  assert.equal(bridge.elements.get('result').textContent, 'Ready');
+  bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Result: Ready');
+});
+
+test('edits invalidate one announcement and stale replies cannot restore it', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.reply([{id:'result',text:'Old result'}]); bridge.flushAnnouncements();
+  bridge.emit('input','packet','first edit'); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Results cleared. Check the updated input.');
+  bridge.emit('input','packet','second edit'); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Results cleared. Check the updated input.');
+  bridge.reply([{id:'result',text:'Stale result'}]); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Results cleared. Check the updated input.');
+  bridge.reply([{id:'result',text:'Current result'}]); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Result: Current result');
+});
+
+test('an edit cancels a result announcement scheduled for the next frame', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.reply([{id:'result',text:'Pending old result'}]);
+  bridge.emit('input','packet','changed'); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Results cleared. Check the updated input.');
+});
+
+test('hidden outputs are excluded and fatal errors cancel queued announcements', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.reply([{id:'result',text:'Hidden result'},{id:'result',hidden:true}]); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, '');
+  bridge.emit('click','check-packet');
+  bridge.reply([{id:'result',hidden:false},{id:'result',text:'Visible result'}]); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Result: Visible result');
+  bridge.emit('click','check-packet');
+  bridge.reply([{id:'result',hidden:true}]); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Results cleared. Check the updated input.');
+  bridge.emit('click','check-packet');
+  bridge.reply([{id:'result',hidden:false},{id:'result',text:'Pending result'}]);
+  bridge.emit('click','check-packet'); bridge.expire(); bridge.flushAnnouncements();
+  assert.match(bridge.status.textContent, /stopped responding/u);
+  assert.equal(bridge.status.style.cssText, '');
+  assert.doesNotMatch(bridge.status.textContent, /Pending result/u);
+});
+
+test('CSS-hidden and aria-hidden results are not announced', async () => {
+  for (const hide of [el=>{el.style.visibility='hidden';},el=>{el.style.display='none';},el=>el.setAttribute('aria-hidden','true')]) {
+    const bridge = await domBridgeHarness(elements=>hide(elements.get('result')));
+    bridge.reply([{id:'result',text:'Not visible'}]); bridge.flushAnnouncements();
+    assert.equal(bridge.status.textContent, '');
+  }
+});
+
+test('a result hidden before its announcement frame is not read out', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.reply([{id:'result',text:'Pending visible result'}]);
+  bridge.elements.get('result').hidden = true;
+  bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, '');
+});
+
+test('editing after a fatal error cannot erase the runtime failure message', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.reply([{id:'result',text:'Previous result'}]); bridge.flushAnnouncements();
+  bridge.emit('click','check-packet'); bridge.expire();
+  const failure = bridge.status.textContent;
+  bridge.emit('input','packet','edited after failure'); bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, failure);
+  assert.equal(bridge.status.style.cssText, '');
+  assert.equal(bridge.elements.get('result').textContent, '');
+});
+
+test('hiding an unrelated control does not repeat an unchanged result announcement', async () => {
+  const bridge = await domBridgeHarness();
+  bridge.reply([{id:'result',text:'Existing result'}]); bridge.flushAnnouncements();
+  bridge.emit('click','check-packet');
+  bridge.reply([{id:'check-packet',hidden:true}]);
+  assert.equal(bridge.status.textContent, 'Result: Existing result');
+});
+
+test('a hidden-only text update does not repeat another visible result', async () => {
+  const bridge = await domBridgeHarness((elements, Element) => {
+    const hidden = new Element('hidden-result', 'PRE'); hidden.dataset.output = 'true'; hidden.hidden = true;
+    elements.set(hidden.id, hidden);
+  });
+  bridge.reply([{id:'result',text:'Visible result'},{id:'hidden-result',text:'Hidden result'}]); bridge.flushAnnouncements();
+  bridge.emit('click','check-packet');
+  bridge.reply([{id:'hidden-result',text:'Changed hidden result'}]);
+  assert.equal(bridge.status.textContent, 'Result: Visible result');
+  bridge.flushAnnouncements();
+  assert.equal(bridge.status.textContent, 'Result: Visible result');
+});
+
+test('announcement text is bounded while the full plain-text result is preserved', async () => {
+  const bridge = await domBridgeHarness();
+  const text = '<b>Plain text</b>' + 'x'.repeat(15000);
+  bridge.reply([{id:'result',text}]); bridge.flushAnnouncements();
+  assert.equal(bridge.elements.get('result').textContent, text);
+  assert.ok(bridge.status.textContent.length <= 4000);
+  assert.match(bridge.status.textContent, /^Result: <b>Plain text<\/b>/u);
+  assert.match(bridge.status.textContent, /Full results remain in the tool\.$/u);
+});
 
 test('DOM bridge preserves ordered events and their captured input values while busy', async () => {
   const bridge = await domBridgeHarness();

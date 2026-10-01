@@ -274,6 +274,55 @@ addEventListener('message', event => {
         assert.equal(await interaction.page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
         record('opaque preview denies service worker access and the fresh host has no registrations', { width });
 
+        const presentation = { width, inputFormat: null, inputFormatLabel: null, outputName: null };
+        await observe('renderer names results and exposes unchanged input declarations', presentation, async () => {
+          const announcer = interaction.frame.locator('body > p[role="status"][aria-label="Tool updates"]');
+          assert.equal(await announcer.count(), 1);
+          assert.equal(await announcer.getAttribute('aria-live'), 'polite');
+          assert.equal(await announcer.getAttribute('aria-atomic'), 'true');
+          presentation.outputName = await interaction.control('output').getAttribute('aria-label');
+          assert.ok(presentation.outputName?.trim());
+          assert.equal(await interaction.control('output').getAttribute('role'), 'group');
+          assert.equal(await interaction.control('output').getAttribute('aria-live'), 'off');
+          presentation.inputFormat = await interaction.control('input').getAttribute('data-input-format');
+          presentation.inputFormatLabel = presentation.inputFormat === 'json' ? 'JSON' : presentation.inputFormat === 'text' ? 'Plain text' : 'Not declared';
+          const formats = interaction.frame.locator('body > details').last();
+          await formats.locator('summary').click();
+          assert.ok((await formats.locator('dd').allTextContents()).includes(presentation.inputFormatLabel));
+          await formats.locator('summary').click();
+        });
+        const announcements = { width, complete: null, repeated: null, afterEdit: null, invalid: null, focus: null };
+        await observe('polite result announcements preserve focus and clear stale readiness', announcements, async () => {
+          const announcer = interaction.frame.locator('body > p[role="status"][aria-label="Tool updates"]');
+          await interaction.fill(CORRECTED);
+          assert.equal(await interaction.check(), READY);
+          announcements.complete = await announcer.textContent();
+          assert.equal(announcements.complete, presentation.outputName + ': ' + READY);
+          announcements.focus = await interaction.frame.evaluate(() => document.activeElement.id);
+          assert.equal(announcements.focus, bindings.check);
+          await interaction.frame.evaluate(() => {
+            window.previewAnnouncements = [];
+            const region = document.querySelector('body > p[role="status"][aria-label="Tool updates"]');
+            window.previewAnnouncementObserver = new MutationObserver(() => window.previewAnnouncements.push(region.textContent));
+            window.previewAnnouncementObserver.observe(region, {childList:true,characterData:true,subtree:true});
+          });
+          await interaction.check();
+          announcements.repeated = await interaction.frame.evaluate(() => {
+            window.previewAnnouncementObserver.disconnect();
+            return window.previewAnnouncements;
+          });
+          assert.ok(announcements.repeated.includes(''));
+          assert.equal(announcements.repeated.filter(text=>text===announcements.complete).length, 1);
+          await interaction.fill('{');
+          announcements.afterEdit = await announcer.textContent();
+          assert.doesNotMatch(announcements.afterEdit, /Ready for human review|0 gaps/u);
+          const invalidResult = await interaction.check();
+          announcements.invalid = await announcer.textContent();
+          assert.equal(announcements.invalid, presentation.outputName + ': ' + invalidResult);
+          assert.match(announcements.invalid, /Input error:/u);
+          assert.equal(await interaction.frame.evaluate(() => document.activeElement.id), bindings.check);
+        });
+
         const loaders = { width, incomplete: null, corrected: null };
         await observe('both example loaders set inputs and corresponding checked outputs by keyboard', loaders, async () => {
           await interaction.action(() => interaction.control('incomplete').focus());

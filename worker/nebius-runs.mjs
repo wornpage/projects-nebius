@@ -249,7 +249,9 @@ const sourceRejection = error => error instanceof RunProviderError && !error.unc
 
 async function validateGeneratedPreview(files) {
   try {
-    runPageContract(files);
+    const page = runPageContract(files);
+    const missing = page.elements.filter(element => element.textValue && element.format === null);
+    if (missing.length) throw new TypeError('Every textual input needs an explicit data-input-format="text" or "json" declaration. Missing: ' + missing.map(element => element.id).join(', '));
     await renderRunPreview(files);
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;

@@ -194,7 +194,13 @@ and example buttons with `data-example-for="<input id>"`. Only explicitly
 declared JSON example loaders are parsed as JSON, using the final effective
 value when a response patches an input more than once. Invalid user input and clear
 actions remain valid interactions and are not mistakenly treated as examples.
-Missing format declarations are reported as unknown, not JSON qualification.
+New source admission requires an explicit format on every textual value control;
+omissions use the existing bounded source-repair path before Sandbox submission.
+Historical missing declarations remain readable as unknown. Explicit `text`
+declarations stay `text`: task prose, labels, examples and use of JSON.parse are
+not an authoritative input specification. The preview exposes an Input formats
+disclosure so these declarations can be reviewed against the task. It never
+changes stored source or retroactively upgrades JSON qualification.
 Label text and task wording are not used to infer input types or loader roles.
 
 stdout records assertion/actual-function-call counts, observed/required control
@@ -295,8 +301,16 @@ removal of a stale ready result were also observed in the authenticated local ap
 This is evidence for that run, not generation reliability or whole-app readiness.
 The Sandbox reported declared JSON-loader coverage of 0/2 because the generated
 textarea declared text; the browser case results do not change that denominator.
-The generated output has no explicit result label or live-region declaration,
-so screen-reader announcements and full accessibility remain unverified.
+That generated source has no explicit result label or live-region declaration.
+The renderer now supplies named output groups and one pre-existing polite,
+atomic status region. Anonymous outputs receive visible Result labels; authored
+names are retained. Final visible results are announced after a complete accepted
+patch batch; edits announce invalidation once, stale replies are suppressed, and
+runtime failure messages remain distinct. Focus stays on the user's control.
+The retained files passed a follow-up renderer qualification: 48/48 packet
+observations and 64/64 total checks, including declaration display, repeat-result
+updates, focus and stale-announcement clearing. These DOM observations do not
+establish actual screen-reader speech or full accessibility compliance.
 
 Checks record the observed provider operation ID, resulting checkpoint ID if
 available, exit code, bounded stdout/stderr, attempt and source digest. These

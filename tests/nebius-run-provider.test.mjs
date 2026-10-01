@@ -47,6 +47,9 @@ test('native file blocks become materialized files with one server runtime bridg
     assert.match(request.messages[0].content, /checks\.cjs has no browser DOM: never use document, window, DOM selectors or DOM emulation/u);
     assert.match(request.messages[0].content, /assert\.deepEqual\(validate\(exampleInput\), expectedResult\)/u);
     assert.match(request.messages[0].content, /Distinguish malformed input from valid but incomplete task states/u);
+    assert.match(request.messages[0].content, /Every textual input, textarea and select.*explicit data-input-format/u);
+    assert.match(request.messages[0].content, /A JSON input is not plain text merely because a textarea stores its value as a string/u);
+    assert.match(request.messages[0].content, /The preview owns result announcements/u);
     assert.match(request.messages[0].content, /Never return an old result for new input/u);
     assert.match(request.messages[0].content, /an invalid enum must produce an input error/u);
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);

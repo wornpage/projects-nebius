@@ -179,6 +179,29 @@ test('duplicate page IDs are retained and repaired before any Sandbox submission
   assert.deepEqual(h.counts(), { model: 2, sandbox: 1 });
 });
 
+test('new textual inputs without a declared format use the existing bounded source repair', async t => {
+  const files = authoredCheckerFiles();
+  files[0].content = files[0].content.replace(' data-input-format="json"', '');
+  const h = await harness(t, { responses: [nativeFileBlocks(files), fixtureText()] });
+  const run = await h.finish();
+  assert.equal(run.status, 'ready');
+  assert.equal(run.generationAttempts[0].diagnostic.stage, 'preview');
+  assert.match(run.generationAttempts[0].diagnostic.message, /explicit data-input-format.*Missing: packet/u);
+  assert.equal(run.generationAttempts[0].responseText, nativeFileBlocks(files));
+  assert.deepEqual(h.counts(), { model: 2, sandbox: 1 });
+});
+
+test('an explicit text declaration is preserved rather than inferred from a JSON task', async t => {
+  const files = authoredCheckerFiles();
+  files[0].content = files[0].content.replace('data-input-format="json"', 'data-input-format="text"');
+  const h = await harness(t, { responses: [nativeFileBlocks(files)] });
+  const run = await h.finish();
+  assert.equal(run.status, 'ready');
+  assert.match(run.files[0].content, /data-input-format="text"/u);
+  assert.doesNotMatch(run.files[0].content, /data-input-format="json"/u);
+  assert.deepEqual(h.counts(), { model: 1, sandbox: 1 });
+});
+
 for (const attempt of [1, 2]) test(`cancellation during model response ${attempt} retains source but never advances`, async t => {
   const h = await harness(t, { responses: attempt === 1 ? [fixtureText()] : ['bad first', 'bad second'], exits: [],
     onModel: async ({ attempt: observed, run }) => { if (observed === attempt) assert.equal((await run.cancel(key)).ok, true); } });

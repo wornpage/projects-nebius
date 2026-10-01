@@ -69,6 +69,7 @@ export function runPageContract(rawFiles) {
       }
       elements.push({ id: attrs.id, tag: node.tagName, fields, events, valueControl, requiresText,
         booleanValue: node.tagName === 'input' && ['checkbox', 'radio'].includes(inputType),
+        textValue: valueControl && !action && !(node.tagName === 'input' && ['checkbox', 'radio'].includes(inputType)),
         format: attrs['data-input-format'] ?? null, exampleFor: attrs['data-example-for'] ?? null });
     }
     const legend = node.tagName === 'fieldset' ? node.childNodes?.find(child => child.tagName === 'legend') : null;
@@ -98,18 +99,65 @@ export async function renderRunPreview(rawFiles) {
   const bootstrap = `(()=>{
     const elements = new Map(Array.from(document.body.querySelectorAll('[id]')).slice(0,200).map(el=>[el.id,el]));
     const outputs = new Set(Array.from(elements.values()).filter(el=>el.tagName==='OUTPUT'||(el.tagName==='PRE'&&el.dataset.output==='true')));
-    const clearOutputs = ()=>{for(const el of outputs)el.textContent='';};
     const valueControl = el=>el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement||el instanceof HTMLSelectElement;
-    const status = document.createElement('p'); status.setAttribute('role','status'); document.body.append(status);
+    const textControl = el=>valueControl(el)&&!(el instanceof HTMLInputElement&&['checkbox','radio','button','submit','reset','image'].includes(el.type));
+    const tidy = value=>String(value||'').replace(/\\s+/g,' ').trim().slice(0,200);
+    const nameOf = (el,fallback)=>{
+      const references=(el.getAttribute('aria-labelledby')||'').split(/\\s+/).filter(Boolean);
+      const author=tidy(references.map(id=>document.getElementById(id)?.textContent||'').join(' '))||tidy(el.getAttribute('aria-label'))||tidy(Array.from(el.labels||[]).map(label=>label.textContent).join(' '));
+      return {text:author||fallback,authored:Boolean(author)};
+    };
+    const visible = el=>!el.closest('[hidden],[aria-hidden="true"]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility==='visible';
+    const outputNames=new Map(),outputLabels=new Map();
+    // The fixed renderer owns announcements. Generated live regions cannot
+    // duplicate the result notifications below.
+    for(const el of document.body.querySelectorAll('[aria-live],[role="status"],[role="alert"],[role="log"],[role="marquee"],[role="timer"]'))el.setAttribute('aria-live','off');
+    const presentOutput=el=>{
+      if(outputNames.has(el))return;
+      const name=nameOf(el,outputNames.size?'Result '+(outputNames.size+1):'Result');
+      outputNames.set(el,name.text);
+      el.removeAttribute('aria-labelledby');
+      el.setAttribute('aria-label',name.text);
+      el.setAttribute('role','group');
+      el.setAttribute('aria-live','off');
+      if(!name.authored){const label=document.createElement('p');label.textContent=name.text;label.setAttribute('aria-hidden','true');el.before(label);outputLabels.set(el,label);}
+    };
+    for(const el of outputs)presentOutput(el);
+    const formats=document.createElement('details'),formatHeading=document.createElement('summary'),formatList=document.createElement('dl');
+    formatHeading.textContent='Input formats';formats.append(formatHeading,formatList);formats.style.cssText='margin-top:1rem;overflow-wrap:anywhere';
+    for(const el of elements.values())if(textControl(el)){
+      const term=document.createElement('dt'),description=document.createElement('dd');
+      term.textContent=nameOf(el,el.id).text;
+      const format=el.dataset.inputFormat;
+      description.textContent=format==='json'?'JSON':format==='text'?'Plain text':format===undefined?'Not declared':'Unsupported declaration';
+      formatList.append(term,description);
+    }
+    if(formatList.childNodes.length){const note=document.createElement('p');note.textContent='Declared by the tool. Check these against your task.';formats.append(note);document.body.append(formats);}
+    const status = document.createElement('p');status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.setAttribute('aria-atomic','true');status.setAttribute('aria-label','Tool updates');
+    status.style.cssText='position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0';document.body.append(status);
+    let announcementRevision=0;
+    const results=()=>Array.from(outputs).filter(el=>visible(el)&&el.textContent.trim()).map(el=>outputNames.get(el)+': '+el.textContent.trim());
+    const refreshLabels=()=>{for(const [el,label] of outputLabels)label.hidden=!visible(el);};
+    const clearOutputs=()=>{const hadResult=results().length>0;for(const el of outputs)el.textContent='';return hadResult;};
+    const announce=getMessage=>{
+      if(stopped)return;
+      const revision=++announcementRevision;status.textContent='';
+      requestAnimationFrame(()=>{
+        if(stopped||revision!==announcementRevision)return;
+        const message=getMessage();
+        status.textContent=message.length>4000?message.slice(0,3950)+'… Full results remain in the tool.':message;
+      });
+    };
+    refreshLabels();
     const bytes = Uint8Array.from(atob("${encoded}"), c=>c.charCodeAt(0));
     const notify = state=>{if(parent!==window)parent.postMessage({type:'nebius-tool-preview',status:state},'*');};
     let worker;let url;
     try{url=URL.createObjectURL(new Blob([bytes], {type:'text/javascript'}));worker=new Worker(url);}
-    catch{status.textContent='This browser could not start the tool preview.';notify('failed');return;}
+    catch{status.style.cssText='';status.textContent='This browser could not start the tool preview.';notify('failed');return;}
     finally{if(url)URL.revokeObjectURL(url);}
     let timer; let stopped = false; let busy = false; let editRevision = 0; let activeRevision = 0;
     const pending = [];
-    const stop = message=>{if(stopped)return;stopped=true;clearTimeout(timer);pending.length=0;worker.terminate();status.textContent=message;notify('failed');};
+    const stop = message=>{if(stopped)return;stopped=true;announcementRevision++;clearTimeout(timer);pending.length=0;worker.terminate();status.style.cssText='';status.textContent=message;notify('failed');};
     const values = ()=>Object.fromEntries(Array.from(elements).filter(([,el])=>el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement).map(([id,el])=>[id,el instanceof HTMLInputElement && (el.type==='checkbox'||el.type==='radio') ? el.checked : el.value.slice(0,4000)]));
     const dispatch = request=>{busy=true;activeRevision=request.revision;timer=setTimeout(()=>stop('The tool stopped responding. Reopen the preview to restart it.'),5000);worker.postMessage(request.message);};
     const send = message=>{
@@ -130,6 +178,8 @@ export async function renderRunPreview(rawFiles) {
       // edit or publish an answer for the previous values. Still validate its
       // envelope, then deliver the queued event with its captured values.
       if(activeRevision===editRevision){
+        const priorResults=results();
+        const touchedOutputs=new Set();
         // Clear the old result once before the entire batch, independent of
         // whether the new result patch precedes its input-value patch.
         if(data.patches.some(patch=>patch&&valueControl(elements.get(patch.id))&&
@@ -137,7 +187,7 @@ export async function renderRunPreview(rawFiles) {
         for(const patch of data.patches){
         if(!patch||typeof patch!=='object'||typeof patch.id!=='string')continue;
         const el=elements.get(patch.id);if(!el)continue;
-        if(typeof patch.text==='string'&&patch.text.length<=16000&&(el.tagName==='PRE'||el.tagName==='OUTPUT')){outputs.add(el);el.textContent=patch.text;}
+        if(typeof patch.text==='string'&&patch.text.length<=16000&&(el.tagName==='PRE'||el.tagName==='OUTPUT')){outputs.add(el);presentOutput(el);el.textContent=patch.text;touchedOutputs.add(el);}
         if(typeof patch.value==='string'&&patch.value.length<=4000&&(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement||el instanceof HTMLSelectElement))el.value=patch.value;
         if(typeof patch.disabled==='boolean'&&(el instanceof HTMLButtonElement||el instanceof HTMLInputElement||el instanceof HTMLSelectElement||el instanceof HTMLTextAreaElement))el.disabled=patch.disabled;
         if(typeof patch.hidden==='boolean')el.hidden=patch.hidden;
@@ -146,6 +196,10 @@ export async function renderRunPreview(rawFiles) {
           el.replaceChildren(...options.map(item=>new Option(item.label,item.value)));
         }
         }
+        refreshLabels();
+        const currentResults=results();
+        if(currentResults.length&&(Array.from(touchedOutputs).some(el=>visible(el)&&el.textContent.trim())||currentResults.join('\\n')!==priorResults.join('\\n')))announce(()=>results().join('\\n'));
+        else if(priorResults.length&&!currentResults.length)announce(()=>'Results cleared. Check the updated input.');
       }
       notify('ready');busy=false;
       if(pending.length)dispatch(pending.shift());
@@ -154,7 +208,7 @@ export async function renderRunPreview(rawFiles) {
       if(eventName==='submit')event.preventDefault();
       const el=event.target instanceof Element ? event.target.closest('[id]') : null;
       if(el&&elements.get(el.id)===el){
-        if(eventName==='input'||eventName==='change'){editRevision++;clearOutputs();}
+        if(eventName==='input'||eventName==='change'){editRevision++;if(clearOutputs())announce(()=>'Results cleared. Check the updated input.');}
         send({type:'event',event:eventName,id:el.id});
       }
     });
