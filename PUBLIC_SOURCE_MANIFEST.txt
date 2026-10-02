@@ -170,6 +170,7 @@ tests/full-border-webmcp-contract.test.mjs
 tests/handoff-session-webmcp-contract.test.mjs
 tests/nebius-api.test.mjs
 tests/nebius-client.test.mjs
+tests/nebius-execution-client.test.mjs
 tests/nebius-plan-client.test.mjs
 tests/nebius-plan.test.mjs
 tests/nebius-project-completion.test.mjs

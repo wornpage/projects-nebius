@@ -70,10 +70,12 @@ function parseApiError(value: unknown): ApiErrorBody | DisabledConfigBody | null
 async function boundedText(response: Response, maximumBytes: number, expectedMime: 'application/json' | 'text/html'): Promise<string> {
 	const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
 	if (mime !== expectedMime) {
+		await response.body?.cancel().catch(() => {});
 		throw new NebiusRunClientError(`The task execution service returned an unexpected ${mime || 'missing'} content type.`, { status: response.status });
 	}
 	const declared = response.headers.get('content-length');
 	if (declared !== null && Number.isFinite(Number(declared)) && Number(declared) > maximumBytes) {
+		await response.body?.cancel().catch(() => {});
 		throw new NebiusRunClientError('The task execution response exceeded its size limit.', { status: response.status });
 	}
 	if (!response.body) throw new NebiusRunClientError('The task execution response body is unavailable.', { status: response.status });
@@ -81,13 +83,13 @@ async function boundedText(response: Response, maximumBytes: number, expectedMim
 	const decoder = new TextDecoder('utf-8', { fatal: true });
 	let total = 0;
 	let body = '';
+	let finished = false;
 	try {
 		while (true) {
 			const { value, done } = await reader.read();
-			if (done) break;
+			if (done) { finished = true; break; }
 			total += value.byteLength;
 			if (total > maximumBytes) {
-				await reader.cancel();
 				throw new NebiusRunClientError('The task execution response exceeded its size limit.', { status: response.status });
 			}
 			body += decoder.decode(value, { stream: true });
@@ -98,6 +100,7 @@ async function boundedText(response: Response, maximumBytes: number, expectedMim
 		if (error instanceof NebiusRunClientError || (error instanceof DOMException && error.name === 'AbortError')) throw error;
 		throw new NebiusRunClientError('The task execution response was not valid UTF-8.', { status: response.status });
 	} finally {
+		if (!finished) await reader.cancel().catch(() => {});
 		reader.releaseLock();
 	}
 }
