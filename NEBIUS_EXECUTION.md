@@ -84,7 +84,7 @@ from earlier cached clients' definitive start rejections: an earlier POST may
 have succeeded even when its response was lost. Resuming a saved request never
 clears its reference on a rejected POST; the browser observes that same run ID.
 Only the separate owner-confirmed retirement path, after a fresh parsed
-`404:not_found`, can retire an unresolved historical reference.
+`404:not_found`, can retire an unresolved reference while retaining its unknown outcome.
 This keeps an already-open page from starting a run
 whose diagnostic fields its old parser cannot read. The HTML preview form
 still submits only its run key.
@@ -550,7 +550,7 @@ A v1 request cannot initiate a new model or Sandbox submission. An already
 submitted operation can still be observed by its existing ID. Old receipts
 retain their original files, declarations, checks and unknown coverage.
 
-An unresolved v1 local reference can be retired only after a parsed
+An unresolved v1 or v2 local reference can be retired only after a parsed
 `404:not_found` observation, review of its original snapshot, explicit owner
 confirmation and a fresh authenticated server read. The state owner verifies
 the exact ID/key/input and absent local record, preserves the original reference
@@ -561,6 +561,12 @@ replacement. Up to eight retired references are retained per task; full
 history refuses another retirement without deleting or truncating entries.
 History survives workspace backup export/import and remains visibly separate
 from an actual successful run.
+
+The same path handles a current-format request whose start response was lost
+and whose task requirements or configured model later changed. Retirement does
+not resubmit the old snapshot. Refreshing a stopped run may retain newer usage
+and generation evidence with the same terminal status; stale responses,
+different terminal outcomes and attempts to reopen it cannot replace the record.
 
 ## Enable execution locally
 

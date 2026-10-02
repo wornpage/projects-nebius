@@ -7,7 +7,7 @@
 		clearUnsentExecutionRunReference,
 		executionRunMatchesCurrentTask,
 		reserveExecutionRunReference,
-		retireUnavailableLegacyExecutionRun,
+		retireUnavailableExecutionRun,
 		saveExecutionRunRecord
 	} from '$lib/demo-client';
 	import type { DemoExecutionRunReference, DemoPack } from '$lib/demo-workflow';
@@ -60,7 +60,7 @@
 	let currentRunBlocksStart = $derived(Boolean(reference && (!record || !terminal)));
 	let startDisabled = $derived(requestBusy || configState !== 'available' || Boolean(eligibilityError) || currentRunBlocksStart);
 	let resumeDisabled = $derived(requestBusy || disabled || configState !== 'available' || !reference || reference.input.version !== RUN_VERSION || Boolean(record) || !runMatchesTask);
-	let canReviewRetirement = $derived(Boolean(reference && !record && reference.input.version === 'browser-tool.v1' &&
+	let canReviewRetirement = $derived(Boolean(reference && !record &&
 		notFoundReference?.id === reference.id && notFoundReference.key === reference.key));
 	let statusLabel = $derived(record && !runMatchesTask ? 'Earlier result' : record
 		? record.status.charAt(0).toUpperCase() + record.status.slice(1)
@@ -222,7 +222,7 @@
 		notice = '';
 		clearPolling();
 		try {
-			await retireUnavailableLegacyExecutionRun(capturedPackId, reviewed, true, controller.signal);
+			await retireUnavailableExecutionRun(capturedPackId, reviewed, true, controller.signal);
 			if (disposed || pack.id !== capturedPackId) return;
 			notFoundReference = null;
 			retirementOpen = false;
@@ -232,7 +232,7 @@
 			document.getElementById('nebius-task-run')?.focus();
 		} catch (cause) {
 			if (disposed || controller.signal.aborted) return;
-			error = cause instanceof Error ? cause.message : 'The historical request could not be retired locally.';
+				error = cause instanceof Error ? cause.message : 'The request could not be retired locally.';
 		} finally {
 			if (!disposed) {
 				requestBusy = false;
@@ -366,6 +366,7 @@
 	{#if reference}
 		{#if reference.input.version !== RUN_VERSION}<p class="task-run-muted">This historical request has no task-owned input specification. {record ? 'Its saved result remains available.' : 'Its outcome is unknown.'} It cannot be restarted with the old request.</p>{/if}
 		{#if record && !runMatchesTask}<p class="task-run-muted">This saved run used earlier task requirements. Review it as history; a new run is required for the current task.</p>{/if}
+		{#if !record && !runMatchesTask}<p class="task-run-muted">This pending request used earlier task requirements. Refresh it; if no server receipt exists, review local retirement before starting a new run.</p>{/if}
 		<div class="task-run-progress" aria-live="polite">
 			<span>Run {reference.id}</span>
 			<strong>{requestLabel || record?.status || statusLabel}</strong>

@@ -220,11 +220,12 @@ test('specifying current inputs does not add inferred requirements to a legacy s
 	await assert.rejects(browser.client.reserveExecutionRunReference(pack.id, reference), /current input requirements/u);
 });
 
-function legacyReservation(number = 1) {
+function savedReservation(number = 1, version = 'browser-tool.v1') {
 	const state = approve().state;
 	const pack = state.packs[1];
 	const input = dependencies['nebius-execution-contract.mjs'].validateRunInput({
-		version: 'browser-tool.v1', packId: pack.id, pack: dependencies['nebius-contract.mjs'].projectTask(pack),
+		version, ...(version === 'browser-tool.v2' ? { requiredInputFormats: null } : {}),
+		packId: pack.id, pack: dependencies['nebius-contract.mjs'].projectTask(pack),
 		currentStatus: pack.status, context: [], requestedModel: 'nvidia/synthetic-checker-fixture', consent: true
 	});
 	const reference = { id: `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`, key: 'a'.repeat(64), input, record: null };
@@ -298,15 +299,67 @@ test('format change keeps the reload diagnostic and an uncertain current-client 
 	});
 });
 
-test('confirmed legacy retirement rereads the server, preserves unknown history and permits a new input review', async () => {
-	const { state, packId, reference } = legacyReservation();
+test('an unresolved current request can be retired after task drift without starting replacement work', async () => {
+	const { state, packId, reference } = savedReservation(41, 'browser-tool.v2');
+	const browser = browserClient(envelope(state), { runFetch: notFoundResponse,
+		runStartFetch: () => { throw new Error('Authored lost start response'); } });
+	await browser.client.refreshDemoState();
+	await assert.rejects(browser.execution.startRun(reference.id, reference.key, reference.input), error => error.uncertain === true);
+	const pack = get(browser.client.demoState).packs[1];
+	await browser.client.savePackPath(packId, { purpose: 'Revised task requirements.' }, browser.client.packPathSignature(pack));
+	const changed = get(browser.client.demoState).packs[1];
+	assert.equal(browser.client.executionRunMatchesCurrentTask(changed, reference), false);
+	await assert.rejects(browser.client.reserveExecutionRunReference(packId, { ...reference,
+		id: '00000000-0000-4000-8000-000000000042', input: browser.client.buildExecutionRunInput(changed, 'nvidia/new-model') }), /current task execution/u);
+	const saved = await browser.client.retireUnavailableExecutionRun(packId, reference, true);
+	assert.equal(saved.executionRun, undefined);
+	assert.deepEqual(json(saved.retiredExecutionRuns[0].reference), reference);
+	assert.equal(saved.purpose, changed.purpose);
+	assert.equal(browser.runReads, 1);
+	assert.equal(browser.runStarts, 1, 'Retirement never starts replacement work.');
+	await browser.client.reserveExecutionRunReference(packId, { ...reference,
+		id: '00000000-0000-4000-8000-000000000042', input: browser.client.buildExecutionRunInput(saved, 'nvidia/new-model') });
+	assert.equal(browser.runStarts, 1);
+});
+
+for (const status of ['cancelled', 'uncertain']) test(`later ${status} evidence survives refresh without reopening the run`, async () => {
+	const { state, packId, reference } = savedReservation(43, 'browser-tool.v2');
+	const browser = browserClient(envelope(state)); await browser.client.refreshDemoState();
+	const stopped = { ...queuedReceipt(reference), status, error: status === 'uncertain' ? 'Submission outcome unknown.' : null,
+		updatedAt: '2026-09-28T01:00:01.000Z', usage: { modelCalls: 1, inputTokens: null, outputTokens: null, totalsComplete: false } };
+	await browser.client.saveExecutionRunRecord(packId, reference.id, reference.key, stopped);
+	const enriched = { ...stopped, updatedAt: '2026-09-28T01:00:02.000Z',
+		usage: { modelCalls: 1, inputTokens: 42, outputTokens: 17, totalsComplete: true },
+		events: [{ at: '2026-09-28T01:00:02.000Z', message: 'Recorded a late generation response; the stopped run remains terminal.' }],
+		generationAttempts: [{ attempt: 1, outcome: 'accepted', responseText: 'Authored late response fixture.', retention: 'retained', diagnostic: null }] };
+	const updated = await browser.client.saveExecutionRunRecord(packId, reference.id, reference.key, enriched);
+	assert.equal(updated.executionRun.record.status, status);
+	assert.deepEqual(json(updated.executionRun.record.usage), enriched.usage);
+	assert.deepEqual(json(updated.executionRun.record.generationAttempts), enriched.generationAttempts);
+	const latest = json(updated.executionRun.record);
+	for (const stale of [stopped, { ...enriched, status: 'queued', error: null, updatedAt: '2026-09-28T01:00:03.000Z' },
+		{ ...enriched, status: 'failed', error: 'Contradictory terminal status.', updatedAt: '2026-09-28T01:00:03.000Z' }]) {
+		const saved = await browser.client.saveExecutionRunRecord(packId, reference.id, reference.key, stale);
+		assert.deepEqual(json(saved.executionRun.record), latest);
+	}
+	await assert.rejects(browser.client.saveExecutionRunRecord(packId, reference.id, reference.key,
+		{ ...enriched, usage: { ...enriched.usage, inputTokens: 43 } }), /same update time/u);
+	const reloaded = browserClient(browser.client.exportWorkspaceState()); await reloaded.client.refreshDemoState();
+	assert.deepEqual(json(get(reloaded.client.demoState).packs[1].executionRun.record), latest);
+	assert.equal(browser.runStarts + browser.runReads, 0);
+});
+
+for (const version of ['browser-tool.v1', 'browser-tool.v2']) {
+const reservation = number => savedReservation(number, version);
+test(`confirmed ${version} retirement rereads the server, preserves unknown history and permits a new input review`, async () => {
+	const { state, packId, reference } = reservation();
 	const browser = browserClient(envelope(state), { runFetch: notFoundResponse });
 	await browser.client.refreshDemoState();
 	const before = browser.saved;
-	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, false), /confirm local retirement/u);
+	await assert.rejects(browser.client.retireUnavailableExecutionRun(packId, reference, false), /confirm local retirement/u);
 	assert.equal(browser.runReads, 0); assert.equal(browser.saved, before);
 	await assert.rejects(browser.execution.readRun(reference.id, reference.key, packId), error => error.status === 404 && error.code === 'not_found');
-	const saved = await browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true);
+	const saved = await browser.client.retireUnavailableExecutionRun(packId, reference, true);
 	assert.equal(browser.runReads, 2, 'the owner must reread after the initial review observation');
 	assert.equal(saved.executionRun, undefined);
 	assert.equal(saved.status, state.packs[1].status);
@@ -316,7 +369,7 @@ test('confirmed legacy retirement rereads the server, preserves unknown history 
 	assert.equal(retired.reason, 'server_not_found');
 	assert.equal(new Date(retired.retiredAt).toISOString(), retired.retiredAt);
 	assert.equal(retired.reference.record, null);
-	assert.equal(Object.hasOwn(retired.reference.input, 'requiredInputFormats'), false);
+	assert.equal(Object.hasOwn(retired.reference.input, 'requiredInputFormats'), version === 'browser-tool.v2');
 	await browser.client.savePackPath(packId, { executionInputs: [{ id: 'packet', format: 'json' }] }, browser.client.packPathSignature(saved));
 	const pack = get(browser.client.demoState).packs.find(item => item.id === packId);
 	const input = browser.client.buildExecutionRunInput(pack, reference.input.requestedModel);
@@ -338,35 +391,35 @@ for (const [label, runFetch] of [
 	['invalid JSON', () => new Response('{', { status: 404, headers: { 'Content-Type': 'application/json' } })],
 	['wrong MIME', () => new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })],
 	['transport failure', () => { throw new Error('Offline'); }]
-]) test(`legacy retirement refuses ${label} without releasing the reservation`, async () => {
-	const { state, packId, reference } = legacyReservation();
+]) test(`${version} retirement refuses ${label} without releasing the reservation`, async () => {
+	const { state, packId, reference } = reservation();
 	const browser = browserClient(envelope(state), { runFetch }); await browser.client.refreshDemoState();
 	const before = browser.saved;
-	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true));
+	await assert.rejects(browser.client.retireUnavailableExecutionRun(packId, reference, true));
 	assert.equal(browser.saved, before); assert.equal(browser.writes, 0); assert.equal(browser.runReads, 1);
 });
 
-test('a real server receipt prevents local retirement and remains available for refresh', async () => {
-	const { state, packId, reference } = legacyReservation();
+test(`${version} server receipt prevents local retirement and remains available for refresh`, async () => {
+	const { state, packId, reference } = reservation();
 	const browser = browserClient(envelope(state), { runFetch: () => Response.json({ run: queuedReceipt(reference) }) });
 	await browser.client.refreshDemoState(); const before = browser.saved;
-	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true), /server receipt is available/u);
+	await assert.rejects(browser.client.retireUnavailableExecutionRun(packId, reference, true), /server receipt is available/u);
 	assert.equal(browser.saved, before);
 });
 
-test('legacy retirement rejects changed references, received records and a full history atomically', async () => {
+test(`${version} retirement rejects changed references, received records and a full history atomically`, async () => {
 	for (const change of ['key', 'input', 'record', 'full', 'another-tab']) {
-		const { state, packId, reference } = legacyReservation();
+		const { state, packId, reference } = reservation();
 		let release;
 		const response = new Promise(resolve => { release = resolve; });
 		const browser = browserClient(envelope(state), { runFetch: () => response }); await browser.client.refreshDemoState();
-		const pending = browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true);
+		const pending = browser.client.retireUnavailableExecutionRun(packId, reference, true);
 		const changed = structuredClone(state); const pack = changed.packs[1];
 		if (change === 'key' || change === 'another-tab') pack.executionRun.key = 'b'.repeat(64);
 		if (change === 'input') pack.executionRun.input.pack.purpose = 'Changed authorized purpose.';
 		if (change === 'record') pack.executionRun.record = queuedReceipt(reference);
 		if (change === 'full') pack.retiredExecutionRuns = Array.from({ length: 8 }, (_, index) => ({
-			reference: legacyReservation(index + 10).reference, retiredAt: createdAt, reason: 'server_not_found'
+			reference: reservation(index + 10).reference, retiredAt: createdAt, reason: 'server_not_found'
 		}));
 		const current = envelope(changed, `changed-${change}`); browser.overwrite(current);
 		if (change !== 'another-tab') await browser.client.refreshDemoState();
@@ -376,36 +429,36 @@ test('legacy retirement rejects changed references, received records and a full 
 	}
 });
 
-test('local retirement cannot discard state on a storage failure or aborted owner action', async () => {
-	const { state, packId, reference } = legacyReservation();
+test(`${version} retirement cannot discard state on a storage failure or aborted owner action`, async () => {
+	const { state, packId, reference } = reservation();
 	const storageFailure = browserClient(envelope(state), { failWrite: true, runFetch: notFoundResponse });
 	await storageFailure.client.refreshDemoState(); const before = storageFailure.saved;
-	await assert.rejects(storageFailure.client.retireUnavailableLegacyExecutionRun(packId, reference, true));
+	await assert.rejects(storageFailure.client.retireUnavailableExecutionRun(packId, reference, true));
 	assert.equal(storageFailure.saved, before);
 	const browser = browserClient(envelope(state), { runFetch: notFoundResponse }); await browser.client.refreshDemoState();
 	const controller = new AbortController(); controller.abort();
-	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true, controller.signal), error => error.name === 'AbortError');
+	await assert.rejects(browser.client.retireUnavailableExecutionRun(packId, reference, true, controller.signal), error => error.name === 'AbortError');
 	assert.equal(browser.runReads, 0);
 	let release; const paused = new Promise(resolve => { release = resolve; }); browser.pauseWrite(paused);
 	const duringWrite = new AbortController();
-	const pending = browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true, duringWrite.signal);
+	const pending = browser.client.retireUnavailableExecutionRun(packId, reference, true, duringWrite.signal);
 	await new Promise(resolve => setTimeout(resolve, 0)); duringWrite.abort(); release();
 	await assert.rejects(pending, error => error.name === 'AbortError');
 	assert.equal(browser.saved, envelope(state)); assert.equal(browser.writes, 0);
 });
 
-test('new requests and malformed or contradictory retired history are refused', async () => {
-	const { state, packId, reference } = legacyReservation();
+test(`${version} received records and malformed or contradictory retired history are refused`, async () => {
+	const { state, packId, reference } = reservation();
 	const browser = browserClient(envelope(state), { runFetch: notFoundResponse }); await browser.client.refreshDemoState();
-	const newReference = { ...reference, input: { ...reference.input, version: 'browser-tool.v2', requiredInputFormats: null } };
-	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, newReference, true), /Only an unresolved historical/u);
+	const newReference = { ...reference, record: queuedReceipt(reference) };
+	await assert.rejects(browser.client.retireUnavailableExecutionRun(packId, newReference, true), /Only an unresolved/u);
 	assert.equal(browser.runReads, 0);
-	const entry = { reference: legacyReservation(10).reference, retiredAt: createdAt, reason: 'server_not_found' };
+	const entry = { reference: reservation(10).reference, retiredAt: createdAt, reason: 'server_not_found' };
 	for (const mutate of [
 		item => { item.reason = 'cancelled'; },
 		item => { item.retiredAt = 'unknown'; },
 		item => { item.reference.record = queuedReceipt(item.reference); },
-		item => { item.reference.input.version = 'browser-tool.v2'; item.reference.input.requiredInputFormats = null; },
+		item => { item.reference.input.version = 'browser-tool.v3'; item.reference.input.requiredInputFormats = null; },
 		item => { item.reference.id = reference.id; },
 		item => { item.reference.input.packId = 'another-task'; },
 		item => { item.reference.key = 'bad'; }
@@ -415,8 +468,9 @@ test('new requests and malformed or contradictory retired history are refused', 
 		assert.throws(() => browser.client.previewWorkspaceImport(envelope(invalid)), /Retired|retired|Saved task execution/u);
 	}
 	const duplicate = structuredClone(state); duplicate.packs[1].retiredExecutionRuns = [entry, structuredClone(entry)];
-	assert.throws(() => browser.client.previewWorkspaceImport(envelope(duplicate)), /invalid legacy reference/u);
+	assert.throws(() => browser.client.previewWorkspaceImport(envelope(duplicate)), /invalid .*reference/u);
 });
+}
 
 test('approval clones the workspace and preserves truthful plan fields and scoped dependencies', () => {
 	const prior = seed();

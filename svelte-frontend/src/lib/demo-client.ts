@@ -259,9 +259,9 @@ function assertDemoState(value: unknown, recordOnly = false): asserts value is D
 					throw new ChallengeStateError('Retired task execution history contains an invalid entry.');
 				}
 				assertExecutionRunReference(entry.reference, pack.id);
-				if (entry.reference.input.version !== 'browser-tool.v1' || entry.reference.record !== null ||
+				if (entry.reference.record !== null ||
 					retiredIds.has(entry.reference.id) || pack.executionRun?.id === entry.reference.id) {
-					throw new ChallengeStateError('Retired task execution history contains an invalid legacy reference.');
+					throw new ChallengeStateError('Retired task execution history contains an invalid saved reference.');
 				}
 				retiredIds.add(entry.reference.id);
 			}
@@ -794,7 +794,7 @@ export async function clearUnsentExecutionRunReference(
 	return pack;
 }
 
-export async function retireUnavailableLegacyExecutionRun(
+export async function retireUnavailableExecutionRun(
 	packId: string,
 	referenceValue: DemoExecutionRunReference,
 	ownerConfirmed: boolean,
@@ -803,8 +803,8 @@ export async function retireUnavailableLegacyExecutionRun(
 	if (ownerConfirmed !== true) throw new ChallengeStateError('Review and confirm local retirement before continuing.');
 	const reviewed = structuredClone(referenceValue);
 	assertExecutionRunReference(reviewed, packId);
-	if (reviewed.input.version !== 'browser-tool.v1' || reviewed.record !== null) {
-		throw new ChallengeStateError('Only an unresolved historical request can use local retirement.');
+	if (reviewed.record !== null) {
+		throw new ChallengeStateError('Only an unresolved request can use local retirement.');
 	}
 	signal?.throwIfAborted();
 	let notFound = false;
@@ -822,7 +822,7 @@ export async function retireUnavailableLegacyExecutionRun(
 		const reference = pack.executionRun;
 		if (!reference || reference.id !== reviewed.id || reference.key !== reviewed.key || reference.record !== null ||
 			!executionInputMatches(reference.input, reviewed.input)) {
-			throw new ChallengeStateError('The reviewed historical request is no longer current. Refresh before continuing.');
+			throw new ChallengeStateError('The reviewed request is no longer current. Refresh before continuing.');
 		}
 		const history = pack.retiredExecutionRuns || [];
 		if (history.length >= RETIRED_EXECUTION_RUN_LIMIT) {
@@ -834,7 +834,7 @@ export async function retireUnavailableLegacyExecutionRun(
 		delete pack.executionRun;
 	}, signal);
 	const pack = written?.packs.find((candidate) => candidate.id === packId);
-	if (!pack) throw new ChallengeStateError('The historical request was not retired locally.');
+	if (!pack) throw new ChallengeStateError('The request was not retired locally.');
 	return pack;
 }
 
@@ -864,7 +864,9 @@ export async function saveExecutionRunRecord(
 			const storedJson = JSON.stringify(stored);
 			const incomingJson = JSON.stringify(record);
 			if (storedJson === incomingJson) return;
-			if (TERMINAL_RUN_STATUSES.includes(stored.status)) return;
+			// Late provider evidence may enrich a stopped run without changing its
+			// terminal outcome. Never reopen it or accept a different terminal status.
+			if (TERMINAL_RUN_STATUSES.includes(stored.status) && record.status !== stored.status) return;
 			const storedTime = Date.parse(stored.updatedAt);
 			const incomingTime = Date.parse(record.updatedAt);
 			if (incomingTime < storedTime) return;
