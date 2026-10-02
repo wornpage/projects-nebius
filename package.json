@@ -35,6 +35,6 @@
   "devDependencies": {
     "parse5": "8.0.1",
     "playwright-core": "1.62.1",
-    "wrangler": "4.126.0"
+    "wrangler": "4.147.0"
   }
 }
