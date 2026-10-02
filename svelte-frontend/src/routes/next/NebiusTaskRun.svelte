@@ -408,8 +408,8 @@
 			<WornButton type="button" disabled={requestBusy} onclick={cancelCurrentRun}>{requestLabel === 'Cancelling…' ? requestLabel : 'Cancel'}</WornButton>
 			{#if canReviewRetirement}<WornButton type="button" disabled={disabled || requestBusy} onclick={reviewLocalRetirement}>Review local retirement</WornButton>{/if}
 		{/if}
-		{#if record?.status === 'ready'}
-			<WornButton href={`/review?focus=${encodeURIComponent(pack.id)}`}>Review result</WornButton>
+		{#if reference}
+			<WornButton href={`/review?focus=${encodeURIComponent(pack.id)}`}>{record?.status === 'ready' ? 'Review result' : 'Inspect run'}</WornButton>
 		{/if}
 	</div>
 </section>
