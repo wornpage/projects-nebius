@@ -131,6 +131,7 @@ npm run test:nebius:tool-preview
 npm run test:nebius:projects
 npm run test:nebius:browser
 npm run test:nebius:offline
+npm run test:nebius:portability
 ```
 
 These suites use isolated test workspaces and synthetic responses. Run them
@@ -144,7 +145,7 @@ Chromium 153.0.8010.12. Those observations do not qualify other environments.
 The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
 defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
 both locked installs and its own hosted Chrome lookup, then runs
-`verify:nebius` and all four browser suites above in order. It supplies no
+`verify:nebius` and all five browser suites above in order. It supplies no
 provider credentials or deployment step. Local qualification, a prepared
 workflow and an observed passing GitHub run remain separate results; this
 candidate has not yet passed hosted CI.

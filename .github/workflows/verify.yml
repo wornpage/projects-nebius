@@ -63,3 +63,5 @@ jobs:
         run: npm run test:nebius:browser
       - name: Check offline save and reload
         run: npm run test:nebius:offline
+      - name: Check backup selection and replacement
+        run: npm run test:nebius:portability

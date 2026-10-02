@@ -11,6 +11,7 @@
     "test:nebius": "node --test tests/nebius-api.test.mjs tests/nebius-client.test.mjs tests/nebius-plan.test.mjs tests/nebius-project-state.test.mjs tests/nebius-plan-client.test.mjs tests/nebius-replan.test.mjs tests/nebius-replan-state.test.mjs tests/nebius-replan-client.test.mjs tests/nebius-routing.test.mjs tests/nebius-project-starters.test.mjs tests/nebius-project-progress.test.mjs tests/nebius-project-completion.test.mjs tests/nebius-sandbox.test.mjs tests/nebius-run-provider.test.mjs tests/nebius-run-state.test.mjs tests/nebius-execution-client.test.mjs tests/nebius-tool-traversal.test.mjs",
     "test:nebius:browser": "node scripts/nebius-browser-smoke.mjs",
     "test:nebius:projects": "node scripts/nebius-project-browser-smoke.mjs",
+    "test:nebius:portability": "node scripts/portability-browser-smoke.mjs --nebius",
     "test:nebius:offline": "node scripts/offline-browser-smoke.mjs --nebius",
     "test:nebius:runtime": "node scripts/nebius-runtime-smoke.mjs",
     "verify:nebius": "npm run test:manifest && npm run test:nebius && npm run check && npm run build:nebius && wrangler deploy --dry-run --config wrangler.nebius.jsonc --outdir dist/nebius-worker && npm run test:nebius:runtime",

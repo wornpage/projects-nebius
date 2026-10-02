@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { WornAccordion, WornBadge, WornButton, WornDialog, WornPage, WornReceipt } from '$lib/components';
 	import AgentBriefEditor from '$lib/AgentBriefEditor.svelte';
 	import { ChallengeStateError, demoState, displayToast, exportWorkspaceState, importWorkspaceState, previewWorkspaceImport, resetDemoSampleState, type WorkspaceImportPreview } from '$lib/demo-client';
@@ -57,12 +57,14 @@
 	));
 	let selectedMatchingCount = $derived(filterPacks(guidePacks, 'all', workQuery).length);
 	let importBusy = $state(false);
+	let importReadGeneration = 0;
 	let importPreview = $state<WorkspaceImportPreview | null>(null);
 	let importError = $state('');
 	let importInput = $state<HTMLInputElement | null>(null);
 	let exportHref = $state('');
 	let replaceConfirmOpen = $state(false);
 	let resetConfirmOpen = $state(false);
+	onDestroy(() => { importReadGeneration++; });
 
 	function prepareWorkspaceExport() {
 		if (exportHref) URL.revokeObjectURL(exportHref);
@@ -71,14 +73,18 @@
 	}
 
 	async function selectWorkspaceFile(event: Event) {
+		if (importBusy) return;
+		const generation = ++importReadGeneration;
 		const file = (event.currentTarget as HTMLInputElement).files?.[0];
 		importPreview = null;
 		importError = '';
 		if (!file) return;
 		try {
-			importPreview = previewWorkspaceImport(await file.text());
+			const serialized = await file.text();
+			if (generation !== importReadGeneration) return;
+			importPreview = previewWorkspaceImport(serialized);
 		} catch (error) {
-			importError = error instanceof Error ? error.message : 'The workspace export is invalid.';
+			if (generation === importReadGeneration) importError = error instanceof Error ? error.message : 'The workspace export is invalid.';
 		}
 	}
 
@@ -262,7 +268,7 @@
 				<div class="challenge-portability-actions">
 					<WornButton class="challenge-export-primary" type="button" size="sm" onclick={prepareWorkspaceExport}>Prepare export</WornButton>
 					{#if exportHref}<a class="challenge-export-link" href={exportHref} download="projects-workspace.json">Download export</a>{/if}
-					<label class="challenge-import-label">Import export<input bind:this={importInput} type="file" accept="application/json" onchange={selectWorkspaceFile} /></label>
+					<label class="challenge-import-label">Import export<input bind:this={importInput} type="file" accept="application/json" disabled={importBusy} onchange={selectWorkspaceFile} /></label>
 				</div>
 				{#if importError}<p class="challenge-import-error" role="alert">{importError}</p>{/if}
 				{#if importPreview}
