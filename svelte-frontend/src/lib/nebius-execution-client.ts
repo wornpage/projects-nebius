@@ -1,4 +1,5 @@
 import {
+	RUN_VERSION,
 	RUN_RECORD_FORMAT,
 	isRunConfig,
 	validRunId,
@@ -18,6 +19,7 @@ const DEFINITIVE_START_REJECTIONS = new Set([
 	'404:execution_disabled',
 	'409:model_changed',
 	'409:run_conflict',
+	'409:run_input_changed',
 	'429:rate_limited',
 	'429:daily_limit'
 ]);
@@ -208,6 +210,7 @@ export async function getRunConfig(signal?: AbortSignal): Promise<RunConfigState
 
 export async function startRun(runId: string, runKey: string, input: RunInput, signal?: AbortSignal): Promise<RunRecord> {
 	const validated = validateRunInput(input);
+	if (validated.version !== RUN_VERSION) throw new NebiusRunClientError('Review the current input requirements before starting a new run.', { code: 'run_input_changed', definitiveStartRejection: true });
 	try {
 		const { response, value } = await fetchJson(endpoint(runId), {
 			method: 'POST',

@@ -17,6 +17,7 @@ import {
 	PACK_ENERGIES,
 	STATE_FILTERS,
 	VALID_PACK_STATUSES,
+	RETIRED_EXECUTION_RUN_LIMIT,
 	parseDateOnly,
 	evidenceFacts,
 	canSetNextAction,
@@ -35,6 +36,7 @@ import {
 import { approvePendingDraft, discardPendingDraft, pendingDraftFingerprint as fingerprintPendingDraft, resetPersistedState, restorePendingDraft, revisePendingDraftChoice, upsertPendingDraft } from './pending-next-action.mjs';
 import { planBatchAction, removePacksAndReferences, repairActiveSelection } from './batch-actions.mjs';
 import { projectTask } from './nebius-contract.mjs';
+import { NebiusRunClientError, readRun } from './nebius-execution-client';
 import {
 	TERMINAL_RUN_STATUSES,
 	RUN_VERSION,
@@ -45,6 +47,7 @@ import {
 	validateRunInput,
 	validateRunIntegrity,
 	validateRunRecord,
+	validateToolInputRequirements,
 	type RunInput,
 	type RunRecord
 } from './nebius-execution-contract.mjs';
@@ -238,7 +241,31 @@ function assertDemoState(value: unknown, recordOnly = false): asserts value is D
 		if (pack.projectId !== undefined && (typeof pack.projectId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/u.test(pack.projectId))) {
 			throw new ChallengeStateError('Saved workspace data contains an invalid project id.');
 		}
+		if (pack.executionInputs !== undefined) {
+			try { validateToolInputRequirements(pack.executionInputs); }
+			catch { throw new ChallengeStateError('Saved tool input requirements are invalid.'); }
+		}
 		if (pack.executionRun !== undefined) assertExecutionRunReference(pack.executionRun, pack.id);
+		if (pack.retiredExecutionRuns !== undefined) {
+			if (!Array.isArray(pack.retiredExecutionRuns) || pack.retiredExecutionRuns.length > RETIRED_EXECUTION_RUN_LIMIT) {
+				throw new ChallengeStateError('Retired task execution history is invalid or exceeds its limit.');
+			}
+			const retiredIds = new Set<string>();
+			for (const entry of pack.retiredExecutionRuns) {
+				if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
+					Object.keys(entry).sort().join(',') !== 'reason,reference,retiredAt' || entry.reason !== 'server_not_found' ||
+					typeof entry.retiredAt !== 'string' || !Number.isFinite(Date.parse(entry.retiredAt)) ||
+					new Date(entry.retiredAt).toISOString() !== entry.retiredAt) {
+					throw new ChallengeStateError('Retired task execution history contains an invalid entry.');
+				}
+				assertExecutionRunReference(entry.reference, pack.id);
+				if (entry.reference.input.version !== 'browser-tool.v1' || entry.reference.record !== null ||
+					retiredIds.has(entry.reference.id) || pack.executionRun?.id === entry.reference.id) {
+					throw new ChallengeStateError('Retired task execution history contains an invalid legacy reference.');
+				}
+				retiredIds.add(entry.reference.id);
+			}
+		}
 	}
 	// Recovery first validates record shape; references need the whole graph.
 	if (recordOnly) return;
@@ -629,18 +656,24 @@ export async function resetDemoSampleState(): Promise<DemoState | null> {
 }
 
 export async function saveBrowserState(
-	mutate: (state: DemoState) => void
+	mutate: (state: DemoState) => void,
+	signal?: AbortSignal
 ): Promise<DemoState | null> {
 	if (!browser) return null;
+	signal?.throwIfAborted();
 	const current = get(demoState) ?? (await refreshDemoState());
 	if (!current) return null;
 	const next = cloneState(current);
 	mutate(next);
 	const expectedRevision = storageRevision;
 	try {
-		const written = await withStateStorageLock(() => persistState(next, expectedRevision));
+		const written = await withStateStorageLock(() => {
+			signal?.throwIfAborted();
+			return persistState(next, expectedRevision);
+		});
 		return replaceDemoState(written.state, written.revision);
 	} catch (error) {
+		if (signal?.aborted) throw error;
 		if (error instanceof ChallengeStateError && error.message === 'Workspace changed by another tab. Refresh this tab and try again.') {
 			const latest = await readStoredState();
 			if (latest) replaceDemoState(latest.state, latest.revision);
@@ -678,6 +711,7 @@ export function buildExecutionRunInput(pack: DemoPack, requestedModel: string): 
 			currentStatus,
 			context: [],
 			requestedModel,
+			requiredInputFormats: validateToolInputRequirements(pack.executionInputs ?? null),
 			consent: true
 		});
 	} catch (error) {
@@ -689,10 +723,13 @@ export function executionRunMatchesCurrentTask(pack: DemoPack, reference = pack.
 	if (!reference || reference.input.packId !== pack.id) return false;
 	try {
 		if (pack.status !== 'draft' && pack.status !== 'active') return false;
+		// Old snapshots never authorized a newly specified input contract.
+		if (reference.input.version !== RUN_VERSION && pack.executionInputs != null) return false;
 		const current = validateRunInput({
 			...reference.input,
 			pack: projectTask(pack),
-			currentStatus: pack.status
+			currentStatus: pack.status,
+			...(reference.input.version === RUN_VERSION ? { requiredInputFormats: validateToolInputRequirements(pack.executionInputs ?? null) } : {})
 		});
 		return executionInputMatches(current, reference.input);
 	} catch {
@@ -705,6 +742,7 @@ export async function reserveExecutionRunReference(
 	reference: DemoExecutionRunReference
 ): Promise<DemoPack> {
 	assertExecutionRunReference(reference, packId);
+	if (reference.input.version !== RUN_VERSION) throw new ChallengeStateError('Review the current input requirements before reserving a new run.');
 	if (reference.record !== null) throw new ChallengeStateError('A new task execution must be reserved before it has a server record.');
 	const written = await saveBrowserState((draft) => {
 		const pack = requireExecutionPack(draft, packId);
@@ -717,6 +755,9 @@ export async function reserveExecutionRunReference(
 			throw new ChallengeStateError('The task changed after the execution preview was prepared.');
 		}
 		const previous = pack.executionRun;
+		if (pack.retiredExecutionRuns?.some((entry) => entry.reference.id === reference.id)) {
+			throw new ChallengeStateError('A retired task execution id cannot be reused.');
+		}
 		if (previous && (!previous.record || !TERMINAL_RUN_STATUSES.includes(previous.record.status))) {
 			throw new ChallengeStateError('Refresh or finish the current task execution before starting another.');
 		}
@@ -750,6 +791,50 @@ export async function clearUnsentExecutionRunReference(
 	});
 	const pack = written?.packs.find((candidate) => candidate.id === packId);
 	if (!pack) throw new ChallengeStateError('The unsent task execution reservation was not cleared.');
+	return pack;
+}
+
+export async function retireUnavailableLegacyExecutionRun(
+	packId: string,
+	referenceValue: DemoExecutionRunReference,
+	ownerConfirmed: boolean,
+	signal?: AbortSignal
+): Promise<DemoPack> {
+	if (ownerConfirmed !== true) throw new ChallengeStateError('Review and confirm local retirement before continuing.');
+	const reviewed = structuredClone(referenceValue);
+	assertExecutionRunReference(reviewed, packId);
+	if (reviewed.input.version !== 'browser-tool.v1' || reviewed.record !== null) {
+		throw new ChallengeStateError('Only an unresolved historical request can use local retirement.');
+	}
+	signal?.throwIfAborted();
+	let notFound = false;
+	try {
+		await readRun(reviewed.id, reviewed.key, packId, signal);
+	} catch (cause) {
+		if (!(cause instanceof NebiusRunClientError && cause.status === 404 && cause.code === 'not_found')) throw cause;
+		notFound = true;
+	}
+	if (!notFound) throw new ChallengeStateError('A server receipt is available. Refresh this saved run before taking another action.');
+	signal?.throwIfAborted();
+	const written = await saveBrowserState((draft) => {
+		signal?.throwIfAborted();
+		const pack = requireExecutionPack(draft, packId);
+		const reference = pack.executionRun;
+		if (!reference || reference.id !== reviewed.id || reference.key !== reviewed.key || reference.record !== null ||
+			!executionInputMatches(reference.input, reviewed.input)) {
+			throw new ChallengeStateError('The reviewed historical request is no longer current. Refresh before continuing.');
+		}
+		const history = pack.retiredExecutionRuns || [];
+		if (history.length >= RETIRED_EXECUTION_RUN_LIMIT) {
+			throw new ChallengeStateError('Local retirement history is full. Export a workspace backup; no saved history was removed.');
+		}
+		pack.retiredExecutionRuns = [...history, {
+			reference: structuredClone(reference), retiredAt: new Date().toISOString(), reason: 'server_not_found'
+		}];
+		delete pack.executionRun;
+	}, signal);
+	const pack = written?.packs.find((candidate) => candidate.id === packId);
+	if (!pack) throw new ChallengeStateError('The historical request was not retired locally.');
 	return pack;
 }
 
@@ -1255,7 +1340,7 @@ function normalizedCreatePackFields(payload: Record<string, unknown>): Normalize
 export function packPathSignature(pack: DemoPack): string {
 	return JSON.stringify({
 		fields: Object.fromEntries(FORWARD_PATH_FIELDS.map((field) => [field, pack[field] ?? ''])),
-		memory: pack.memory ?? [], sources: pack.sources ?? []
+		memory: pack.memory ?? [], sources: pack.sources ?? [], executionInputs: pack.executionInputs ?? null
 	});
 }
 
@@ -1268,14 +1353,22 @@ export async function savePackPath(
 		const pack = draft.packs.find((item) => item.id === packId);
 		if (!pack) throw new ChallengeStateError('Work item was not found.');
 		const before = packPathSignature(pack);
-		const activityFields = [...FORWARD_PATH_FIELDS, 'memory', 'sources'] as const;
-		const beforeValues = new Map(activityFields.map((field) => [field, JSON.stringify(pack[field] ?? (field === 'memory' || field === 'sources' ? [] : ''))]));
+		const activityFields = [...FORWARD_PATH_FIELDS, 'memory', 'sources', 'executionInputs'] as const;
+		const beforeValues = new Map(activityFields.map((field) => [field, JSON.stringify(pack[field] ?? (field === 'executionInputs' ? null : field === 'memory' || field === 'sources' ? [] : ''))]));
 		if (expectedPathSignature !== undefined && before !== expectedPathSignature) {
 			throw new ChallengeStateError('Saved work changed while you were editing. Review it before saving.');
 		}
 		const statusBefore = normalizeText(pack.status, 40);
-		const allowed = new Set<string>([...FORWARD_PATH_FIELDS, 'memory', 'sources']);
+		const allowed = new Set<string>([...FORWARD_PATH_FIELDS, 'memory', 'sources', 'executionInputs']);
 		for (const field of Object.keys(values)) if (!allowed.has(field)) throw new ChallengeStateError(`Unsupported work detail: ${field}.`);
+		if (Object.hasOwn(values, 'executionInputs')) {
+			const reference = pack.executionRun;
+			if (pack.archived || pack.status === 'done') throw new ChallengeStateError('Only open tasks can change tool inputs.');
+			if (reference && (!reference.record || !TERMINAL_RUN_STATUSES.includes(reference.record.status))) {
+				throw new ChallengeStateError('Refresh or finish the current run before changing its input requirements.');
+			}
+			pack.executionInputs = validateToolInputRequirements(values.executionInputs);
+		}
 
 		for (const field of FORWARD_PATH_FIELDS) {
 			if (!Object.prototype.hasOwnProperty.call(values, field)) continue;
@@ -1324,7 +1417,7 @@ export async function savePackPath(
 			unblockedWorkIds = unblockPacksBlockedBy(draft.packs, pack, { onActivity: appendActivity, workTitle }).map((item) => item.id);
 		}
 		if (NEBIUS_EDITION) {
-			const changedCount = activityFields.filter((field) => beforeValues.get(field) !== JSON.stringify(pack[field] ?? (field === 'memory' || field === 'sources' ? [] : ''))).length;
+			const changedCount = activityFields.filter((field) => beforeValues.get(field) !== JSON.stringify(pack[field] ?? (field === 'executionInputs' ? null : field === 'memory' || field === 'sources' ? [] : ''))).length;
 			if (changedCount) appendActivity(pack, `Saved changes to ${changedCount} task ${changedCount === 1 ? 'field' : 'fields'}.`);
 		}
 		const summary = [

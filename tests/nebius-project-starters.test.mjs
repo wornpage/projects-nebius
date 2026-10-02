@@ -80,6 +80,7 @@ test('checker criteria require input errors, result invalidation and actual hand
   assert.match(task.doneWhen, /actual validate and handleMessage functions/u);
   assert.ok(task.doneWhen.length <= 1000);
   assert.ok(task.purpose.length <= 1000);
+  assert.deepEqual(task.executionInputs, [{ id: 'input-json', format: 'json' }]);
 });
 
 test('starter data has only pure validation dependencies and no state or provider access', () => {

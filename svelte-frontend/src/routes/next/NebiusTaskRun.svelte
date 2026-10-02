@@ -1,15 +1,16 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
-	import { WornAlert, WornBadge, WornButton, WornTimeline } from '$lib/components';
+	import { onDestroy, onMount, tick } from 'svelte';
+	import { WornAlert, WornBadge, WornButton, WornDialog, WornTimeline } from '$lib/components';
 	import {
 		buildExecutionRunInput,
 		ChallengeStateError,
 		clearUnsentExecutionRunReference,
 		executionRunMatchesCurrentTask,
 		reserveExecutionRunReference,
+		retireUnavailableLegacyExecutionRun,
 		saveExecutionRunRecord
 	} from '$lib/demo-client';
-	import type { DemoPack } from '$lib/demo-workflow';
+	import type { DemoExecutionRunReference, DemoPack } from '$lib/demo-workflow';
 	import {
 		cancelRun,
 		createRunCredentials,
@@ -19,10 +20,10 @@
 		startRun,
 		type RunConfigState
 	} from '$lib/nebius-execution-client';
-	import { TERMINAL_RUN_STATUSES, type RunConfig, type RunInput } from '$lib/nebius-execution-contract.mjs';
+	import { RUN_VERSION, TERMINAL_RUN_STATUSES, type RunConfig, type RunInput } from '$lib/nebius-execution-contract.mjs';
 
-	type Props = { pack: DemoPack; disabled?: boolean; disabledReason?: string };
-	let { pack, disabled = false, disabledReason = '' }: Props = $props();
+	type Props = { pack: DemoPack; disabled?: boolean; disabledReason?: string; onEditInputs?: () => void };
+	let { pack, disabled = false, disabledReason = '', onEditInputs }: Props = $props();
 
 	let configState = $state<'loading' | 'available' | 'unavailable' | 'error'>('loading');
 	let config = $state<RunConfig | null>(null);
@@ -31,6 +32,10 @@
 	let requestLabel = $state('');
 	let error = $state('');
 	let notice = $state('');
+	let notFoundReference = $state<{ id: string; key: string } | null>(null);
+	let retirementOpen = $state(false);
+	let reviewedRetirement = $state.raw<DemoExecutionRunReference | null>(null);
+	let retirementRequest: AbortController | null = null;
 	let disposed = false;
 	let actionRevision = 0;
 	let active: AbortController | null = null;
@@ -53,11 +58,15 @@
 	});
 	let currentRunBlocksStart = $derived(Boolean(reference && (!record || !terminal)));
 	let startDisabled = $derived(requestBusy || configState !== 'available' || Boolean(eligibilityError) || currentRunBlocksStart);
-	let resumeDisabled = $derived(requestBusy || disabled || configState !== 'available' || !reference || Boolean(record) || !executionRunMatchesCurrentTask(pack, reference));
+	let resumeDisabled = $derived(requestBusy || disabled || configState !== 'available' || !reference || reference.input.version !== RUN_VERSION || Boolean(record) || !executionRunMatchesCurrentTask(pack, reference));
+	let canReviewRetirement = $derived(Boolean(reference && !record && reference.input.version === 'browser-tool.v1' &&
+		notFoundReference?.id === reference.id && notFoundReference.key === reference.key));
 	let statusLabel = $derived(record
 		? record.status.charAt(0).toUpperCase() + record.status.slice(1)
 		: reference ? 'Uncertain' : configState === 'unavailable' ? 'Preview only' : 'Not started');
-	let latestEvent = $derived(record?.events.at(-1)?.message || (reference && !record ? 'The start response is unknown. Refresh or explicitly resume this saved request.' : ''));
+	let latestEvent = $derived(record?.events.at(-1)?.message || (reference && !record ? reference.input.version === RUN_VERSION
+		? 'The start response is unknown. Refresh or explicitly resume this saved request.'
+		: 'The outcome is unknown. Refresh this historical request; its old input cannot start a new run.' : ''));
 	let runEvents = $derived((record?.events ?? []).slice().reverse().map(event => ({ date: event.at, title: event.message })));
 
 	function clearPolling() {
@@ -124,6 +133,7 @@
 		try {
 			const next = await readRun(runId, runKey, capturedPackId);
 			if (!isCurrentRun(capturedPackId, runId, runKey)) return;
+			notFoundReference = null;
 			await applyRecord(runId, runKey, next);
 			if (isCurrentRun(capturedPackId, runId, runKey) && actionRevision === capturedActionRevision
 				&& options.uncertaintyNotice !== undefined && notice === options.uncertaintyNotice) {
@@ -131,6 +141,8 @@
 			}
 		} catch (cause) {
 			if (isCurrentRun(capturedPackId, runId, runKey) && actionRevision === capturedActionRevision) {
+				notFoundReference = cause instanceof NebiusRunClientError && cause.status === 404 && cause.code === 'not_found'
+					? { id: runId, key: runKey } : null;
 				error = cause instanceof Error ? cause.message : 'The saved run could not be refreshed.';
 			}
 		} finally {
@@ -186,6 +198,46 @@
 				requestBusy = false;
 				requestLabel = '';
 			}
+		}
+	}
+
+	function reviewLocalRetirement() {
+		if (disabled || requestBusy || !canReviewRetirement || !reference) return;
+		reviewedRetirement = structuredClone(reference);
+		retirementOpen = true;
+	}
+
+	async function confirmLocalRetirement() {
+		if (disabled || requestBusy || !retirementOpen || !reviewedRetirement) return;
+		const capturedPackId = pack.id;
+		const reviewed = structuredClone(reviewedRetirement);
+		if (!isCurrentRun(capturedPackId, reviewed.id, reviewed.key)) return;
+		const controller = new AbortController();
+		retirementRequest = controller;
+		actionRevision += 1;
+		requestBusy = true;
+		requestLabel = 'Verifying retirement…';
+		error = '';
+		notice = '';
+		clearPolling();
+		try {
+			await retireUnavailableLegacyExecutionRun(capturedPackId, reviewed, true, controller.signal);
+			if (disposed || pack.id !== capturedPackId) return;
+			notFoundReference = null;
+			retirementOpen = false;
+			reviewedRetirement = null;
+			notice = 'Local reference retired. The original request is preserved below; its outcome remains unknown.';
+			await tick();
+			document.getElementById('nebius-task-run')?.focus();
+		} catch (cause) {
+			if (disposed || controller.signal.aborted) return;
+			error = cause instanceof Error ? cause.message : 'The historical request could not be retired locally.';
+		} finally {
+			if (!disposed) {
+				requestBusy = false;
+				requestLabel = '';
+			}
+			if (retirementRequest === controller) retirementRequest = null;
 		}
 	}
 
@@ -259,11 +311,12 @@
 	onDestroy(() => {
 		disposed = true;
 		active?.abort();
+		retirementRequest?.abort();
 		clearPolling();
 	});
 </script>
 
-<section id="nebius-task-run" class="task-run" aria-labelledby="task-run-title" data-nebius-task-run>
+<section id="nebius-task-run" class="task-run" aria-labelledby="task-run-title" tabindex="-1" data-nebius-task-run>
 	<div class="task-run-head">
 		<div>
 			<p class="task-run-kicker">Nebius Sandbox</p>
@@ -278,8 +331,15 @@
 		<li><span aria-hidden="true">3</span><div><strong>Review</strong><small>Preview and decide what to keep</small></div></li>
 	</ol>
 	<p class="task-run-muted">Checks are written by the model. You decide whether to save evidence or mark the task done.</p>
+	<details class="task-run-input" data-run-input-requirements>
+		<summary>Task input requirements</summary>
+		{#if pack.executionInputs == null}<p>Formats are not specified by this task. The model chooses them.</p>
+		{:else if !pack.executionInputs.length}<p>This tool must have no text inputs.</p>
+		{:else}<ul>{#each pack.executionInputs as input (input.id)}<li><code>{input.id}</code>: {input.format === 'json' ? 'JSON' : 'plain text'}</li>{/each}</ul><p>The generated tool must use these exact inputs and formats.</p>{/if}
+		{#if onEditInputs}<WornButton type="button" size="sm" disabled={disabled || requestBusy || currentRunBlocksStart || pack.status === 'done' || Boolean(pack.archived)} onclick={onEditInputs}>Edit task inputs</WornButton>{/if}
+	</details>
 	{#if configState === 'unavailable' && !reference}
-		<p class="task-run-muted"><strong>Preview only — execution disabled.</strong> No tool or Sandbox result has been generated for this task.</p>
+		<p class="task-run-muted"><strong>Preview only — execution disabled.</strong> No current tool or Sandbox result is saved for this task.</p>
 		<details class="task-run-input">
 			<summary>What Sandbox will do</summary>
 			<p>Validate the generated files, then run their Node checks in an isolated Nebius Sandbox. One source or check failure can be repaired within the two-call limit. Review the files, responses and check output afterward.</p>
@@ -311,6 +371,8 @@
 	{#if notice}<WornAlert tone="warning">{notice}</WornAlert>{/if}
 	{#if error || record?.error}<WornAlert tone="danger">{error || record?.error}</WornAlert>{/if}
 	{#if reference}
+		{#if reference.input.version !== RUN_VERSION}<p class="task-run-muted">This historical request has no task-owned input specification. {record ? 'Its saved result remains available.' : 'Its outcome is unknown.'} It cannot be restarted with the old request.</p>{/if}
+		{#if record && !executionRunMatchesCurrentTask(pack, reference)}<p class="task-run-muted">This saved run used earlier task requirements. Review it as history; a new run is required for the current task.</p>{/if}
 		<div class="task-run-progress" aria-live="polite">
 			<span>Run {reference.id}</span>
 			<strong>{requestLabel || statusLabel}</strong>
@@ -331,6 +393,19 @@
 			</details>
 		{/if}
 	{/if}
+	{#if pack.retiredExecutionRuns?.length}
+		<details class="task-run-input" data-retired-run-history>
+			<summary>Retired local requests · {pack.retiredExecutionRuns.length}</summary>
+			<p>These requests had no server receipt when checked. Their outcomes remain unknown. The original snapshots are retained in your workspace backup.</p>
+			{#each pack.retiredExecutionRuns as entry (entry.reference.id)}
+				<details class="task-run-input">
+					<summary>Run {entry.reference.id}</summary>
+					<p>Retired locally {new Date(entry.retiredAt).toLocaleString()} · server receipt not found · outcome unknown</p>
+					<pre>{JSON.stringify(entry.reference.input, null, 2)}</pre>
+				</details>
+			{/each}
+		</details>
+	{/if}
 
 	<div class="task-run-actions">
 		<WornButton type="button" variant="primary" disabled={startDisabled} onclick={runTask}>{requestLabel === 'Starting…' ? requestLabel : 'Run this task'}</WornButton>
@@ -338,6 +413,7 @@
 			<WornButton type="button" disabled={requestBusy} onclick={() => refreshKnownRun()}>{requestLabel === 'Refreshing…' ? requestLabel : 'Refresh saved run'}</WornButton>
 			{#if !record}<WornButton type="button" disabled={resumeDisabled} onclick={resumeSavedRequest}>{requestLabel === 'Resuming…' ? requestLabel : 'Resume saved request'}</WornButton>{/if}
 			<WornButton type="button" disabled={requestBusy} onclick={cancelCurrentRun}>{requestLabel === 'Cancelling…' ? requestLabel : 'Cancel'}</WornButton>
+			{#if canReviewRetirement}<WornButton type="button" disabled={disabled || requestBusy} onclick={reviewLocalRetirement}>Review local retirement</WornButton>{/if}
 		{/if}
 		{#if record?.status === 'ready'}
 			<WornButton href={`/review?focus=${encodeURIComponent(pack.id)}`}>Review result</WornButton>
@@ -345,8 +421,22 @@
 	</div>
 </section>
 
+<WornDialog bind:open={retirementOpen} title="Retire unavailable local request" size="sm" dismissible={!requestBusy} onclose={() => { reviewedRetirement = null; }}>
+	{#if reviewedRetirement}
+		<p>The server did not find run <code>{reviewedRetirement.id}</code>. Its outcome is unknown.</p>
+		<p>Retiring releases this task's local reservation and preserves the original request in history. It does not confirm cancellation or start another run. The server is checked again before saving.</p>
+		<details class="task-run-input"><summary>Original request snapshot</summary><pre>{JSON.stringify(reviewedRetirement.input, null, 2)}</pre></details>
+		{#if error}<WornAlert tone="danger">{error}</WornAlert>{/if}
+		<div class="task-run-actions">
+			<WornButton type="button" disabled={requestBusy} onclick={() => { retirementOpen = false; reviewedRetirement = null; }}>Keep local reference</WornButton>
+			<WornButton type="button" variant="primary" disabled={disabled || requestBusy} onclick={confirmLocalRetirement}>{requestBusy ? requestLabel : 'Confirm local retirement'}</WornButton>
+		</div>
+	{/if}
+</WornDialog>
+
 <style>
 	.task-run { border: 1px solid var(--worn-border); border-radius: var(--worn-radius); display: grid; gap: 16px; min-inline-size: 0; padding: 16px; }
+	.task-run:focus-visible { outline: 2px solid var(--worn-focus); outline-offset: 3px; }
 	.task-run-head { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
 	.task-run-head h2, .task-run-progress p, .task-run-scope, .task-run-input p { margin: 0; }
 	.task-run-kicker { color: var(--worn-text-muted); font-family: var(--font-typewriter); font-size: 11px; font-weight: 700; letter-spacing: .04em; margin: 0 0 3px; text-transform: uppercase; }
@@ -365,7 +455,7 @@
 	.task-run-facts span, .task-run-progress span { color: var(--worn-text-muted); font-size: 11px; }
 	.task-run-facts strong { overflow-wrap: anywhere; }
 	.task-run-input { border-top: 1px solid var(--worn-border); padding-top: 10px; }
-	.task-run-input summary { cursor: pointer; font-weight: 650; }
+	.task-run-input summary { cursor: pointer; font-weight: 650; overflow-wrap: anywhere; }
 	.task-run-input pre { background: var(--worn-bg-secondary); font-size: 12px; max-height: 320px; overflow: auto; padding: 12px; white-space: pre-wrap; }
 	.task-run-blocked { color: var(--worn-text-secondary); font-size: .875rem; margin: 0; }
 	.task-run-progress { background: var(--worn-bg-secondary); display: grid; gap: 4px; padding: 12px; }

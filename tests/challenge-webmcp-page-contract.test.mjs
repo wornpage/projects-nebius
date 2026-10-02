@@ -445,7 +445,7 @@ test('Challenge demo-state writes use a versioned envelope and explicit cross-ta
 	assert.match(demoClientSource, /function readStoredState\(\): Promise<DemoStateSnapshot \| null> \{[\s\S]*?withStateStorageLock\(readStoredStateUnlocked\)/u);
 	assert.match(demoClientSource, /nextStateEnvelope\(\{[\s\S]*?expectedRevision,[\s\S]*?state,[\s\S]*?localStorage\.setItem\(STORAGE_KEY, JSON\.stringify\(envelope\)\)/u);
 	assert.match(demoClientSource, /function withStateStorageLock<T>\([\s\S]*?withExclusiveStateStorageLock\(globalThis\.navigator\.locks, STORAGE_LOCK_NAME, operation\)/u);
-	assert.match(demoClientSource, /export async function saveBrowserState\([\s\S]*?mutate\(next\);[\s\S]*?const expectedRevision = storageRevision;[\s\S]*?withStateStorageLock\(\(\) => persistState\(next, expectedRevision\)\)[\s\S]*?replaceDemoState\(written\.state, written\.revision\)/u);
+	assert.match(demoClientSource, /export async function saveBrowserState\([\s\S]*?signal\?: AbortSignal[\s\S]*?mutate\(next\);[\s\S]*?const expectedRevision = storageRevision;[\s\S]*?withStateStorageLock\(\(\) => \{\s*signal\?\.throwIfAborted\(\);\s*return persistState\(next, expectedRevision\);\s*\}\)[\s\S]*?replaceDemoState\(written\.state, written\.revision\)/u);
 });
 
 test('wide Guide layout keeps the existing steps in the left rail beside the editor without a dead quadrant', () => {

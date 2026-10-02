@@ -1,5 +1,5 @@
 import { parse, serialize } from 'parse5';
-import { validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { validateRunFiles, validateToolInputRequirements } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 const ALLOWED_TAGS = new Set(('html head body title style main header footer nav section article aside div span p h1 h2 h3 h4 h5 h6 ul ol li dl dt dd a button input label select option optgroup textarea form fieldset legend output progress meter details summary table caption thead tbody tfoot tr th td colgroup col br hr strong em b i small s u sub sup code pre blockquote figure figcaption img time datalist').split(' '));
@@ -62,7 +62,8 @@ function sanitizedPage(html) {
 
 // Derived from the same sanitized body the browser sees. No generated script is
 // evaluated here. This manifest is trusted runner data, never a model assertion.
-export function runPageContract(rawFiles) {
+export function runPageContract(rawFiles, requiredInputFormats = null) {
+  const required = validateToolInputRequirements(requiredInputFormats);
   const files = validateRunFiles(rawFiles);
   const { body } = sanitizedPage(files.find(file => file.path === 'index.html').content);
   const elements = [], ids = new Set();
@@ -111,12 +112,25 @@ export function runPageContract(rawFiles) {
       throw new TypeError('An example-loader target must be a declared text value control.');
     }
   }
+  if (required !== null) {
+    const textual = elements.filter(element => element.textValue);
+    if (textual.length !== required.length || textual.some(element => !required.some(input => input.id === element.id))) {
+      throw new TypeError('Generated text inputs must exactly match the task-owned input IDs.');
+    }
+    for (const input of required) {
+      const element = textual.find(candidate => candidate.id === input.id);
+      if (!element || element.format !== input.format) {
+        throw new TypeError('Input ' + input.id + ' must declare data-input-format="' + input.format + '" as required by the task.');
+      }
+    }
+  }
   return { version: 1, elements };
 }
 
 /** Untrusted generated markup is never inserted into the host application. */
-export async function renderRunPreview(rawFiles) {
+export async function renderRunPreview(rawFiles, requiredInputFormats = null) {
   const files = validateRunFiles(rawFiles);
+  runPageContract(files, requiredInputFormats);
   const source = Object.fromEntries(files.map(file => [file.path, file.content]));
   const { head, body } = sanitizedPage(source['index.html']);
   // Only this fixed bridge has DOM access. Generated code runs in a Worker:

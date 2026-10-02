@@ -6,7 +6,7 @@ import { runFilesDigest, validateRunInput, validateRunIntegrity } from '../../sv
 // Do not load provider credentials, emit run records, or persist this fixture in a workspace.
 export const FIXTURE_MODEL = 'nvidia/synthetic-checker-fixture';
 export const FIXTURE_INPUT = validateRunInput({
-  version: 'browser-tool.v1', packId: 'authored-release-checker', currentStatus: 'active',
+  version: 'browser-tool.v2', packId: 'authored-release-checker', currentStatus: 'active', requiredInputFormats: null,
   pack: {
     title: 'Authored release-packet checker fixture', blocker: 'None',
     purpose: 'Check supplied packet text only; never approve or deploy a release.',

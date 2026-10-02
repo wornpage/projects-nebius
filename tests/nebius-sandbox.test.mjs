@@ -6,7 +6,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Script } from 'node:vm';
 import { CHECK_RUNNER, spawnSandbox } from '../worker/nebius-sandbox.mjs';
-import { runPageContract } from '../worker/nebius-run-preview.mjs';
+import { runPageContract, renderRunPreview } from '../worker/nebius-run-preview.mjs';
 import { authoredCheckerFiles, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
 
 // Exercise the actual trusted runner with authored fixtures only. Never execute
@@ -315,11 +315,29 @@ for (const [name, html, expected] of [
   });
 }
 
+test('task-owned format comparison is shared by preview and Sandbox before submission', async () => {
+  const required = [{ id: 'packet', format: 'json' }];
+  assert.equal(runPageContract(checkerFiles, required).elements.find(element => element.id === 'packet').format, 'json');
+  const wrong = checkerFiles.map(file => file.path === 'index.html' ? { ...file,
+    content: file.content.replace('data-input-format="json"', 'data-input-format="text"') } : file);
+  assert.throws(() => runPageContract(wrong, required), /must declare data-input-format="json"/u);
+  await assert.rejects(renderRunPreview(wrong, required), /must declare data-input-format="json"/u);
+  assert.throws(() => runPageContract(checkerFiles, []), /exactly match/u);
+  assert.throws(() => runPageContract(checkerFiles, [{ id: 'other', format: 'json' }]), /exactly match/u);
+  assert.doesNotThrow(() => runPageContract(wrong, null));
+  let submissions = 0;
+  await assert.rejects(spawnSandbox({ iamToken: 'synthetic', projectId: 'synthetic', imageId: 'synthetic' }, wrong, {
+    requiredInputFormats: required, fetcher: async () => { submissions++; assert.fail('No mismatched source may reach Sandbox.'); },
+  }), /must declare data-input-format="json"/u);
+  assert.equal(submissions, 0);
+});
+
 test('sandbox submission carries the actual page contract without adding an operation or changing limits', async () => {
   let requests = 0;
   const operationId = '00000000-0000-4000-8000-000000000010';
   const imageId = '00000000-0000-4000-8000-000000000011';
   const actual = await spawnSandbox({iamToken:'synthetic',projectId:'synthetic',imageId}, checkerFiles, {
+    requiredInputFormats: [{ id: 'packet', format: 'json' }],
     fetcher: async (url, options) => {
       requests += 1;
       const body = JSON.parse(options.body);

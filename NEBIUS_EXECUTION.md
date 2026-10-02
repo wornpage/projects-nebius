@@ -77,22 +77,22 @@ Generated preview responses retain their own `no-referrer` policy and opaque
 sandbox. The WebMCP build retains its original host-page policy.
 
 JSON run requests, including configuration, send
-`X-Nebius-Run-Format: run-diagnostics.v2`. The shared browser client owns this
+`X-Nebius-Run-Format: run-diagnostics.v3`. The shared browser client owns this
 header. An older or missing format is rejected with a clear page-reload message
 before request admission. This keeps an already-open page from starting a run
 whose diagnostic fields its old parser cannot read. The HTML preview form
 still submits only its run key.
 
-RunInput has exactly version, packId, pack (the existing five-field task
+New RunInput uses `browser-tool.v2` and has exactly version, packId, pack (the existing five-field task
 projection), currentStatus, context (zero to three selected notes/sources),
-requestedModel and consent. Only draft/active tasks with completion criteria
+requestedModel, requiredInputFormats and consent. Only draft/active tasks with completion criteria
 can start. The browser additionally refuses archived, blocked, dependent,
 dirty or pending-approval tasks. The server owns the submitted snapshot, not
 the browser workspace. Saved input is sent to the model; rejected final text
 and its diagnostic, or validated files and check output, are also sent for the
 single repair when needed.
 
-RunRecord has id, version, packId, pack, currentStatus, context, requestedModel,
+New RunRecord has id, version, packId, pack, currentStatus, context, requestedModel, requiredInputFormats,
 status, attempt, createdAt, updatedAt, events, files, checks, usage, generationAttempts and error.
 The record also includes `failure: {code, stage} | null`. Its readable `error`
 message stays separate. Identified final responses have a separate bounded
@@ -203,6 +203,36 @@ disclosure so these declarations can be reviewed against the task. It never
 changes stored source or retroactively upgrades JSON qualification.
 Label text and task wording are not used to infer input types or loader roles.
 
+### Task-owned input requirements
+
+New runs copy the task's reviewed `executionInputs` into the immutable
+`requiredInputFormats` snapshot. There are three explicit meanings:
+
+| Saved requirement | Meaning |
+| --- | --- |
+| `null` | Input formats are unspecified; declarations remain model choices. |
+| `[]` | The tool must have no textual value controls. |
+| `[{"id":"input-json","format":"json"}]` | The complete set of textual value controls, with exact IDs and formats. |
+
+At most eight unique IDs are accepted. IDs start with a letter and contain
+only letters, digits, underscores and hyphens, up to 80 characters. Formats
+are `text` or `json`. Checkbox and action controls are outside this textual
+set. This metadata does not certify field semantics or tool correctness.
+
+The existing task editor reviews and saves input changes through
+`savePackPath`, with stale-state and unfinished-run guards. A proposed project
+may include `executionInputs`; approval preserves the explicit value. Older
+tasks without the field remain unspecified. The new checker starter specifies
+`input-json` as JSON. Creating that starter does not modify existing tasks.
+
+Initial generation, both repair paths, preview admission and Sandbox
+preparation use the same saved requirement. Specified IDs and formats must
+match the complete textual control set: changing JSON to text, adding a dummy
+JSON input, or omitting a required control is rejected before execution. The
+existing second-call repair can correct a mismatch within the same limits.
+Current-task matching also includes these requirements before run evidence
+can be attached. Preview rendering never rewrites a retained declaration.
+
 stdout records assertion/actual-function-call counts, observed/required control
 events and post-output edits, JSON-declared/all example loaders, and inputs without a
 declared format. These separate denominators describe structural observations,
@@ -224,7 +254,7 @@ sticky even if caught. Source line numbers still identify the original body.
 
 ### Retained generation responses and bounded repair
 
-The run format is `run-diagnostics.v2`. Older clients must reload before starting
+The current run format is `run-diagnostics.v3`. Older clients must reload before starting
 a run. Historical records with no generation evidence normalize to an empty
 history; their missing source and causes remain unknown.
 
@@ -484,19 +514,38 @@ synthetic parent workspace or requiring compiled UI assets.
 ### Saved-record compatibility
 
 Compatibility retained:
-- Consumer: existing `browser-tool.v1` run records and exported workspace backups,
-  including the two retained failed attempts from September 28.
-- Owner: `validateRunRecord` and the existing Durable Object load path.
-- Removal condition: retire v1 backup imports through an explicit migration
-  after all retained v1 runs have expired or been migrated.
-- Test coverage: the shared validator and orchestration tests cover absent
-  historical generation evidence, usage coverage and contradictory new evidence.
+- Consumer: retained `browser-tool.v1` run records, local references and exported
+  workspace backups, including earlier failed attempts and the successful checker.
+- Owner: the shared input/record validators, the existing browser-state owner and
+  Durable Object load path. New request writers use `browser-tool.v2` only.
+- Removal condition: the owner explicitly retires or migrates every retained v1
+  record/reference and imported backup while preserving its evidence. Server
+  expiry alone cannot retire copies in exported backups.
+- Test coverage: unchanged v1 snapshot reads, absent historical diagnostics,
+  denied legacy starts/resume and queued provider submission, current-task
+  requirement matching, and reviewed local retirement with preserved history.
 - Why hard cutover is unsafe now: rejecting those records would hide the user's
   saved failures and break existing backups. Their missing diagnostics normalize
   to null and unknown counts remain unknown. New writes use the current shape.
 
 The server has one active response shape. Cached older clients must reload
 through the format gate; no older response serializer is retained.
+
+A v1 request cannot initiate a new model or Sandbox submission. An already
+submitted operation can still be observed by its existing ID. Old receipts
+retain their original files, declarations, checks and unknown coverage.
+
+An unresolved v1 local reference can be retired only after a parsed
+`404:not_found` observation, review of its original snapshot, explicit owner
+confirmation and a fresh authenticated server read. The state owner verifies
+the exact ID/key/input and absent local record, preserves the original reference
+with an `outcome unknown` interpretation, then releases the local reservation.
+Wrong credentials, other errors, changed references and aborted writes cannot
+retire it. This does not confirm remote cancellation or automatically start a
+replacement. Up to eight retired references are retained per task; full
+history refuses another retirement without deleting or truncating entries.
+History survives workspace backup export/import and remains visibly separate
+from an actual successful run.
 
 ## Enable execution locally
 
@@ -549,6 +598,27 @@ announcements, readable control sizes and keyboard focus. The original declared
 JSON-loader coverage remains 0/2.
 See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
 The original failures below remain historical evidence. Public hosting is paused.
+
+### Input-requirement qualification — October 1, 2026
+
+The task-owned input slice passed 620/620 Nebius tests and 140/140 preserved
+WebMCP contract tests on the pinned Node 24.18.0 runtime. Svelte reported zero
+errors and warnings, and the Nebius static build completed. Independent
+read-only source review accepted the input boundary and legacy retirement path.
+
+Actual CUA keyboard interaction in a separate loopback workspace, with provider
+execution disabled, verified review/keep/confirm retirement, exact snapshot
+preservation in the downloaded backup, input add/remove focus, explicit no-input
+and JSON saving, invalid-ID rejection, unsaved-navigation protection and reload
+persistence. The editor and history fit 375 px and 1280 px without horizontal
+overflow. The legacy reference was a labelled synthetic fixture; this is local
+workflow evidence without a provider receipt. An initial Svelte snapshot-cloning
+error was observed and corrected before confirmation passed.
+
+Fresh live v2 generation and task-semantic browser qualification are still
+required. The successful v1 checker's original source and JSON-loader 0/2
+remain unchanged. Projects Acceptance returned an internal error, so no formal
+acceptance receipt was created for this slice.
 
 ### Historical attempts — September 28, 2026
 

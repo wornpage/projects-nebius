@@ -1,7 +1,8 @@
 import { isRecord, validateTask, validateSelectedContext, validModelId } from './nebius-contract.mjs';
 
-export const RUN_VERSION = 'browser-tool.v1';
-export const RUN_RECORD_FORMAT = 'run-diagnostics.v2';
+export const RUN_VERSION = 'browser-tool.v2';
+export const RUN_RECORD_FORMAT = 'run-diagnostics.v3';
+export const TOOL_INPUT_LIMITS = Object.freeze({ items: 8, id: 80 });
 // Serialized byte limits include JSON escaping. Leave room below the client's
 // 512 KiB response ceiling for the enclosing API object.
 export const RUN_EVIDENCE_LIMITS = Object.freeze({ responseBytes: 65536, recordBytes: 491520 });
@@ -21,16 +22,37 @@ const integer = (value, maximum) => Number.isSafeInteger(value) && value >= 0 &&
 export const runJsonBytes = value => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 const fail = message => { throw new TypeError(message); };
 
+// null is an explicit unspecified requirement, never a guessed format. The
+// task owner can instead supply the complete set, including [] for no inputs.
+export function validateToolInputRequirements(value) {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.length > TOOL_INPUT_LIMITS.items) fail('Specify at most eight tool inputs, or leave formats unspecified.');
+  const ids = new Set();
+  return Array.from(value, input => {
+    if (!exact(input, ['id', 'format']) || typeof input.id !== 'string'
+      || !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/u.test(input.id) || ids.has(input.id)
+      || !['text', 'json'].includes(input.format)) fail('Each tool input needs a unique ID starting with a letter (up to 80 letters, digits, underscores or hyphens) and a text or JSON format.');
+    ids.add(input.id);
+    return { id: input.id, format: input.format };
+  });
+}
+
 export function validateRunInput(value) {
-  if (!exact(value, ['version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'consent'])
-    || value.version !== RUN_VERSION || value.consent !== true
+  const legacy = isRecord(value) && value.version === 'browser-tool.v1';
+  const keys = ['version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'consent'];
+  if (!legacy) keys.push('requiredInputFormats');
+  if (!exact(value, keys)
+    || ![RUN_VERSION, 'browser-tool.v1'].includes(value.version) || value.consent !== true
     || typeof value.packId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}(?::[a-z][a-z0-9_-]{0,39})?$/u.test(value.packId)
     || !['draft', 'active'].includes(value.currentStatus) || !validModelId(value.requestedModel)) fail('Choose an open task and review the run settings.');
   const pack = validateTask(value.pack);
   if (!pack.doneWhen.trim() || !pack.nextStep.trim()) fail('Add a next step and completion criteria before running this task.');
   if (pack.blocker.trim() && pack.blocker.trim().toLowerCase() !== 'none') fail('Resolve this task’s blocker before running it.');
-  return { version: RUN_VERSION, packId: value.packId, pack, currentStatus: value.currentStatus,
-    context: validateSelectedContext(value.context), requestedModel: value.requestedModel, consent: true };
+  // Retained v1 snapshots and backups keep their original shape and digest.
+  // Current writers and start admission use v2; this reader infers no metadata.
+  return { version: value.version, packId: value.packId, pack, currentStatus: value.currentStatus,
+    context: validateSelectedContext(value.context), requestedModel: value.requestedModel,
+    ...(!legacy ? { requiredInputFormats: validateToolInputRequirements(value.requiredInputFormats) } : {}), consent: true };
 }
 
 export function validateRunFiles(value) {
@@ -53,12 +75,14 @@ export function validateRunRecord(value) {
   const keys = ['id', 'version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'status', 'attempt', 'createdAt', 'updatedAt', 'events', 'files', 'checks', 'usage', 'error'];
   if (isRecord(value) && Object.hasOwn(value, 'failure')) keys.push('failure');
   if (isRecord(value) && Object.hasOwn(value, 'generationAttempts')) keys.push('generationAttempts');
+  if (isRecord(value) && value.version === RUN_VERSION) keys.push('requiredInputFormats');
   if (!exact(value, keys)
     || !validRunId(value.id) || !RUN_STATUSES.includes(value.status) || !integer(value.attempt, 2)
     || !iso(value.createdAt) || !iso(value.updatedAt) || Date.parse(value.updatedAt) < Date.parse(value.createdAt)
     || !(value.error === null || text(value.error, 500))) fail('The saved execution record is invalid.');
   const input = validateRunInput({ version: value.version, packId: value.packId, pack: value.pack,
-    currentStatus: value.currentStatus, context: value.context, requestedModel: value.requestedModel, consent: true });
+    currentStatus: value.currentStatus, context: value.context, requestedModel: value.requestedModel,
+    ...(value.version === RUN_VERSION ? { requiredInputFormats: value.requiredInputFormats } : {}), consent: true });
   if (!Array.isArray(value.events) || value.events.length > 24 || value.events.some(event => !exact(event, ['at', 'message']) || !iso(event.at) || !text(event.message, 240))) fail('The execution history is invalid.');
   if (!Array.isArray(value.files)) fail('The execution files are invalid.');
   const files = value.files.length ? validateRunFiles(value.files) : [];
@@ -114,7 +138,8 @@ export function isRunConfig(value) {
 
 export function runSnapshotFromRecord(record) {
   const { consent, ...snapshot } = validateRunInput({ version: record.version, packId: record.packId, pack: record.pack, currentStatus: record.currentStatus,
-    context: record.context, requestedModel: record.requestedModel, consent: true });
+    context: record.context, requestedModel: record.requestedModel,
+    ...(record.version === RUN_VERSION ? { requiredInputFormats: record.requiredInputFormats } : {}), consent: true });
   return snapshot;
 }
 

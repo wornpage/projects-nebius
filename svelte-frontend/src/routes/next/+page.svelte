@@ -235,7 +235,12 @@
 		if (target instanceof HTMLDetailsElement) {
 			target.open = true;
 			target.querySelector('summary')?.focus();
-		} else target?.focus();
+		} else {
+			for (let parent = target?.parentElement; parent; parent = parent.parentElement) {
+				if (parent instanceof HTMLDetailsElement) parent.open = true;
+			}
+			await tick(); target?.focus();
+		}
 		target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 	}
 	let terminalDraftAvailable = $derived(nextDraftTerminalAvailable(draftRevision, {
@@ -756,6 +761,7 @@
 					{pack}
 					disabled={routeBusy || Boolean(pendingDraft) || editorChoiceStaged || nebEditorDirty || nebUpdateDirty || nebReviewDirty || nebReviewBusy}
 					disabledReason={taskBlockingState?.reason || (routeUpdating ? 'Wait for the current task change to finish saving.' : '')}
+					onEditInputs={() => void focusTaskResolution('nebius-task-input-scope')}
 				/>
 			{/key}
 			</div>

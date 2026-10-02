@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { FIXTURE_INPUT, FIXTURE_MODEL, authoredCheckerFiles, nativeFileBlocks } from './fixtures/nebius-release-checker.mjs';
-import { RUN_RECORD_FORMAT, RUN_EVIDENCE_LIMITS, runJsonBytes, validateRunIntegrity, validateRunRecord } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { RUN_VERSION, RUN_RECORD_FORMAT, RUN_EVIDENCE_LIMITS, runJsonBytes, runSnapshotFromRecord, validateRunInput, validateToolInputRequirements, validateRunIntegrity, validateRunRecord } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 // Import the actual orchestration and provider parsers, replacing only the
 // platform base class, storage, and HTTP transport. No credentials or generated
@@ -31,7 +31,7 @@ function completion(content, mutate = () => {}) {
   return Response.json(raw);
 }
 
-async function harness(t, { responses = [fixtureText()], exits = [0], reserve = () => true, onModel = async () => {}, onSandbox = async () => {} } = {}) {
+async function harness(t, { input = FIXTURE_INPUT, responses = [fixtureText()], exits = [0], reserve = () => true, onModel = async () => {}, onSandbox = async () => {} } = {}) {
   const data = new Map(); let alarmAt = null;
   const storage = {
     async get(name) { return structuredClone(data.get(name)); },
@@ -75,7 +75,7 @@ async function harness(t, { responses = [fixtureText()], exits = [0], reserve = 
     if (operation !== -1 && options.method === 'DELETE') return new Response(null, { status: 202 });
     assert.fail('Unmocked network request.');
   });
-  const started = await current().startAdmitted(id, FIXTURE_INPUT, key, admission, 20);
+  const started = await current().startAdmitted(id, input, key, admission, 20);
   assert.equal(started.ok, true);
   return { storage, env, current, calls, reservations,
     counts: () => ({ model: modelCount, sandbox: sandboxCount }),
@@ -191,7 +191,7 @@ test('new textual inputs without a declared format use the existing bounded sour
   assert.deepEqual(h.counts(), { model: 2, sandbox: 1 });
 });
 
-test('an explicit text declaration is preserved rather than inferred from a JSON task', async t => {
+test('an unspecified task preserves a text declaration rather than inferring JSON from prose', async t => {
   const files = authoredCheckerFiles();
   files[0].content = files[0].content.replace('data-input-format="json"', 'data-input-format="text"');
   const h = await harness(t, { responses: [nativeFileBlocks(files)] });
@@ -200,6 +200,136 @@ test('an explicit text declaration is preserved rather than inferred from a JSON
   assert.match(run.files[0].content, /data-input-format="text"/u);
   assert.doesNotMatch(run.files[0].content, /data-input-format="json"/u);
   assert.deepEqual(h.counts(), { model: 1, sandbox: 1 });
+});
+
+test('task-owned input requirements distinguish unspecified, empty and complete formats', () => {
+  assert.equal(validateToolInputRequirements(null), null);
+  assert.deepEqual(validateToolInputRequirements([]), []);
+  const original = [{ id: 'packet', format: 'json' }, { id: 'notes', format: 'text' }];
+  const validated = validateToolInputRequirements(original);
+  assert.deepEqual(validated, original);
+  validated[0].id = 'changed';
+  assert.equal(original[0].id, 'packet');
+  for (const value of [undefined, {}, 'json', Array(1), [{ id: 'packet', format: 'JSON' }],
+    [{ id: '#packet', format: 'json' }], [{ id: 'x'.repeat(81), format: 'text' }],
+    [{ id: 'packet', format: 'json', extra: true }], [{ id: 'packet', format: 'json' }, { id: 'packet', format: 'text' }],
+    Array.from({ length: 9 }, (_, index) => ({ id: 'input' + index, format: 'text' }))]) {
+    assert.throws(() => validateToolInputRequirements(value));
+  }
+  const missing = { ...FIXTURE_INPUT }; delete missing.requiredInputFormats;
+  assert.throws(() => validateRunInput(missing));
+  const legacy = { ...missing, version: 'browser-tool.v1' };
+  assert.deepEqual(validateRunInput(legacy), legacy);
+  assert.throws(() => validateRunInput({ ...legacy, requiredInputFormats: null }));
+});
+
+test('a JSON requirement rejects a text downgrade before Sandbox and repairs with the same immutable specification', async t => {
+  const input = { ...FIXTURE_INPUT, requiredInputFormats: [{ id: 'packet', format: 'json' }] };
+  const { consent, ...snapshot } = input;
+  const files = authoredCheckerFiles();
+  files[0].content = files[0].content.replace('data-input-format="json"', 'data-input-format="text"');
+  const h = await harness(t, { input, responses: [nativeFileBlocks(files), fixtureText()], onModel: ({ body }) => {
+    assert.ok(body.messages[1].content.startsWith('Reviewed task input (untrusted data):\n' + JSON.stringify(snapshot, null, 2)));
+    assert.match(body.messages[0].content, /task-owned input specification/u);
+  }, onSandbox: ({ body }) => {
+    const contract = JSON.parse(Buffer.from(body.stdin.value, 'base64').toString('utf8')).pageContract;
+    assert.equal(contract.elements.find(element => element.id === 'packet').format, 'json');
+  } });
+  const run = await h.finish();
+  assert.equal(run.status, 'ready');
+  assert.equal(run.version, RUN_VERSION);
+  assert.deepEqual(run.requiredInputFormats, input.requiredInputFormats);
+  assert.equal(run.generationAttempts[0].diagnostic.stage, 'preview');
+  assert.match(run.generationAttempts[0].diagnostic.message, /packet must declare data-input-format="json"/u);
+  assert.deepEqual(h.counts(), { model: 2, sandbox: 1 });
+  assert.deepEqual(run.checks.map(check => check.attempt), [2]);
+});
+
+test('two format downgrades stop without Sandbox or a third model call', async t => {
+  const input = { ...FIXTURE_INPUT, requiredInputFormats: [{ id: 'packet', format: 'json' }] };
+  const files = authoredCheckerFiles();
+  files[0].content = files[0].content.replace('data-input-format="json"', 'data-input-format="text"');
+  const h = await harness(t, { input, responses: [nativeFileBlocks(files), nativeFileBlocks(files)], exits: [] });
+  const run = await h.finish();
+  assert.equal(run.status, 'failed');
+  assert.equal(run.failure.stage, 'preview');
+  assert.deepEqual(h.counts(), { model: 2, sandbox: 0 });
+  assert.deepEqual(run.generationAttempts.map(entry => entry.outcome), ['rejected', 'rejected']);
+});
+
+test('a cancelled late response still records a rejected format mismatch without advancing', async t => {
+  const input = { ...FIXTURE_INPUT, requiredInputFormats: [{ id: 'packet', format: 'json' }] };
+  const files = authoredCheckerFiles();
+  files[0].content = files[0].content.replace('data-input-format="json"', 'data-input-format="text"');
+  const h = await harness(t, { input, responses: [nativeFileBlocks(files)], exits: [],
+    onModel: async ({ run }) => { assert.equal((await run.cancel(key)).ok, true); } });
+  const run = await h.finish();
+  assert.equal(run.status, 'cancelled');
+  assert.equal(run.generationAttempts[0].outcome, 'rejected');
+  assert.equal(run.generationAttempts[0].diagnostic.stage, 'preview');
+  assert.deepEqual(run.requiredInputFormats, input.requiredInputFormats);
+  assert.deepEqual(h.counts(), { model: 1, sandbox: 0 });
+});
+
+test('a dummy JSON control cannot substitute for the complete task-owned input set', async t => {
+  const input = { ...FIXTURE_INPUT, requiredInputFormats: [{ id: 'packet', format: 'json' }] };
+  const files = authoredCheckerFiles();
+  files[0].content += '\n<input id="dummy" data-input-format="json" hidden>';
+  const h = await harness(t, { input, responses: [nativeFileBlocks(files), fixtureText()] });
+  const run = await h.finish();
+  assert.equal(run.status, 'ready');
+  assert.match(run.generationAttempts[0].diagnostic.message, /exactly match the task-owned input IDs/u);
+  assert.deepEqual(h.counts(), { model: 2, sandbox: 1 });
+});
+
+test('an explicit no-text-input requirement rejects generated text controls', async t => {
+  const h = await harness(t, { input: { ...FIXTURE_INPUT, requiredInputFormats: [] }, responses: [fixtureText(), fixtureText()], exits: [] });
+  const run = await h.finish();
+  assert.equal(run.status, 'failed');
+  assert.deepEqual(h.counts(), { model: 2, sandbox: 0 });
+});
+
+test('input requirements belong to request identity and cannot change on an existing run', async t => {
+  const h = await harness(t);
+  const changed = { ...FIXTURE_INPUT, requiredInputFormats: [] };
+  const inspected = await h.current().inspectStart(id, changed, key);
+  assert.equal(inspected.code, 'run_conflict');
+  assert.deepEqual(h.counts(), { model: 0, sandbox: 0 });
+  assert.equal(h.reservations.length, 0);
+});
+
+test('historical v1 records retain unknown formats while legacy starts are refused', async t => {
+  const h = await harness(t);
+  const run = await h.finish();
+  run.version = 'browser-tool.v1'; delete run.requiredInputFormats;
+  const validated = await validateRunIntegrity(run);
+  assert.deepEqual(validated, run);
+  const snapshot = runSnapshotFromRecord(validated);
+  assert.equal(Object.hasOwn(snapshot, 'requiredInputFormats'), false);
+  const legacy = { ...snapshot, consent: true };
+  assert.equal((await h.current().inspectStart(id, legacy, key)).code, 'run_input_changed');
+  assert.equal((await h.current().startAdmitted(id, legacy, key, admission, 20)).code, 'run_input_changed');
+  const beforeCounts = h.counts();
+  const response = await handleNebiusRuns(new Request('http://127.0.0.1/api/nebius/runs/' + id, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-nebius-run-format': RUN_RECORD_FORMAT, authorization: 'Bearer ' + key, origin: 'http://127.0.0.1' },
+    body: JSON.stringify(legacy),
+  }), {});
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, 'run_input_changed');
+  assert.deepEqual(h.counts(), beforeCounts);
+});
+
+test('an old queued snapshot cannot resume generation through an alarm', async t => {
+  const h = await harness(t, { responses: [], exits: [] });
+  const state = await h.state();
+  state.record.version = 'browser-tool.v1'; delete state.record.requiredInputFormats;
+  await h.storage.put('state', state);
+  const observed = await h.step();
+  assert.equal(observed.phase, 'retained');
+  assert.equal(observed.record.status, 'failed');
+  assert.equal(observed.record.failure.code, 'run_input_changed');
+  assert.deepEqual(h.counts(), { model: 0, sandbox: 0 });
+  assert.equal(h.reservations.length, 0);
 });
 
 for (const attempt of [1, 2]) test(`cancellation during model response ${attempt} retains source but never advances`, async t => {
@@ -325,7 +455,7 @@ test('old response-format clients are rejected before any run admission', async 
   }), {});
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /Reload/u);
-  assert.equal(RUN_RECORD_FORMAT, 'run-diagnostics.v2');
+  assert.equal(RUN_RECORD_FORMAT, 'run-diagnostics.v3');
 });
 
 test('historical records normalize unknown generation evidence without inventing it', async t => {

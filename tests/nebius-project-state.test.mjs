@@ -33,13 +33,15 @@ function get(store) { let value; store.subscribe((next) => { value = next; })();
 
 // Execute the actual TypeScript state owner with browser facilities replaced by
 // deterministic storage and locks. No copied persistence/recovery implementation.
-function browserClient(serialized = null, { failWrite = false, failSeed = false } = {}) {
+function browserClient(serialized = null, { failWrite = false, failSeed = false, runFetch } = {}) {
 	let saved = serialized;
 	let writes = 0;
 	let removes = 0;
+	let runReads = 0;
 	let tail = Promise.resolve();
 	let pauseNext = null;
 	const context = vm.createContext({ structuredClone, crypto: webcrypto, Date, Error, TypeError, SyntaxError, console,
+		AbortController, DOMException, Headers, TextDecoder, Uint8Array, setTimeout, clearTimeout,
 		localStorage: { getItem() { return saved; }, setItem(key, value) { if (failWrite) throw new Error('Full'); saved = value; writes += 1; }, removeItem() { saved = null; removes += 1; } },
 		navigator: { locks: { request(name, options, operation) {
 			assert.equal(name, 'projects-webmcp-challenge-state-v1-write');
@@ -49,7 +51,16 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false 
 			tail = result.catch(() => {});
 			return result;
 		} } },
-		fetch: async () => { if (failSeed) throw new Error('Offline'); return { ok: true, json: async () => seed().packs }; }
+		fetch: async (url, options) => {
+			if (String(url).startsWith('/api/nebius/runs/')) {
+				runReads += 1;
+				assert.equal(options.method, 'GET');
+				assert.equal(options.headers.get('X-Nebius-Run-Format'), 'run-diagnostics.v3');
+				if (!runFetch) throw new Error('Unexpected run read');
+				return runFetch(url, options);
+			}
+			if (failSeed) throw new Error('Offline'); return { ok: true, json: async () => seed().packs };
+		}
 	});
 	function compile(name, extras = {}) {
 		const source = readFileSync(new URL(name, lib), 'utf8');
@@ -67,12 +78,216 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false 
 		return exports;
 	}
 	const workflow = compile('demo-workflow.ts');
-	const client = compile('demo-client.ts', { '$lib/demo-workflow': workflow });
+	const execution = compile('nebius-execution-client.ts');
+	const client = compile('demo-client.ts', { '$lib/demo-workflow': workflow, './nebius-execution-client': execution });
 	return { client, get saved() { return saved; }, get writes() { return writes; }, get removes() { return removes; },
+		get runReads() { return runReads; }, execution,
 		pauseWrite(promise) { pauseNext = promise; }, overwrite(value) { saved = value; } };
 }
 const envelope = (state, revision = 'revision-1') => JSON.stringify({ schemaVersion: 1, revision, state });
 const json = (value) => JSON.parse(JSON.stringify(value));
+
+test('approved tool input requirements survive consent, task saving, export and reload', async () => {
+	const plan = makePlan();
+	plan.tasks[0].executionInputs = [{ id: 'packet', format: 'json' }];
+	const approved = approve(seed(), { plan });
+	assert.deepEqual(approved.tasks[0].executionInputs, plan.tasks[0].executionInputs);
+	assert.notEqual(approved.tasks[0].executionInputs, plan.tasks[0].executionInputs);
+	const browser = browserClient(envelope(approved.state));
+	await browser.client.refreshDemoState();
+	let pack = get(browser.client.demoState).packs.find(item => item.id === 'approval-1:research');
+	const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+	assert.equal(input.version, 'browser-tool.v2');
+	assert.deepEqual(json(input.requiredInputFormats), [{ id: 'packet', format: 'json' }]);
+	const signature = browser.client.packPathSignature(pack);
+	await browser.client.savePackPath(pack.id, { executionInputs: [{ id: 'notes', format: 'text' }] }, signature);
+	pack = get(browser.client.demoState).packs.find(item => item.id === pack.id);
+	assert.notEqual(browser.client.packPathSignature(pack), signature);
+	assert.deepEqual(json(pack.executionInputs), [{ id: 'notes', format: 'text' }]);
+	const reference = { id: '00000000-0000-4000-8000-000000000001', key: 'a'.repeat(64), input, record: null };
+	assert.equal(browser.client.executionRunMatchesCurrentTask(pack, reference), false);
+	const destination = browserClient();
+	await destination.client.refreshDemoState();
+	await destination.client.importWorkspaceState(browser.client.exportWorkspaceState(), 'replace');
+	assert.deepEqual(json(get(destination.client.demoState).packs.find(item => item.id === pack.id).executionInputs), [{ id: 'notes', format: 'text' }]);
+	const reloaded = browserClient(destination.saved);
+	await reloaded.client.refreshDemoState();
+	assert.deepEqual(json(get(reloaded.client.demoState).packs.find(item => item.id === pack.id).executionInputs), [{ id: 'notes', format: 'text' }]);
+});
+
+test('input requirement changes are atomic, stale guarded and refused during a run', async () => {
+	const browser = browserClient(envelope(approve().state));
+	await browser.client.refreshDemoState();
+	let pack = get(browser.client.demoState).packs[1];
+	const originalSignature = browser.client.packPathSignature(pack);
+	await browser.client.savePackPath(pack.id, { executionInputs: [] }, originalSignature);
+	pack = get(browser.client.demoState).packs[1];
+	assert.deepEqual(json(pack.executionInputs), []);
+	await assert.rejects(browser.client.savePackPath(pack.id, { executionInputs: null }, originalSignature), /Saved work changed/u);
+	const prior = browser.saved;
+	await assert.rejects(browser.client.savePackPath(pack.id, { executionInputs: [{ id: '#selector', format: 'json' }] }, browser.client.packPathSignature(pack)));
+	assert.equal(browser.saved, prior);
+	const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+	const reference = { id: '00000000-0000-4000-8000-000000000002', key: 'b'.repeat(64), input, record: null };
+	await browser.client.reserveExecutionRunReference(pack.id, reference);
+	pack = get(browser.client.demoState).packs[1];
+	const reserved = browser.saved;
+	await assert.rejects(browser.client.savePackPath(pack.id, { executionInputs: null }, browser.client.packPathSignature(pack)), /finish the current run/u);
+	assert.equal(browser.saved, reserved);
+});
+
+test('specifying current inputs does not add inferred requirements to a legacy snapshot', async () => {
+	const browser = browserClient(envelope(approve().state));
+	await browser.client.refreshDemoState();
+	const pack = get(browser.client.demoState).packs[1];
+	const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+	input.version = 'browser-tool.v1'; delete input.requiredInputFormats;
+	const reference = { id: '00000000-0000-4000-8000-000000000003', key: 'c'.repeat(64), input, record: null };
+	assert.equal(browser.client.executionRunMatchesCurrentTask(pack, reference), true);
+	assert.equal(browser.client.executionRunMatchesCurrentTask({ ...pack, executionInputs: [{ id: 'packet', format: 'json' }] }, reference), false);
+	assert.equal(Object.hasOwn(reference.input, 'requiredInputFormats'), false);
+	await assert.rejects(browser.client.reserveExecutionRunReference(pack.id, reference), /current input requirements/u);
+});
+
+function legacyReservation(number = 1) {
+	const state = approve().state;
+	const pack = state.packs[1];
+	const input = dependencies['nebius-execution-contract.mjs'].validateRunInput({
+		version: 'browser-tool.v1', packId: pack.id, pack: dependencies['nebius-contract.mjs'].projectTask(pack),
+		currentStatus: pack.status, context: [], requestedModel: 'nvidia/synthetic-checker-fixture', consent: true
+	});
+	const reference = { id: `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`, key: 'a'.repeat(64), input, record: null };
+	pack.executionRun = structuredClone(reference);
+	return { state, packId: pack.id, reference };
+}
+const notFoundResponse = () => Response.json({ code: 'not_found', error: 'The saved run was not found.' }, { status: 404 });
+function queuedReceipt(reference) {
+	const { consent, ...snapshot } = reference.input;
+	return dependencies['nebius-execution-contract.mjs'].validateRunRecord({
+		...snapshot, id: reference.id, status: 'queued', attempt: 0, createdAt, updatedAt: createdAt,
+		events: [], files: [], checks: [], usage: { modelCalls: 0, inputTokens: null, outputTokens: null, totalsComplete: false }, error: null
+	});
+}
+
+test('confirmed legacy retirement rereads the server, preserves unknown history and permits a new input review', async () => {
+	const { state, packId, reference } = legacyReservation();
+	const browser = browserClient(envelope(state), { runFetch: notFoundResponse });
+	await browser.client.refreshDemoState();
+	const before = browser.saved;
+	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, false), /confirm local retirement/u);
+	assert.equal(browser.runReads, 0); assert.equal(browser.saved, before);
+	await assert.rejects(browser.execution.readRun(reference.id, reference.key, packId), error => error.status === 404 && error.code === 'not_found');
+	const saved = await browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true);
+	assert.equal(browser.runReads, 2, 'the owner must reread after the initial review observation');
+	assert.equal(saved.executionRun, undefined);
+	assert.equal(saved.status, state.packs[1].status);
+	assert.equal(saved.completionEvidence, undefined);
+	const retired = saved.retiredExecutionRuns[0];
+	assert.deepEqual(json(retired.reference), reference);
+	assert.equal(retired.reason, 'server_not_found');
+	assert.equal(new Date(retired.retiredAt).toISOString(), retired.retiredAt);
+	assert.equal(retired.reference.record, null);
+	assert.equal(Object.hasOwn(retired.reference.input, 'requiredInputFormats'), false);
+	await browser.client.savePackPath(packId, { executionInputs: [{ id: 'packet', format: 'json' }] }, browser.client.packPathSignature(saved));
+	const pack = get(browser.client.demoState).packs.find(item => item.id === packId);
+	const input = browser.client.buildExecutionRunInput(pack, reference.input.requestedModel);
+	assert.equal(input.version, 'browser-tool.v2');
+	assert.deepEqual(json(input.requiredInputFormats), [{ id: 'packet', format: 'json' }]);
+	assert.equal(pack.executionRun, undefined, 'retirement must not reserve or start a replacement');
+	await assert.rejects(browser.client.reserveExecutionRunReference(packId, { ...reference, input }), /retired task execution id/u);
+	const destination = browserClient(); await destination.client.refreshDemoState();
+	await destination.client.importWorkspaceState(browser.client.exportWorkspaceState(), 'replace');
+	const reloaded = browserClient(destination.saved); await reloaded.client.refreshDemoState();
+	assert.deepEqual(json(get(reloaded.client.demoState).packs.find(item => item.id === packId).retiredExecutionRuns), json(pack.retiredExecutionRuns));
+});
+
+for (const [label, runFetch] of [
+	['401 credentials', () => Response.json({ code: 'unauthorized', error: 'Wrong key.' }, { status: 401 })],
+	['403 access', () => Response.json({ code: 'forbidden', error: 'Access refused.' }, { status: 403 })],
+	['404 other cause', () => Response.json({ code: 'execution_disabled', error: 'Execution is disabled.' }, { status: 404 })],
+	['503 unavailable', () => Response.json({ code: 'unavailable', error: 'Service unavailable.' }, { status: 503 })],
+	['invalid JSON', () => new Response('{', { status: 404, headers: { 'Content-Type': 'application/json' } })],
+	['wrong MIME', () => new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })],
+	['transport failure', () => { throw new Error('Offline'); }]
+]) test(`legacy retirement refuses ${label} without releasing the reservation`, async () => {
+	const { state, packId, reference } = legacyReservation();
+	const browser = browserClient(envelope(state), { runFetch }); await browser.client.refreshDemoState();
+	const before = browser.saved;
+	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true));
+	assert.equal(browser.saved, before); assert.equal(browser.writes, 0); assert.equal(browser.runReads, 1);
+});
+
+test('a real server receipt prevents local retirement and remains available for refresh', async () => {
+	const { state, packId, reference } = legacyReservation();
+	const browser = browserClient(envelope(state), { runFetch: () => Response.json({ run: queuedReceipt(reference) }) });
+	await browser.client.refreshDemoState(); const before = browser.saved;
+	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true), /server receipt is available/u);
+	assert.equal(browser.saved, before);
+});
+
+test('legacy retirement rejects changed references, received records and a full history atomically', async () => {
+	for (const change of ['key', 'input', 'record', 'full', 'another-tab']) {
+		const { state, packId, reference } = legacyReservation();
+		let release;
+		const response = new Promise(resolve => { release = resolve; });
+		const browser = browserClient(envelope(state), { runFetch: () => response }); await browser.client.refreshDemoState();
+		const pending = browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true);
+		const changed = structuredClone(state); const pack = changed.packs[1];
+		if (change === 'key' || change === 'another-tab') pack.executionRun.key = 'b'.repeat(64);
+		if (change === 'input') pack.executionRun.input.pack.purpose = 'Changed authorized purpose.';
+		if (change === 'record') pack.executionRun.record = queuedReceipt(reference);
+		if (change === 'full') pack.retiredExecutionRuns = Array.from({ length: 8 }, (_, index) => ({
+			reference: legacyReservation(index + 10).reference, retiredAt: createdAt, reason: 'server_not_found'
+		}));
+		const current = envelope(changed, `changed-${change}`); browser.overwrite(current);
+		if (change !== 'another-tab') await browser.client.refreshDemoState();
+		release(notFoundResponse());
+		await assert.rejects(pending, change === 'full' ? /history is full/u : change === 'another-tab' ? /Workspace changed by another tab/u : /no longer current/u);
+		assert.equal(browser.saved, current); assert.equal(browser.writes, 0);
+	}
+});
+
+test('local retirement cannot discard state on a storage failure or aborted owner action', async () => {
+	const { state, packId, reference } = legacyReservation();
+	const storageFailure = browserClient(envelope(state), { failWrite: true, runFetch: notFoundResponse });
+	await storageFailure.client.refreshDemoState(); const before = storageFailure.saved;
+	await assert.rejects(storageFailure.client.retireUnavailableLegacyExecutionRun(packId, reference, true));
+	assert.equal(storageFailure.saved, before);
+	const browser = browserClient(envelope(state), { runFetch: notFoundResponse }); await browser.client.refreshDemoState();
+	const controller = new AbortController(); controller.abort();
+	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true, controller.signal), error => error.name === 'AbortError');
+	assert.equal(browser.runReads, 0);
+	let release; const paused = new Promise(resolve => { release = resolve; }); browser.pauseWrite(paused);
+	const duringWrite = new AbortController();
+	const pending = browser.client.retireUnavailableLegacyExecutionRun(packId, reference, true, duringWrite.signal);
+	await new Promise(resolve => setTimeout(resolve, 0)); duringWrite.abort(); release();
+	await assert.rejects(pending, error => error.name === 'AbortError');
+	assert.equal(browser.saved, envelope(state)); assert.equal(browser.writes, 0);
+});
+
+test('new requests and malformed or contradictory retired history are refused', async () => {
+	const { state, packId, reference } = legacyReservation();
+	const browser = browserClient(envelope(state), { runFetch: notFoundResponse }); await browser.client.refreshDemoState();
+	const newReference = { ...reference, input: { ...reference.input, version: 'browser-tool.v2', requiredInputFormats: null } };
+	await assert.rejects(browser.client.retireUnavailableLegacyExecutionRun(packId, newReference, true), /Only an unresolved historical/u);
+	assert.equal(browser.runReads, 0);
+	const entry = { reference: legacyReservation(10).reference, retiredAt: createdAt, reason: 'server_not_found' };
+	for (const mutate of [
+		item => { item.reason = 'cancelled'; },
+		item => { item.retiredAt = 'unknown'; },
+		item => { item.reference.record = queuedReceipt(item.reference); },
+		item => { item.reference.input.version = 'browser-tool.v2'; item.reference.input.requiredInputFormats = null; },
+		item => { item.reference.id = reference.id; },
+		item => { item.reference.input.packId = 'another-task'; },
+		item => { item.reference.key = 'bad'; }
+	]) {
+		const invalid = structuredClone(state); const bad = structuredClone(entry); mutate(bad);
+		invalid.packs[1].retiredExecutionRuns = [bad];
+		assert.throws(() => browser.client.previewWorkspaceImport(envelope(invalid)), /Retired|retired|Saved task execution/u);
+	}
+	const duplicate = structuredClone(state); duplicate.packs[1].retiredExecutionRuns = [entry, structuredClone(entry)];
+	assert.throws(() => browser.client.previewWorkspaceImport(envelope(duplicate)), /invalid legacy reference/u);
+});
 
 test('approval clones the workspace and preserves truthful plan fields and scoped dependencies', () => {
 	const prior = seed();

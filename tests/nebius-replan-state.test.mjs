@@ -75,7 +75,8 @@ function browserClient(serialized = envelope(seed()), { failWrite = false, noLoc
 		return exports;
 	}
 	const workflow = compile('demo-workflow.ts');
-	const client = compile('demo-client.ts', { '$lib/demo-workflow': workflow });
+	const execution = compile('nebius-execution-client.ts');
+	const client = compile('demo-client.ts', { '$lib/demo-workflow': workflow, './nebius-execution-client': execution });
 	return { client, get saved() { return saved; }, get writes() { return writes; },
 		pauseWrite(promise) { pauseNext = promise; }, overwrite(value) { saved = value; } };
 }

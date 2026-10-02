@@ -294,9 +294,9 @@ function operationIdFromLocation(location) {
   } catch { return null; }
 }
 
-export async function spawnSandbox(config, files, { fetcher = globalThis.fetch, timeoutMs = 15000 } = {}) {
+export async function spawnSandbox(config, files, { fetcher = globalThis.fetch, timeoutMs = 15000, requiredInputFormats = null } = {}) {
   const admittedFiles = validateRunFiles(files);
-  const pageContract = runPageContract(admittedFiles);
+  const pageContract = runPageContract(admittedFiles, requiredInputFormats);
   const body = {
     command: '/usr/local/bin/node', args: ['-e', HARNESS], shell: false,
     image: config.imageId, disposable: false, preserve_env: false, cwd: '/tmp', uid: 1000, gid: 1000,

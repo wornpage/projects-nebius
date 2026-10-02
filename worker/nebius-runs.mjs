@@ -128,7 +128,7 @@ async function handlePreview(request, env, id) {
   if (params.length !== 1 || params[0][0] !== 'key' || !validRunKey(params[0][1])) fail(401, 'run_unauthorized', 'Provide this run’s access key.');
   const run = rpcResult(await runStub(env, id).read(params[0][1]));
   if (run.status !== 'ready') fail(409, 'run_not_ready', 'The isolated preview is available only after checks pass.');
-  const rendered = await renderRunPreview(run.files);
+  const rendered = await renderRunPreview(run.files, run.version === RUN_VERSION ? run.requiredInputFormats : null);
   return new Response(rendered.html, { status: 200, headers: {
     'content-type': 'text/html; charset=utf-8', 'content-security-policy': rendered.csp,
     'x-frame-options': 'SAMEORIGIN', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff',
@@ -165,6 +165,7 @@ export async function handleNebiusRuns(request, env) {
     let input;
     try { input = validateRunInput(JSON.parse(bodyText)); }
     catch { fail(400, 'invalid_request', 'The reviewed run input is invalid or exceeds its limits.'); }
+    if (input.version !== RUN_VERSION) fail(409, 'run_input_changed', 'Reload and review the current task input requirements before starting a run.');
     const key = bearerKey(request);
     const stub = runStub(env, id);
     const existing = await stub.inspectStart(id, input, key);
@@ -247,12 +248,12 @@ function retainGeneration(state, response, error = null) {
 const sourceRejection = error => error instanceof RunProviderError && !error.uncertain
   && ['tool_files', 'tool_page', 'tool_worker', 'tool_checks', 'preview'].includes(error.stage);
 
-async function validateGeneratedPreview(files) {
+async function validateGeneratedPreview(files, requiredInputFormats = null) {
   try {
-    const page = runPageContract(files);
+    const page = runPageContract(files, requiredInputFormats);
     const missing = page.elements.filter(element => element.textValue && element.format === null);
     if (missing.length) throw new TypeError('Every textual input needs an explicit data-input-format="text" or "json" declaration. Missing: ' + missing.map(element => element.id).join(', '));
-    await renderRunPreview(files);
+    await renderRunPreview(files, requiredInputFormats);
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;
     throw new RunProviderError('invalid_model_output', safeMessage(error, 'The generated page could not be prepared for preview.'), false, 'preview');
@@ -309,6 +310,7 @@ export class NebiusRun extends DurableObject {
     let input;
     try { input = validateRunInput(rawInput); }
     catch { return { ok: false, status: 400, code: 'invalid_request', error: 'The reviewed run input is invalid.' }; }
+    if (input.version !== RUN_VERSION) return { ok: false, status: 409, code: 'run_input_changed', error: 'Review the current input requirements before starting a run.' };
     if (!validRunId(id) || !validRunKey(key)) {
       return { ok: false, status: 400, code: 'invalid_request', error: 'The run admission request is invalid.' };
     }
@@ -325,6 +327,7 @@ export class NebiusRun extends DurableObject {
     let input;
     try { input = validateRunInput(rawInput); }
     catch { return { ok: false, status: 400, code: 'invalid_request', error: 'The reviewed run input is invalid.' }; }
+    if (input.version !== RUN_VERSION) return { ok: false, status: 409, code: 'run_input_changed', error: 'Review the current input requirements before starting a run.' };
     if (!validRunId(id) || !validRunKey(key) || !validRunId(admissionId) || !Number.isSafeInteger(dailyCallLimit)) {
       return { ok: false, status: 400, code: 'invalid_request', error: 'The admitted run request is invalid.' };
     }
@@ -484,6 +487,14 @@ export class NebiusRun extends DurableObject {
       return;
     }
     try {
+      // A retained v1 receipt remains readable. Pending old generation or
+      // Sandbox submission cannot spend another call under an obsolete spec.
+      // Already submitted operations may still be observed through their IDs.
+      if (state.record.version !== RUN_VERSION && ['model-ready', 'sandbox-ready'].includes(state.phase)) {
+        await this.finish(state, 'failed', 'The saved request needs current input requirements.',
+          new RunApiError(409, 'run_input_changed', 'Review the current input requirements before starting a new run.'));
+        return;
+      }
       if (Date.now() >= state.deadline) {
         if (state.operationId) {
           state = { ...state, cancelRequested: true, record: { ...addEvent(state.record, 'The orchestration deadline passed; sandbox cancellation is pending.'), status: 'cancelling' } };
@@ -536,7 +547,7 @@ export class NebiusRun extends DurableObject {
         state = await this.load();
         if (!state) return;
         if (state.phase === 'retained') {
-          await validateGeneratedPreview(generated.files);
+          await validateGeneratedPreview(generated.files, state.record.version === RUN_VERSION ? state.record.requiredInputFormats : null);
           await this.retainLateGeneration(attempt, generated.usage, generatedResponse, null);
           return;
         }
@@ -545,7 +556,7 @@ export class NebiusRun extends DurableObject {
         // Persist usage before any subsequent source validation.
         await this.save(state);
         failureStage = 'preview';
-        await validateGeneratedPreview(generated.files);
+        await validateGeneratedPreview(generated.files, state.record.version === RUN_VERSION ? state.record.requiredInputFormats : null);
         const digest = await runFilesDigest(generated.files);
         state = await this.load();
         if (!state) return;
@@ -570,7 +581,8 @@ export class NebiusRun extends DurableObject {
         sandboxConfig ||= sandboxConfiguration(this.env);
         const submitting = { ...state, phase: 'sandbox-submitting', record: addEvent(state.record, `Submitting isolated check attempt ${state.record.attempt}.`) };
         await this.ctx.storage.put('state', submitting);
-        const operationId = await spawnSandbox(sandboxConfig, state.record.files, { timeoutMs: remainingMs(state, 15000) });
+        const operationId = await spawnSandbox(sandboxConfig, state.record.files, { timeoutMs: remainingMs(state, 15000),
+          requiredInputFormats: state.record.version === RUN_VERSION ? state.record.requiredInputFormats : null });
         state = await this.load();
         if (!state || state.phase === 'retained' || state.phase !== 'sandbox-submitting') return;
         state = { ...state, phase: 'sandbox-polling', operationId, cancelSubmitted: false,
