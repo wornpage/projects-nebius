@@ -12,7 +12,7 @@ checker passed 24 independent packet cases at two widths and interaction in
 the local app. A later renderer follow-up adds result announcements and visible
 input declarations. Broader generation quality, the final video and public
 judge access remain open. [Execution scope](NEBIUS_EXECUTION.md) and
-[current readiness evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026)
+[current readiness evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026)
 record the result and its limits. Defaults keep execution disabled; configured
 local operation is available while hosted access is paused.
 

@@ -22,7 +22,7 @@ checker, repaired a failed Sandbox check, and passed the next check. Its retaine
 tool passed 24 independent packet cases at two screen widths and was exercised
 in the local app. This establishes one working result; broader model quality,
 hosted judge access and the final video remain open. See
-[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
+[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
 temporarily private MIT-licensed continuation; the earlier WebMCP entry remains

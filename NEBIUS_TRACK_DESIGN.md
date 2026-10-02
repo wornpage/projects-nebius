@@ -79,7 +79,7 @@ provider evidence: a failed Sandbox check, one repair and a passing check.
 Its unchanged retained files passed independent packet cases and interaction
 in Review. This gives the coding-track story a working example; broader quality,
 the final demonstration video and track eligibility remain separate gates. See
-[current readiness](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
+[current readiness](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 
 ## Hosting and remaining gates
 

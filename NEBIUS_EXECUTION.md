@@ -602,7 +602,7 @@ files passed 48/48 independent packet observations at two widths. The current
 renderer passed 66/66 checks on those files, including result labels,
 announcements, readable control sizes and keyboard focus. The original declared
 JSON-loader coverage remains 0/2.
-See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
+See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 The original failures below remain historical evidence. Public hosting is paused.
 
 ### Input-requirement qualification — October 1, 2026
@@ -621,8 +621,10 @@ overflow. The legacy reference was a labelled synthetic fixture; this is local
 workflow evidence without a provider receipt. An initial Svelte snapshot-cloning
 error was observed and corrected before confirmation passed.
 
-Fresh live v2 generation and task-semantic browser qualification are still
-required. The successful v1 checker's original source and JSON-loader 0/2
+Two fresh live v2 evaluations on October 2 failed their generated checks or
+repair file format; details are in the current readiness checkpoint. Successful
+v2 generation and task-semantic browser qualification are still required.
+The successful v1 checker's original source and JSON-loader 0/2
 remain unchanged. Projects Acceptance returned an internal error, so no formal
 acceptance receipt was created for this slice.
 
@@ -657,7 +659,7 @@ The original five-call and one-run limits were restored after the first two atte
 The owner subsequently raised the hosted allowance to 20 model calls and
 3 task runs per UTC day. Existing daily counts were retained; per-run limits
 remain two model calls, 8,000 output tokens per call, and two 30-second Sandbox
-executions. See [current runtime evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
+executions. See [current runtime evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 
 Runtime and product reviews are recorded in Projects Acceptance as development
 evidence. That review tooling is outside this app and is not a required service

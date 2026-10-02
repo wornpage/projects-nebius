@@ -57,7 +57,7 @@ screen widths and were exercised through Review in the local app.
 This is one observed working tool. Its saved input declares text, so historical
 declared JSON-loader coverage remains 0/2. Broader generation quality, actual
 screen-reader speech, the final video and restored public judge access remain
-open. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026)
+open. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026)
 for source, usage, checks and historical failures.
 
 ## How we built it

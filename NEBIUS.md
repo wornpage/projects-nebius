@@ -164,7 +164,7 @@ See [NEBIUS_EXECUTION.md](NEBIUS_EXECUTION.md) for its credentials, fixed limits
 preview isolation and retention. One Super-generated release-packet checker
 passed a real Sandbox check after repair, then passed independent local packet
 cases and interaction in Review. Broader generation quality remains open. See
-[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
+[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 
 ## Advisory runtime and limits
 

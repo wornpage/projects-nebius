@@ -10,7 +10,40 @@ retained as dated historical evidence and do not describe current repository
 access. This source-only change does not establish any change to the hosted
 demo, Devpost entry, or challenge eligibility.
 
-## Current runtime status — October 1, 2026
+## Current runtime status — October 2, 2026
+
+The new task-owned JSON checker has **not passed**. Two separately authorized
+local evaluations retained their failures. The older successful plaintext
+checker below remains historical evidence; it does not qualify the current
+`browser-tool.v2` task requirements.
+
+| Evaluation | Actual result | Resource use |
+| --- | --- | --- |
+| `1c6a7e67-cfbc-4697-a1fd-7f12b7aa9ae9`, source `53886b2` | Both Sandbox checks exited 1. Generated assertions incorrectly labelled `{}` malformed JSON and expected two gaps where the task requires three; the repair left those assertions unchanged. | 2 model calls, 2 Sandbox checks; 7,035 input and 8,948 output tokens reported |
+| `6d5fc0ca-4a46-4ffc-adb7-870eb765678c`, source `e528a98` | Sandbox rejected a missing closing brace in `checks.cjs:57` before task assertions could run. The repair was rejected at response line 183 for an extra code fence; no second Sandbox check occurred. | 2 model calls, 1 Sandbox check; 7,292 input and 7,264 output tokens reported |
+
+Source corrections preserve access after a rejected resume and distinguish
+task-owned expected outcomes from generated assertion hypotheses. Independent
+read-only source review accepted them. Local qualification passed 631/631
+Nebius tests and 140/140 preserved WebMCP contract tests on Node 24.18.0, with
+zero Svelte errors or warnings and a successful static build. These results
+qualify source behavior; live JSON generation remains unsuccessful.
+
+Before/after read-only audits preserved every earlier serialized run/state
+hash and the credential-file hash. The final audit found 17 retained runs and
+zero active runs. UTC-day counters were 4 model calls and 2 starts against
+unchanged limits of 20 and 3. Each evaluation retained its existing ceiling of
+two calls, 8,000 output tokens per call and two 30-second Sandbox checks.
+The 17-record denominator spans retained history, not today's starts.
+
+The authenticated Review page displays the failure, check output, source and
+rejected response. It does not offer a failed tool as a usable preview or permit
+its evidence to be saved as passed. Neither evaluation reached the independent
+24-case browser gate. Projects Acceptance returned an internal error, so this
+checkpoint has no formal acceptance receipt. Changes remain local; no push,
+deployment, publication or Devpost update was performed.
+
+## Historical successful checker — October 1, 2026
 
 | Capability | Observed result | Remaining evidence |
 | --- | --- | --- |
@@ -96,9 +129,9 @@ generated tool. The existing embedded video was retained and identified as an
 earlier Projects demonstration. The current narration draft and recorder's
 Sandbox segment were updated; no new video was recorded in this pass.
 
-The sections below retain earlier milestone observations. The October 1
-current-status section supersedes their access, hosting, publication and
-pending-run statements.
+The sections below retain earlier milestone observations. The October 2
+current runtime checkpoint supersedes their generated-tool and pending-run
+statements. Access, hosting and publication observations remain dated history.
 
 ## Fifth tool attempt and source guidance — September 28, 2026
 
