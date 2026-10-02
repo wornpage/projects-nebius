@@ -1,16 +1,31 @@
 # Local implementation and submission evidence
 
-## Repository status correction — September 28, 2026
+## Release evidence boundaries
 
-`wornpage/projects-nebius` is temporarily **private** during submission
-preparation and retains its original [MIT License](LICENSE). A public MIT
-release is planned for submission week, subject to separate owner authorization;
-see [LICENSING.md](LICENSING.md). Earlier publication statements below are
-retained as dated historical evidence and do not describe current repository
-access. This source-only change does not establish any change to the hosted
-demo, Devpost entry, or challenge eligibility.
+The manual preview supports browser-local project work with AI guidance and
+Sandbox execution disabled. It does not establish live AI access for judges.
+Source visibility, the exact deployed revision and the five disabled AI
+configurations must be checked separately during the authorized cutover.
+Earlier source, model and browser observations below retain their original
+revisions and denominators.
+
+## Access history — September 28, 2026
+
+On September 28, `wornpage/projects-nebius` entered temporary private
+preparation and hosted routes were disabled. The original [MIT License](LICENSE)
+remained in force. See [LICENSING.md](LICENSING.md) for the access policy.
+These dated observations do not establish current repository visibility,
+hosted access or challenge eligibility.
 
 ## Current runtime status — October 2, 2026
+
+The [public video](https://www.youtube.com/watch?v=ssBXmrdvHdE) was published
+October 2 and embedded in the submitted Devpost entry. It is a captioned
+108-second recording of the earlier October 1 retained checker, whose original
+JSON-loader denominator stays 0/2. The current JSON result below is newer and
+has separate receipts; publication does not turn the older recording into
+evidence of this new run. Source and hosted access were private/paused when
+that recording was published.
 
 The current task-owned JSON checker **passed its bounded local evaluation and
 independent browser checks**. Run `2947cffc-84e3-4f71-8325-1e35f29c170a` used

@@ -4,6 +4,7 @@ This project installs test tooling through the root `package-lock.json` and brow
 
 - Playwright Core is used only by the isolated local recording-preflight command and is Apache-2.0-licensed. It is not bundled into the deployed browser artifact.
 - Svelte, SvelteKit, and Vite are MIT-licensed.
+- SvelteKit's `devalue` and `esm-env` dependencies are MIT-licensed; their notices are retained with the browser distribution.
 - Lucide is distributed under the ISC License.
 - The `@wornpage/*` UI packages used here are public MIT-licensed repositories. Their GitHub archive URLs are pinned to immutable 40-character commits in `svelte-frontend/package.json` and locked with integrity metadata in `svelte-frontend/package-lock.json`.
 
