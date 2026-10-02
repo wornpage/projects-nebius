@@ -1,9 +1,8 @@
-# Wornpage Projects — Nebius edition (private submission preparation)
+# Wornpage Projects — Nebius edition
 
-This repository is temporarily private during submission preparation. It
-retains its original [MIT License](LICENSE), with a public MIT release planned
-for submission week after separate owner authorization. See
-[LICENSING.md](LICENSING.md) for the access and publication policy.
+This standalone edition retains its original [MIT License](LICENSE).
+See [LICENSING.md](LICENSING.md) for source, hosting and provider-access
+boundaries and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependencies.
 
 A project copilot for turning a goal into tasks, choosing the next step,
 recording evidence and adapting a plan when circumstances change.
@@ -12,16 +11,21 @@ evidence assessments. The task execution milestone adds a bounded browser-tool
 build, sandbox checks and result review. You authorize a run's selected task
 and limits; accepting the result remains a separate action.
 
-**Hosted access is paused during private preparation.** Use the local app at
-[http://127.0.0.1:8787/](http://127.0.0.1:8787/) after starting it below.
-The Nebius Worker's public address and preview URLs are disabled. Reopening
-hosted access requires separate owner authorization for release.
+**Manual preview:** [Open the workspace](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)
+to create projects, edit tasks, inspect blockers and record evidence in your
+browser. AI guidance and Sandbox execution are disabled in this preview.
+The Build tool view explains the workflow and disables Run this task; it does
+not simulate a model response or expose a private retained run.
+
+You can also run the app locally at [http://127.0.0.1:8787/](http://127.0.0.1:8787/).
+The setup below needs no provider credentials. Enabling real Nebius features
+is a separate configuration and spending decision.
 
 **Development status:** A real Nemotron Super run produced a release-packet
 checker, repaired a failed Sandbox check, and passed the next check. Its retained
 tool passed 24 independent packet cases at two screen widths and was exercised
 in the local app. This establishes one working result; broader model quality
-and hosted judge access remain open. See
+and live AI access for judges remain open. See
 [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 The [published captioned demonstration](https://www.youtube.com/watch?v=ssBXmrdvHdE)
 records the earlier October 1 checker. The October 2 JSON-checker result and its
@@ -29,9 +33,9 @@ records the earlier October 1 checker. The October 2 JSON-checker result and its
 demonstrate that newer run.
 The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
-temporarily private MIT-licensed continuation; the earlier WebMCP entry remains
-separate. Existing hosted versions and server data are retained while public
-access is disabled. Local storage is separate: use Guide's backup and restore
+MIT-licensed continuation; the earlier WebMCP entry remains separate.
+Private workspace backups and server-run credentials are excluded from the
+source release. Local storage is separate: use Guide's backup and restore
 controls to move browser work. Local AI actions still call Nebius online and
 use its normal account credits; starting the app does not initiate a model run.
 
@@ -103,9 +107,10 @@ checks in a Token Factory Sandbox, and allows one repair. Open **Review** to
 inspect the tool, its source and observed check output, then explicitly save
 run evidence. A successful run does not mark the task done.
 
-Execution has a separate Sandbox credential binding and limits. The configured
-`demo` environment enables it, while public routing is paused; local defaults
-keep it off. A Token Factory key with Sandbox
+Execution has a separate Sandbox credential binding and limits. The source
+`demo` environment describes a live setup with public routing disabled. The
+manual-preview deployment explicitly overrides both AI switches to false;
+local defaults also keep them off. A Token Factory key with Sandbox
 access can supply both credential bindings. [Execution setup and boundaries](NEBIUS_EXECUTION.md) describes the
 contract, image requirements, cancellation and seven-day server retention.
 The retained checker has successful Sandbox and local browser observations.
@@ -151,8 +156,9 @@ defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
 both locked installs and its own hosted Chrome lookup, then runs
 `verify:nebius` and all five browser suites above in order. It supplies no
 provider credentials or deployment step. Local qualification, a prepared
-workflow and an observed passing GitHub run remain separate results; this
-candidate has not yet passed hosted CI.
+workflow and an observed passing GitHub run remain separate results. Check
+the [workflow history](https://github.com/wornpage/projects-nebius/actions)
+for the exact revision being evaluated.
 
 ## Source and prior work
 
@@ -171,10 +177,10 @@ require the private Projects backend, authentication or billing services.
 
 ## Licensing and source inventory
 
-The original MIT license remains in force during temporary private preparation
-and for the planned public submission. Earlier public or private MIT grants
-remain effective; dependencies retain their own licenses and notices. Public
-release requires separate owner authorization during submission week.
+The original MIT license remains in force. Earlier public or private MIT grants
+remain effective; dependencies retain their own licenses and notices.
+Source publication does not grant access to provider credentials, private
+workspace backups or saved-run keys.
 
 The current source inventory contains 210/210 paths. The historical filename
 `PUBLIC_SOURCE_MANIFEST.txt` describes an inventory, not permission to publish

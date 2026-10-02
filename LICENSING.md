@@ -1,15 +1,21 @@
-# Licensing and temporary private preparation
+# Licensing and release access
 
-As of September 28, 2026, `wornpage/projects-nebius` is a **private** GitHub
-repository while the next few weeks of submission preparation are completed.
-The intended submission is a public MIT-licensed release during submission
-week, with publication separately authorized by the owner at that time. This
-document does not schedule or authorize an automatic visibility change.
+The Nebius edition retains its original MIT license. Source publication,
+hosted access and provider spending are separate owner-authorized actions.
+The manual-preview release enables browser-local project work while keeping
+AI guidance and Sandbox execution disabled. It does not publish private
+workspace backups, saved-run keys or provider credentials.
+
+The repository and hosted routes entered private preparation on September 28,
+2026. The access history below records that earlier boundary; the MIT license
+remains unchanged. This document does not itself authorize a future visibility,
+hosting or provider-setting change.
 
 The [official rules](https://nebiusglobalaihackathon.devpost.com/rules), checked
-September 28, 2026, require a public open-source repository and accept MIT.
+October 2, 2026, require a public open-source repository and accept MIT.
 They state a submission deadline of October 30, 2026 at 10:00 a.m. PDT
-(1:00 p.m. EDT). The submission-week release must account for that deadline.
+(1:00 p.m. EDT). Live AI access for judges remains a separate release condition;
+a manual preview alone does not establish it.
 
 ## License and access
 
@@ -49,13 +55,13 @@ distributed assets.
 `PUBLIC_SOURCE_MANIFEST.txt` retains its historical filename as a source
 inventory. Inclusion in it is not permission to publish private source. The
 build directory name `static-publish` likewise does not authorize deployment.
-At submission week, review source, credentials, dependency notices, and setup
-instructions before the owner authorizes public MIT publication. Package
+Before publication, review source, credentials, dependency notices, setup
+instructions and the exact release revision, then obtain owner authorization. Package
 metadata remains `private: true` to prevent accidental npm publication; this
 setting does not change the MIT license or GitHub visibility.
 
 The historical challenge and deployment records document earlier events.
-They do not establish that today's private source satisfies a challenge's
-public-source requirements. Repository visibility and hosted access are
-separate controls; both are now restricted for preparation. Names and branding are addressed in
+They do not establish current source visibility or hosted functionality.
+Repository visibility, hosted access and live AI availability must each be
+verified for the released revision. Names and branding are addressed in
 [TRADEMARKS.md](TRADEMARKS.md).
