@@ -307,9 +307,12 @@ atomic status region. Anonymous outputs receive visible Result labels; authored
 names are retained. Final visible results are announced after a complete accepted
 patch batch; edits announce invalidation once, stale replies are suppressed, and
 runtime failure messages remain distinct. Focus stays on the user's control.
-The retained files passed a follow-up renderer qualification: 48/48 packet
+The retained files passed the metadata renderer qualification: 48/48 packet
 observations and 64/64 total checks, including declaration display, repeat-result
-updates, focus and stale-announcement clearing. These DOM observations do not
+updates, focus and stale-announcement clearing. A readability follow-up adds one
+check per width, bringing the retained total to 66/66 and the authored-fixture
+total to 86/86. The saved checker now displays 16px input/result text, 44px
+actions and a 3px keyboard-focus outline at both widths. These DOM observations do not
 establish actual screen-reader speech or full accessibility compliance.
 
 Checks record the observed provider operation ID, resulting checkpoint ID if
@@ -339,6 +342,12 @@ presentation advice: prefer a local style block for readable layout, while
 semantic native controls remain valid without CSS. The removed
 `page_style_missing` gate rejected a cosmetic omission before Sandbox; historical
 receipts retain that code. Visual quality is assessed in the human preview.
+
+The renderer supplies local typography, control-size and focus defaults using
+the edition's public Wornpage palette. They occupy the first CSS cascade layer,
+so authored tool styles retain precedence. They load no fonts or assets and do
+not modify stored files, control IDs, the message bridge or its isolation.
+They are presentation defaults, not a new source-admission requirement.
 
 Known source rejections and observed first Sandbox failures share one repair
 within the run. Every replacement passes the same validation; no separate run
@@ -535,8 +544,9 @@ configuration. The source change itself neither provisions nor deploys them.
 One configured local Super run now has successful Sandbox and browser evidence.
 Run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` passed after one repair; its retained
 files passed 48/48 independent packet observations at two widths. The current
-renderer passed 64/64 checks on those files, including result labels and
-announcements. The original declared JSON-loader coverage remains 0/2.
+renderer passed 66/66 checks on those files, including result labels,
+announcements, readable control sizes and keyboard focus. The original declared
+JSON-loader coverage remains 0/2.
 See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
 The original failures below remain historical evidence. Public hosting is paused.
 

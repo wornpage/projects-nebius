@@ -16,9 +16,9 @@ demo, Devpost entry, or challenge eligibility.
 | --- | --- | --- |
 | Generated browser tool | Nemotron Super run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` became ready after one repair | One successful run does not establish general generation reliability |
 | Actual Sandbox checks | First check failed for missing `change:input-json` coverage; repair passed with 14 assertions, 9 validate calls, 6 handler calls, 6/6 control events and 2/2 post-output edits | Checks are model-authored; declared JSON-loader coverage remains 0/2 because the saved input declares text |
-| Independent packet behavior | Unchanged retained files passed 24 frozen cases at 375px and 1280px: 48/48 observations; current renderer passed 64/64 total checks | Local renderer evidence; actual screen-reader speech and full accessibility remain unverified |
+| Independent packet behavior | Unchanged retained files passed 24 frozen cases at 375px and 1280px: 48/48 observations; readability follow-up passed 66/66 total checks | Two additional presentation checks account for the increase from 64; actual screen-reader speech and full accessibility remain unverified |
 | Local application | Review opened the authenticated saved run; keyboard activation showed incomplete, corrected and invalid inputs, and editing cleared the old result | Evidence was saved while the task remained open; human acceptance is still separate |
-| Source verification | Commit `18ed70f` passed 595/595 local tests and 84/84 authored preview checks; independent source review accepted the metadata and announcement changes | No hosted CI or new provider run is established by these checks |
+| Source verification | Metadata commit `18ed70f` passed 595/595 local tests and 84/84 authored preview checks; the readability follow-up passed 595/595 and 86/86 respectively | Two additional presentation checks account for the authored increase; no hosted CI or new provider run is established |
 | Repository and hosting | GitHub reports `wornpage/projects-nebius` PRIVATE; the previous hosted landing address returned HTTP 404 during this follow-up | Public source and judge access require the owner's release decision |
 | Projects Acceptance | The connector returned MCP -32603 Internal error | This follow-up has no formal Projects Acceptance receipt |
 
@@ -30,6 +30,13 @@ Its successful files and prior failed check remain unchanged. The subsequent
 renderer supplies result labels, one polite atomic announcement region and an
 Input formats disclosure; it displays the saved text declaration without
 rewriting it or upgrading the historical JSON-loader denominator.
+
+The readability follow-up supplies local defaults in the first CSS cascade
+layer using the public Wornpage palette. The saved checker's input/result text
+increased from about 13px to 16px, actions from 38px to 44px, and keyboard-focus
+outline from 1px to 3px at both measured widths. Authored tool styles keep
+precedence and stored source remains unchanged; these defaults are not an
+admission gate for every generated design.
 
 The local app runs on port 8787. Configuration remains at 20 model calls and
 3 task starts per UTC day; failed attempts still count. Before/after local state

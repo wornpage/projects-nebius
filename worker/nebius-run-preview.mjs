@@ -5,6 +5,35 @@ const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 const ALLOWED_TAGS = new Set(('html head body title style main header footer nav section article aside div span p h1 h2 h3 h4 h5 h6 ul ol li dl dt dd a button input label select option optgroup textarea form fieldset legend output progress meter details summary table caption thead tbody tfoot tr th td colgroup col br hr strong em b i small s u sub sup code pre blockquote figure figcaption img time datalist').split(' '));
 const ATTRIBUTES = new Set(('id class style title role lang dir hidden tabindex name type value placeholder min max step minlength maxlength required checked selected disabled readonly multiple for rows cols size width height alt scope colspan rowspan open datetime autocomplete inputmode pattern list start reversed wrap').split(' '));
 
+// Local preview defaults use the edition's public Wornpage palette. The first
+// cascade layer keeps authored tool styling in control; no font or asset fetch
+// is needed, and stored source is not changed.
+const PREVIEW_STYLE = `@layer nebius-preview-base {
+  :root { color-scheme: light; font: 100%/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2522; background: #f3f4f3; }
+  *, ::before, ::after { box-sizing: border-box; }
+  body { margin: 1rem; overflow-wrap: anywhere; }
+  :where(h1, h2, h3, h4, h5, h6) { line-height: 1.25; margin-block: 0 1rem; }
+  :where(h1) { font-size: clamp(1.5rem, 4vw, 2rem); }
+  :where(label:not([hidden]), legend) { font-weight: 600; }
+  :where(input, textarea, select, button) { font: inherit; }
+  :where(input, textarea, select) { max-inline-size: 100%; min-inline-size: 0; border: 1px solid #b8bfba; border-radius: 6px; background: #fff; color: #1f2522; padding: .625rem; }
+  :where(textarea) { width: 100%; min-height: 8rem; resize: vertical; }
+  :where(pre, code, textarea) { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 1rem; line-height: 1.5; }
+  :where(pre, output) { max-inline-size: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+  :where(output:not([hidden])) { display: block; }
+  :where(button, input[type="button"], input[type="submit"], input[type="reset"], summary) { min-height: 44px; padding: .625rem .875rem; border: 1px solid #b8bfba; border-radius: 6px; background: #fff; color: #1f2522; cursor: pointer; }
+  :where(button, input[type="button"], input[type="submit"], input[type="reset"]) { margin: .25rem .5rem .25rem 0; font-weight: 600; }
+  :where(button:hover, summary:hover) { background: #eef1ef; }
+  :where(button:disabled, input:disabled, select:disabled, textarea:disabled) { cursor: default; opacity: .65; }
+  :where(a) { color: #0f766e; }
+  :where(button, input, select, textarea, summary, a):focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
+  :where(fieldset) { min-inline-size: 0; border: 1px solid #d4d8d5; border-radius: 8px; }
+  :where(details) { margin-block: 1rem; }
+  :where(dt) { font-weight: 600; }
+  :where(dd) { margin: 0 0 .75rem; }
+  :where(img, table) { max-inline-size: 100%; }
+}`;
+
 function sanitize(node) {
   if (node.nodeName === '#text') return node;
   if (!node.tagName || node.namespaceURI !== HTML_NAMESPACE || !ALLOWED_TAGS.has(node.tagName)) return null;
@@ -222,7 +251,7 @@ export async function renderRunPreview(rawFiles) {
   // The response CSP applies before parsing; no inherited host CSP relaxation
   // or allow-same-origin sandbox permission is needed for this document.
   return {
-    html: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${resourcePolicy}"><meta name="viewport" content="width=device-width,initial-scale=1">${serialize(head)}</head><body>${serialize(body)}<script>${bootstrap}</script></body></html>`,
+    html: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${resourcePolicy}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${PREVIEW_STYLE}</style>${serialize(head)}</head><body>${serialize(body)}<script>${bootstrap}</script></body></html>`,
     csp,
   };
 }

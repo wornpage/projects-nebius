@@ -291,6 +291,31 @@ addEventListener('message', event => {
           assert.ok((await formats.locator('dd').allTextContents()).includes(presentation.inputFormatLabel));
           await formats.locator('summary').click();
         });
+        const readability = { width };
+        await observe('preview text, control sizing and keyboard focus remain readable without horizontal overflow', readability, async () => {
+          Object.assign(readability, await interaction.frame.evaluate(ids => {
+            const input = document.getElementById(ids.input), output = document.getElementById(ids.output);
+            return { inputFont: parseFloat(getComputedStyle(input).fontSize), outputFont: parseFloat(getComputedStyle(output).fontSize),
+              buttons: ['check', 'incomplete', 'corrected'].map(name => ({ id: ids[name], height: document.getElementById(ids[name]).getBoundingClientRect().height })),
+              documentWidth: document.documentElement.scrollWidth, viewportWidth: document.documentElement.clientWidth };
+          }, bindings));
+          await interaction.action(() => interaction.control('input').focus());
+          await interaction.action(() => interaction.page.keyboard.press('Tab'));
+          readability.focus = await interaction.frame.evaluate(() => {
+            const element = document.activeElement, style = getComputedStyle(element);
+            const colorProbe = document.createElement('canvas').getContext('2d');
+            colorProbe.fillStyle = style.outlineColor;
+            colorProbe.fillRect(0, 0, 1, 1);
+            return { id: element.id, visible: element.matches(':focus-visible'), outlineStyle: style.outlineStyle,
+              outlineWidth: parseFloat(style.outlineWidth), outlineColor: style.outlineColor, outlineAlpha: colorProbe.getImageData(0, 0, 1, 1).data[3] };
+          });
+          assert.ok(readability.inputFont >= 16 && readability.outputFont >= 16, 'Packet input and result need readable text.');
+          assert.ok(readability.buttons.every(button => button.height >= 44), 'Packet actions need usable target height.');
+          assert.ok(readability.documentWidth <= readability.viewportWidth + 1, 'The isolated page must fit its width.');
+          assert.ok(['check', 'incomplete', 'corrected'].some(name => bindings[name] === readability.focus.id));
+          assert.equal(readability.focus.visible, true);
+          assert.ok(readability.focus.outlineWidth >= 2 && !['none', 'hidden'].includes(readability.focus.outlineStyle) && readability.focus.outlineAlpha > 0, 'Keyboard focus needs a nontransparent outline.');
+        });
         const announcements = { width, complete: null, repeated: null, afterEdit: null, invalid: null, focus: null };
         await observe('polite result announcements preserve focus and clear stale readiness', announcements, async () => {
           const announcer = interaction.frame.locator('body > p[role="status"][aria-label="Tool updates"]');
