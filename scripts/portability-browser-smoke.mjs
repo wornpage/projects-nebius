@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { once } from 'node:events';
+import { stripVTControlCharacters } from 'node:util';
 import { chromium } from 'playwright-core';
 
 const nebiusEdition = process.argv.includes('--nebius');
@@ -18,7 +19,7 @@ try {
 	let ready = false;
 	for (let attempt = 0; attempt < 60; attempt += 1) {
 		if (server.exitCode !== null || server.signalCode !== null) throw new Error(`Owned preview exited before readiness: ${serverOutput}`);
-		try { if (serverOutput.includes(origin) && (await fetch(`${origin}/webmcp-challenge`, { signal: AbortSignal.timeout(2000) })).ok) { ready = true; break; } } catch {}
+		try { if (stripVTControlCharacters(serverOutput).includes(origin) && (await fetch(`${origin}/webmcp-challenge`, { signal: AbortSignal.timeout(2000) })).ok) { ready = true; break; } } catch {}
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	assert.equal(ready, true, `Owned preview did not become ready: ${serverOutput}`);
