@@ -39,9 +39,20 @@ The 17-record denominator spans retained history, not today's starts.
 The authenticated Review page displays the failure, check output, source and
 rejected response. It does not offer a failed tool as a usable preview or permit
 its evidence to be saved as passed. Neither evaluation reached the independent
-24-case browser gate. Projects Acceptance returned an internal error, so this
-checkpoint has no formal acceptance receipt. Changes remain local; no push,
-deployment, publication or Devpost update was performed.
+24-case browser gate. Projects Acceptance recovered after its earlier internal
+error; the coordination checkpoint and next step were recorded on
+`task-mun25nla-sbv1` at workspace versions 17907 and 17908. No paid Jev review
+or formal acceptance was performed. Changes remain local; no push, deployment,
+publication or Devpost update was performed.
+
+Failed references now expose an Inspect run link from Next step. Native Enter
+opened the actual retained failure, with preview and passed-evidence actions
+still unavailable. A 375px screenshot exposed clipping that document scroll
+width did not detect. Source `816698c` constrains the card's grid track and title
+minimum size; Svelte checking and the static build passed. The final responsive
+render recheck remains pending: the available browser connector refused both
+the private backup and a separately authored synthetic fixture under its file
+access policy. Earlier clipped screenshots remain failed layout evidence.
 
 ## Historical successful checker — October 1, 2026
 
