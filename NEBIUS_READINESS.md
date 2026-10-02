@@ -12,6 +12,13 @@ demo, Devpost entry, or challenge eligibility.
 
 ## Current runtime status — October 2, 2026
 
+The [public video](https://www.youtube.com/watch?v=ssBXmrdvHdE) was published
+October 2 and embedded in the submitted Devpost entry. It is a captioned
+108-second recording of the earlier October 1 retained checker, whose original
+JSON-loader denominator stays 0/2. The current JSON result below is newer and
+has separate receipts; publication does not turn the older recording into
+evidence of this new run. Source and hosted access remain private/paused.
+
 The current task-owned JSON checker **passed its bounded local evaluation and
 independent browser checks**. Run `2947cffc-84e3-4f71-8325-1e35f29c170a` used
 source `e72aa23`, repaired once, and passed 28 agent-authored assertions, 6/6
