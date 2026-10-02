@@ -156,8 +156,10 @@ test('distributed notices retain the MIT license and accompany the browser artif
 	assert.match(baseline, /Permission is hereby granted, free of charge/u);
 	assert.match(baseline, /THE SOFTWARE IS PROVIDED "AS IS"/u);
 	const policy = readFileSync(path.join(root, 'LICENSING.md'), 'utf8');
-	assert.match(policy, /public MIT-licensed release during submission\nweek/u);
-	assert.match(policy, /publication separately authorized by the owner/u);
+	const accessPolicy = policy.replace(/\s+/gu, ' ');
+	assert.match(accessPolicy, /Source publication, hosted access and provider spending are separate owner-authorized actions\./u);
+	assert.match(accessPolicy, /keeping AI guidance and Sandbox execution disabled\./u);
+	assert.match(accessPolicy, /does not itself authorize a future visibility, hosting or provider-setting change\./u);
 	for (const directory of ['', 'svelte-frontend']) {
 		const metadata = JSON.parse(readFileSync(path.join(root, directory, 'package.json'), 'utf8'));
 		const lock = JSON.parse(readFileSync(path.join(root, directory, 'package-lock.json'), 'utf8'));
