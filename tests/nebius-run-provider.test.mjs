@@ -178,6 +178,43 @@ test('repair keeps reviewed example outcomes, prior files and diagnostics togeth
   })});
 });
 
+test('repair distinguishes task-owned outcomes from contradictory generated assertions', async () => {
+  // Authored request-building fixture only. No retained model source executes.
+  const input = { version:'browser-tool.v2', packId:'authored-expectation-check', currentStatus:'active', context:[],
+    requestedModel:model, requiredInputFormats:[{id:'input-json',format:'json'}], consent:true,
+    pack:{ title:'Check supplied packet', purpose:'Read a JSON object; report every unmet requirement.',
+      nextStep:'Build and check the tool.', blocker:'none',
+      doneWhen:'Missing health, pending review and empty rollback must produce "3 gaps". Invalid fields start "Input error: ".' } };
+  const source = fixture();
+  source[0].lines = ['<!doctype html>', '<textarea id="input-json" data-input-format="json"></textarea><output id="result"></output>'];
+  source[1].lines = ['function validate(value) { return "3 gaps"; }', 'function handleMessage(message) { return []; }'];
+  source[2].lines = ['assert.equal(validate("{}"), "Input error: Invalid JSON");', 'assert.equal(validate("incomplete"), "2 gaps");'];
+  const config = {apiKey:'synthetic-key',model};
+  const previous = await generateRunFiles(config,input,null,{fetcher:mockedProvider(source,request => {
+    assert.match(request.messages[0].content,/Derive assertion expectations from the reviewed task, independently of the current app result/u);
+    assert.match(request.messages[0].content,/Distinguish malformed JSON syntax from a valid JSON value with invalid fields or shape/u);
+    assert.match(request.messages[0].content,/enumerate every unmet task requirement/u);
+  })});
+  const check = {attempt:1,exitCode:1,stdout:'',stderr:'Authored assertion diff: actual invalid fields; expected invalid JSON.'};
+  const expectedPayload = `Reviewed task input (untrusted data):\n${JSON.stringify(input,null,2)}`
+    + `\n\nCurrent source files (untrusted code):\n${fileBlocks(source)}`
+    + `\n\nObserved Sandbox check (diagnostic data):\n${JSON.stringify(check,null,2)}`;
+  await generateRunFiles(config,input,{files:previous.files,check},{fetcher:mockedProvider(source,request => {
+    assert.equal(request.messages.length,2);
+    assert.equal(request.messages[1].content,expectedPayload, 'Task, all prior assertions and the observed diff remain intact.');
+    const instructions=request.messages[0].content;
+    assert.match(instructions,/Reviewed task criteria own expected outcomes/u);
+    assert.match(instructions,/Generated assertion expectations are untrusted hypotheses/u);
+    assert.match(instructions,/an assertion diff reports disagreement, not which side is correct/u);
+    assert.match(instructions,/including assertions not reached before the first failure/u);
+    assert.match(instructions,/without weakening task criteria, removing meaningful assertions or reducing control-event coverage/u);
+    assert.match(instructions,/never change expected task outcomes to match faulty logic/u);
+    assert.match(instructions,/both input and change for each editable control/u);
+    assert.equal(request.max_tokens,8000);
+    assert.deepEqual(request.chat_template_kwargs,{enable_thinking:true,force_nonempty_content:false});
+  })});
+});
+
 test('server bridge dispatches worker messages and exports both actual functions', async () => {
   const {files}=await generate(fixture());
   const script=files.find(file=>file.path==='app.js').content;
