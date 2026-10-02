@@ -66,11 +66,12 @@ export function runPageContract(rawFiles, requiredInputFormats = null) {
   const required = validateToolInputRequirements(requiredInputFormats);
   const files = validateRunFiles(rawFiles);
   const { body } = sanitizedPage(files.find(file => file.path === 'index.html').content);
-  const elements = [], ids = new Set();
-  function visit(node, ancestorDisabled = false) {
+  const elements = [], ids = new Set(), editableTextIds = new Set();
+  function visit(node, ancestorDisabled = false, ancestorHidden = false) {
     if (!node.tagName) return;
     const attrs = Object.fromEntries((node.attrs || []).map(attr => [attr.name, attr.value]));
     const inputType = (attrs.type || 'text').toLowerCase();
+    const hidden = ancestorHidden || Object.hasOwn(attrs, 'hidden') || attrs['aria-hidden']?.toLowerCase() === 'true';
     const valueControl = ['input', 'select', 'textarea'].includes(node.tagName);
     const disabled = ancestorDisabled || (['button', 'input', 'select', 'textarea', 'fieldset'].includes(node.tagName) && Object.hasOwn(attrs, 'disabled'));
     const action = node.tagName === 'button' || (node.tagName === 'input' && ['button', 'submit', 'reset', 'image'].includes(inputType));
@@ -84,6 +85,9 @@ export function runPageContract(rawFiles, requiredInputFormats = null) {
       ids.add(attrs.id);
       if (ids.size > 200) throw new TypeError('The generated page exceeds its 200-element binding limit.');
       const editable = valueControl && !action && inputType !== 'hidden' && !disabled && !readonly;
+      const textualInput = ['textarea', 'select'].includes(node.tagName) || (node.tagName === 'input'
+        && ['text', 'search', 'tel', 'url', 'email', 'password'].includes(inputType));
+      if (editable && textualInput && !hidden) editableTextIds.add(attrs.id);
       const fields = ['hidden'];
       if (['pre', 'output'].includes(node.tagName)) fields.push('text');
       if (valueControl) fields.push('value', 'disabled');
@@ -104,7 +108,7 @@ export function runPageContract(rawFiles, requiredInputFormats = null) {
     }
     const legend = node.tagName === 'fieldset' ? node.childNodes?.find(child => child.tagName === 'legend') : null;
     const childDisabled = ancestorDisabled || (node.tagName === 'fieldset' && Object.hasOwn(attrs, 'disabled'));
-    for (const child of node.childNodes || []) visit(child, child === legend ? ancestorDisabled : childDisabled);
+    for (const child of node.childNodes || []) visit(child, child === legend ? ancestorDisabled : childDisabled, hidden);
   }
   for (const child of body.childNodes || []) visit(child);
   for (const element of elements) {
@@ -121,6 +125,9 @@ export function runPageContract(rawFiles, requiredInputFormats = null) {
       const element = textual.find(candidate => candidate.id === input.id);
       if (!element || element.format !== input.format) {
         throw new TypeError('Input ' + input.id + ' must declare data-input-format="' + input.format + '" as required by the task.');
+      }
+      if (!editableTextIds.has(input.id) || !element.events.includes('input') || !element.events.includes('change')) {
+        throw new TypeError('Input ' + input.id + ' must be an editable text control, without hidden, disabled or readonly markup.');
       }
     }
   }

@@ -332,6 +332,40 @@ test('task-owned format comparison is shared by preview and Sandbox before submi
   assert.equal(submissions, 0);
 });
 
+test('task-owned text inputs preserve editable selects and disabled-fieldset legend behavior', () => {
+  for (const html of [
+    '<select id="status" data-input-format="text"><option value="open">Open</option></select>',
+    '<fieldset disabled><legend><select id="status" data-input-format="text"><option value="open">Open</option></select></legend></fieldset>',
+    '<textarea id="status" data-input-format="text"></textarea>',
+    '<input id="status" type="text" data-input-format="text">',
+  ]) {
+    const files = checkerFiles.map(file => file.path === 'index.html' ? { ...file, content: '<!doctype html>\n' + html } : file);
+    const contract = runPageContract(files, [{ id: 'status', format: 'text' }]);
+    assert.deepEqual(contract.elements.find(element => element.id === 'status').events, ['input', 'change']);
+  }
+});
+
+for (const control of [
+  '<input id="packet" type="hidden" data-input-format="json">',
+  '<textarea id="packet" disabled data-input-format="json"></textarea>',
+  '<textarea id="packet" readonly data-input-format="json"></textarea>',
+  '<fieldset disabled><textarea id="packet" data-input-format="json"></textarea></fieldset>',
+  '<div hidden><textarea id="packet" data-input-format="json"></textarea></div>',
+  '<textarea id="packet" hidden data-input-format="json"></textarea>',
+  '<textarea id="packet" aria-hidden="true" data-input-format="json"></textarea>',
+  ...['file', 'range', 'color', 'number', 'date'].map(type => `<input id="packet" type="${type}" data-input-format="json">`),
+]) test(`task-owned JSON input refuses unusable control: ${control}`, async () => {
+  const required = [{ id: 'packet', format: 'json' }];
+  const files = checkerFiles.map(file => file.path === 'index.html' ? { ...file, content: '<!doctype html>\n' + control } : file);
+  assert.throws(() => runPageContract(files, required), /editable text control/u);
+  await assert.rejects(renderRunPreview(files, required), /editable text control/u);
+  let submissions = 0;
+  await assert.rejects(spawnSandbox({ iamToken: 'synthetic', projectId: 'synthetic', imageId: 'synthetic' }, files, {
+    requiredInputFormats: required, fetcher: async () => { submissions++; assert.fail('An unusable required input must not reach Sandbox.'); },
+  }), /editable text control/u);
+  assert.equal(submissions, 0);
+});
+
 test('sandbox submission carries the actual page contract without adding an operation or changing limits', async () => {
   let requests = 0;
   const operationId = '00000000-0000-4000-8000-000000000010';
