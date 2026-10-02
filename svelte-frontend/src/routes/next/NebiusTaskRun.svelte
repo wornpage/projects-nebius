@@ -43,6 +43,7 @@
 
 	let reference = $derived(pack.executionRun || null);
 	let record = $derived(reference?.record || null);
+	let runMatchesTask = $derived(Boolean(reference && executionRunMatchesCurrentTask(pack, reference)));
 	let terminal = $derived(Boolean(record && TERMINAL_RUN_STATUSES.includes(record.status)));
 	let inputPreview = $derived.by((): RunInput | null => {
 		if (config) {
@@ -58,10 +59,10 @@
 	});
 	let currentRunBlocksStart = $derived(Boolean(reference && (!record || !terminal)));
 	let startDisabled = $derived(requestBusy || configState !== 'available' || Boolean(eligibilityError) || currentRunBlocksStart);
-	let resumeDisabled = $derived(requestBusy || disabled || configState !== 'available' || !reference || reference.input.version !== RUN_VERSION || Boolean(record) || !executionRunMatchesCurrentTask(pack, reference));
+	let resumeDisabled = $derived(requestBusy || disabled || configState !== 'available' || !reference || reference.input.version !== RUN_VERSION || Boolean(record) || !runMatchesTask);
 	let canReviewRetirement = $derived(Boolean(reference && !record && reference.input.version === 'browser-tool.v1' &&
 		notFoundReference?.id === reference.id && notFoundReference.key === reference.key));
-	let statusLabel = $derived(record
+	let statusLabel = $derived(record && !runMatchesTask ? 'Earlier result' : record
 		? record.status.charAt(0).toUpperCase() + record.status.slice(1)
 		: reference ? 'Uncertain' : configState === 'unavailable' ? 'Preview only' : 'Not started');
 	let latestEvent = $derived(record?.events.at(-1)?.message || (reference && !record ? reference.input.version === RUN_VERSION
@@ -322,7 +323,7 @@
 			<p class="task-run-kicker">Nebius Sandbox</p>
 			<h2 id="task-run-title">Build a tool</h2>
 		</div>
-		<WornBadge label={statusLabel} variant={record?.status === 'ready' ? 'accent' : record?.status === 'failed' || record?.status === 'uncertain' ? 'warn' : undefined} />
+		<WornBadge label={statusLabel} variant={runMatchesTask && record?.status === 'ready' ? 'accent' : runMatchesTask && (record?.status === 'failed' || record?.status === 'uncertain') ? 'warn' : undefined} />
 	</div>
 	<p class="task-run-scope">{configState === 'available' ? 'Turn this task into a small browser tool. Nemotron generates the files, Nebius Sandbox runs the checks, and you review the result.' : 'Preview how this task can become a browser tool: generate files with Nemotron, run checks in Nebius Sandbox, then review the result.'}</p>
 	<ol class="task-run-stages" aria-label="How a task run works">
@@ -372,10 +373,10 @@
 	{#if error || record?.error}<WornAlert tone="danger">{error || record?.error}</WornAlert>{/if}
 	{#if reference}
 		{#if reference.input.version !== RUN_VERSION}<p class="task-run-muted">This historical request has no task-owned input specification. {record ? 'Its saved result remains available.' : 'Its outcome is unknown.'} It cannot be restarted with the old request.</p>{/if}
-		{#if record && !executionRunMatchesCurrentTask(pack, reference)}<p class="task-run-muted">This saved run used earlier task requirements. Review it as history; a new run is required for the current task.</p>{/if}
+		{#if record && !runMatchesTask}<p class="task-run-muted">This saved run used earlier task requirements. Review it as history; a new run is required for the current task.</p>{/if}
 		<div class="task-run-progress" aria-live="polite">
 			<span>Run {reference.id}</span>
-			<strong>{requestLabel || statusLabel}</strong>
+			<strong>{requestLabel || record?.status || statusLabel}</strong>
 			{#if latestEvent}<p>{latestEvent}</p>{/if}
 		</div>
 		{#if record}
