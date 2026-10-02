@@ -631,11 +631,14 @@ workflow evidence without a provider receipt. An initial Svelte snapshot-cloning
 error was observed and corrected before confirmation passed.
 
 Two fresh live v2 evaluations on October 2 failed their generated checks or
-repair file format; details are in the current readiness checkpoint. Successful
-v2 generation and task-semantic browser qualification are still required.
-The successful v1 checker's original source and JSON-loader 0/2
-remain unchanged. Projects Acceptance returned an internal error, so no formal
-acceptance receipt was created for this slice.
+repair file format. A third, on source `e72aa23`, passed after one repair:
+28 assertions, 6/6 control events, 2/2 JSON example loaders and 2/2 post-output
+edits. Its unchanged files passed all 48 independent packet observations and
+66 total browser checks. The actual local Review preview and evidence save
+were confirmed; see the current readiness checkpoint for the state-save fix,
+receipts, spending and limits of this evidence. The earlier successful v1
+checker's original source and JSON-loader 0/2 remain unchanged. Projects
+coordination is connected; formal acceptance remains separate.
 
 ### Historical attempts — September 28, 2026
 

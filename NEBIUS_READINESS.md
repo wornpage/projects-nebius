@@ -12,38 +12,55 @@ demo, Devpost entry, or challenge eligibility.
 
 ## Current runtime status — October 2, 2026
 
-The new task-owned JSON checker has **not passed**. Two separately authorized
-local evaluations retained their failures. The older successful plaintext
-checker below remains historical evidence; it does not qualify the current
-`browser-tool.v2` task requirements.
+The current task-owned JSON checker **passed its bounded local evaluation and
+independent browser checks**. Run `2947cffc-84e3-4f71-8325-1e35f29c170a` used
+source `e72aa23`, repaired once, and passed 28 agent-authored assertions, 6/6
+control events, 2/2 declared JSON example loaders and 2/2 post-output edits.
+Its unchanged generated files passed all 24 frozen packet cases at both 375px
+and 1280px (48/48), and 66/66 total browser observations in the actual renderer.
+One success does not establish general generation reliability. Earlier failures
+and the older plaintext checker remain distinct historical evidence.
 
 | Evaluation | Actual result | Resource use |
 | --- | --- | --- |
 | `1c6a7e67-cfbc-4697-a1fd-7f12b7aa9ae9`, source `53886b2` | Both Sandbox checks exited 1. Generated assertions incorrectly labelled `{}` malformed JSON and expected two gaps where the task requires three; the repair left those assertions unchanged. | 2 model calls, 2 Sandbox checks; 7,035 input and 8,948 output tokens reported |
 | `6d5fc0ca-4a46-4ffc-adb7-870eb765678c`, source `e528a98` | Sandbox rejected a missing closing brace in `checks.cjs:57` before task assertions could run. The repair was rejected at response line 183 for an extra code fence; no second Sandbox check occurred. | 2 model calls, 1 Sandbox check; 7,292 input and 7,264 output tokens reported |
+| `2947cffc-84e3-4f71-8325-1e35f29c170a`, source `e72aa23` | First check failed on contradictory generated input-error wording. The repair passed Sandbox, then the unchanged result passed independent browser qualification. | 2 model calls, 2 Sandbox checks; 7,815 input and 7,425 output tokens reported |
 
-Source corrections preserve access after a rejected resume and distinguish
-task-owned expected outcomes from generated assertion hypotheses. Independent
-read-only source review accepted them. Local qualification passed 631/631
-Nebius tests and 140/140 preserved WebMCP contract tests on Node 24.18.0, with
-zero Svelte errors or warnings and a successful static build. These results
-qualify source behavior; live JSON generation remains unsuccessful.
+The provider now gives each operation one output instruction, uses balanced file
+framing examples and demonstrates valid multiline event construction. Strict
+parsing, the server bridge, task expectations and resource limits remain intact.
+The real app then exposed an evidence-save mismatch: its append operation writes
+a newline, but its validator rejected newlines in completionEvidence. Source
+`8bb0422` applies the existing bounded multiline policy to that field. The new
+state-owner regression failed before the fix and passed after it; it also checks
+idempotence, export/reload, capacity refusal and unsafe-control rejection.
+Independent read-only reviews accepted both fixes. Final local qualification:
+637/637 Nebius tests, 140/140 preserved WebMCP contract tests, zero Svelte errors
+or warnings and a successful static build on Node 24.18.0.
 
 Before/after read-only audits preserved every earlier serialized run/state
-hash and the credential-file hash. The final audit found 17 retained runs and
-zero active runs. UTC-day counters were 4 model calls and 2 starts against
+hash and the credential-file hash. The final evaluation audit preserved all
+17 earlier records and found 18 retained runs and zero active runs. UTC-day
+counters were 6 model calls and 3 starts against
 unchanged limits of 20 and 3. Each evaluation retained its existing ceiling of
 two calls, 8,000 output tokens per call and two 30-second Sandbox checks.
-The 17-record denominator spans retained history, not today's starts.
+The 18-record denominator spans retained history, not today's starts.
 
-The authenticated Review page displays the failure, check output, source and
-rejected response. It does not offer a failed tool as a usable preview or permit
-its evidence to be saved as passed. Neither evaluation reached the independent
-24-case browser gate. Projects Acceptance recovered after its earlier internal
-error; the coordination checkpoint and next step were recorded on
-`task-mun25nla-sbv1` at workspace versions 17907 and 17908. No paid Jev review
-or formal acceptance was performed. Changes remain local; no push, deployment,
-publication or Devpost update was performed.
+The authenticated local Review page opened the current tool, showed three gaps
+for the incomplete example and zero for the corrected example using native
+keyboard activation, and replaced the old readiness result on invalid input.
+Save run evidence succeeded after the state fix and confirmed the task remains
+open. Its private browser export preserves the successful reference and prior
+completion evidence. No paid Jev review or formal acceptance was performed.
+Changes remain private and local; no push, deployment, publication or Devpost
+update was performed. Evidence, provider receipts, the independent browser
+report and a private workspace backup are under
+`C:/Users/jared/Videos/Nebius/approved-mode-fix-2026-10-02`.
+The successful generated source digest is
+`7971b1ae17bbcaa02f1a6e8dea9a637b28f6343bd13b01ec8a06b0472bd50ccc`.
+
+### Earlier responsive follow-up
 
 Failed references now expose an Inspect run link from Next step. Native Enter
 opened the actual retained failure, with preview and passed-evidence actions
