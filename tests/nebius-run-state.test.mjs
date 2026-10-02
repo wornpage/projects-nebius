@@ -111,7 +111,7 @@ test('rejected response repairs once before its first Sandbox check, preserving 
   assert.deepEqual(run.usage, { modelCalls: 2, inputTokens: 20, outputTokens: 40, totalsComplete: true });
   const repair = h.calls.filter(call => call.url.endsWith('/chat/completions'))[1].body.messages;
   assert.ok(repair[1].content.includes(rejected));
-  assert.match(repair[0].content, /Return all three complete file blocks/u);
+  assert.match(repair[0].content, /Return all three complete files exactly once/u);
   assert.doesNotMatch(JSON.stringify(run), /PRIVATE_REASONING_NOT_RETAINED|synthetic-fixture-key|synthetic-fixture-token/u);
   assert.equal((await h.current().read(key)).run.generationAttempts.length, 2);
   await h.step();

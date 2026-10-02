@@ -126,12 +126,14 @@ an inert UI template with optional local styles. No packages, remote resources o
 user-supplied commands.
 
 Generation uses ordinary chat text output, without a JSON `response_format`.
-The prompt displays each exact opening fence literally, with its language and
-filename on one line, rather than presenting JSON-quoted header strings.
-Initial generation is instructed to begin immediately with the index.html
-header; repair begins with the first file being replaced. The parser still
-rejects prose, bare/unknown headers, duplicate files and malformed fences.
-This wording change has not established reliable live model compliance.
+The prompt demonstrates each exact opening fence with a matching closing fence,
+with its language and filename on one line. It selects one output instruction:
+initial generation and source-rejection repair return all three complete files;
+Sandbox repair returns only complete replacements for changed files. It directs
+the model to stop after the final closing fence. The former consecutive opening
+fences and overlapping operation instructions have been removed. The parser
+still rejects prose, bare/unknown headers, duplicate files and malformed fences.
+Local tests establish prompt construction, not reliable live model compliance.
 The model supplies three native source-code blocks labelled `html index.html`,
 `javascript app.js`, and `javascript checks.cjs`. Each label follows three
 backticks at the start of a line. Each block ends with three backticks on their
@@ -161,6 +163,13 @@ same validation and receive exactly one runtime bridge. Original
 logic line numbers are preserved. The server never runs generated source while
 decoding or materializing it. Missing required functions fail when the Sandbox
 loads app.js and can use the existing single repair.
+
+The shared prompt demonstrates a syntactically valid event object using a named
+values snapshot and a separate edited-text variable. Invalid JSON text remains
+test data instead of being embedded in nested event literals. Both `input` and
+`change`, every enabled action including the main button, and task-specific
+assertions remain required. This addresses the retained missing/extra-brace
+mistakes without altering generated source or weakening the Sandbox gates.
 
 ### Deterministic control contract
 

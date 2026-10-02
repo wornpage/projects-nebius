@@ -36,9 +36,10 @@ test('native file blocks become materialized files with one server runtime bridg
   const files = fixture();
   const result = await generate(files, request => {
     assert.equal(Object.hasOwn(request,'response_format'),false);
-    assert.ok(request.messages[0].content.includes('```html index.html\n```javascript app.js\n```javascript checks.cjs\n'));
+    assert.deepEqual(request.messages[0].content.split('\n').filter(line=>line.startsWith('```')),
+      ['```html index.html','```','```javascript app.js','```','```javascript checks.cjs','```']);
     assert.match(request.messages[0].content,/language and filename together on the same physical line/u);
-    assert.match(request.messages[0].content,/start the reply immediately with this literal first line:\n```html index\.html\n/u);
+    assert.match(request.messages[0].content,/Start immediately with the index\.html opening fence shown above/u);
     assert.doesNotMatch(request.messages[0].content,/"```(?:html|javascript) /u);
     assert.equal(request.max_tokens, 8000);
     assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:false});
@@ -64,6 +65,46 @@ test('native file blocks become materialized files with one server runtime bridg
     } else assert.equal(file.content,logic);
   }
   assert.deepEqual(result.usage,{inputTokens:10,outputTokens:20});
+});
+
+test('each generation mode receives one unambiguous output contract and balanced framing', async () => {
+  const previous = await generate(fixture());
+  for (const [mode, repair, partial] of [
+    ['initial generation',null,false],
+    ['Sandbox repair',{files:previous.files,check:{exitCode:1,stderr:'Authored syntax diagnostic.'}},true],
+    ['source-rejection repair',{rejected:{responseText:'Authored malformed response.',diagnostic:{code:'invalid_model_output',stage:'tool_files',message:'Invalid file framing.'}}},false],
+  ]) {
+    await generate(fixture(),request=>{
+      const prompt=request.messages[0].content;
+      assert.deepEqual(prompt.match(/Current operation: [^.]+\./gu),['Current operation: '+mode+'.']);
+      assert.deepEqual(prompt.split('\n').filter(line=>line.startsWith('```')),
+        ['```html index.html','```','```javascript app.js','```','```javascript checks.cjs','```']);
+      assert.match(prompt,/Stop immediately after the last file's closing fence; there is no outer fence to close/u);
+      assert.equal(prompt.includes('Omitted files remain byte-for-byte unchanged'),partial);
+      assert.equal(prompt.includes('Return all three complete files exactly once'),!partial);
+      assert.equal(prompt.includes('No previous file is implicitly kept'),mode==='source-rejection repair');
+      assert.equal(request.max_tokens,8000);
+      assert.equal(request.temperature,1.0);
+      assert.equal(request.top_p,0.95);
+      assert.deepEqual(request.chat_template_kwargs,{enable_thinking:true,force_nonempty_content:false});
+    },repair);
+  }
+});
+
+test('the supplied event syntax keeps malformed JSON data separate from valid JavaScript', async () => {
+  let sample;
+  await generate(fixture(),request=>{
+    sample=request.messages[0].content.match(/const editedValues = [\s\S]*?const editPatches = handleMessage\(editMessage\);/u)?.[0];
+    assert.ok(sample);
+  });
+  // Only this server-authored prompt example executes, never retained model code.
+  for (const eventName of ['input','change']) {
+    let seen;
+    const initialValues={entry:'earlier',other:'preserved'};
+    runInNewContext(sample,{initialValues,inputId:'entry',editedText:'{',eventName,handleMessage:message=>{seen=JSON.parse(JSON.stringify(message));return [];}},{timeout:1000});
+    assert.deepEqual(seen,{type:'event',event:eventName,id:'entry',values:{entry:'{',other:'preserved'}});
+    assert.deepEqual(initialValues,{entry:'earlier',other:'preserved'});
+  }
 });
 
 for (const [name, mutate] of [
@@ -293,6 +334,7 @@ for (const [name, output, reason] of [
   ['duplicate file',()=>fileBlocks([...fixture(),fixture()[0]]), /index\.html is repeated on response line \d+/u],
   ['leading prose',()=> 'Here are your files:\n'+fileBlocks(fixture()), /exact allowed file header on response line 1/u],
   ['trailing prose',()=>fileBlocks(fixture())+'\nAll tests pass.', /exact allowed file header on response line \d+/u],
+  ['extra final closing fence',()=>fileBlocks(fixture())+'\n```', /exact allowed file header on response line \d+/u],
   ['unterminated block',()=>fileBlocks(fixture()).slice(0,-3), /checks\.cjs is missing its closing file fence/u],
   ['nested fence',()=>fileBlocks(fixture()).replace('<!doctype html>','```javascript extra.js'), /Nested or indented file fence in index\.html on response line 2/u],
   ['empty file',()=>fileBlocks([{path:'index.html',lines:[]},...fixture().slice(1)]), /index\.html must contain 2 to 1024 source lines/u],
@@ -401,8 +443,8 @@ test('repair replaces only named files and preserves other source exactly',async
   changed.lines[0]='function validate(value) { return value.trim(); }';
   const repaired=await generate([changed],request=>{
     assert.equal(Object.hasOwn(request,'response_format'),false);
-    assert.match(request.messages[0].content,/For repair, start immediately with the exact opening line of the first file being replaced/u);
-    assert.match(request.messages[0].content,/Never preface either response with a heading, introduction or filename label/u);
+    assert.match(request.messages[0].content,/Start immediately with the exact opening line of the first file being replaced/u);
+    assert.match(request.messages[0].content,/Do not preface the response with a heading, introduction or filename label/u);
     assert.match(request.messages[0].content,/Omitted files remain byte-for-byte unchanged/u);
     assert.ok(request.messages[1].content.includes(fileBlocks(fixture())));
   },{files:original.files,check:{exitCode:1,stderr:'Controlled fixture error'}});
