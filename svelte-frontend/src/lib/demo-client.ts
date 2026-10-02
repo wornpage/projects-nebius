@@ -210,7 +210,7 @@ function assertDemoState(value: unknown, recordOnly = false): asserts value is D
 		};
 		for (const [field, maxLength] of Object.entries(optionalTextLimits)) {
 			const raw = pack[field];
-			const controls = field === 'purpose' || field === 'doneWhen' ? /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/u : /\p{Cc}/u;
+			const controls = field === 'purpose' || field === 'doneWhen' || field === 'completionEvidence' ? /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/u : /\p{Cc}/u;
 			if (raw !== undefined && (typeof raw !== 'string' || raw.length > maxLength || controls.test(raw))) {
 				throw new ChallengeStateError(`Saved workspace data contains an invalid ${field} value.`);
 			}

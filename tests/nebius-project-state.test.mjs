@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { createProjectPlanState, assertProjectState, PROJECT_STATE_LIMITS } from '../svelte-frontend/src/lib/nebius-project-state.mjs';
+import { authoredPreviewReference, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
 
 const lib = new URL('../svelte-frontend/src/lib/', import.meta.url);
 const require = createRequire(new URL('../svelte-frontend/package.json', import.meta.url));
@@ -114,6 +115,48 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false,
 }
 const envelope = (state, revision = 'revision-1') => JSON.stringify({ schemaVersion: 1, revision, state });
 const json = (value) => JSON.parse(JSON.stringify(value));
+
+test('saving a ready run appends evidence and survives export and reload without completing the task', async () => {
+	const reference = await authoredPreviewReference(await materializeAuthoredChecker());
+	const pack = { id: reference.input.packId, ...reference.input.pack, status: reference.input.currentStatus,
+		completionEvidence: 'An earlier observation.', executionRun: reference };
+	const browser = browserClient(envelope({ packs: [pack] }));
+	await browser.client.refreshDemoState();
+	const saved = await browser.client.saveExecutionRunEvidence(pack.id, reference.id, reference.key);
+	assert.ok(saved.completionEvidence.startsWith('An earlier observation.\nNebius browser tool run ' + reference.id));
+	assert.equal(saved.status, 'active');
+	assert.deepEqual(json(saved.executionRun), reference);
+	const firstEvidence = saved.completionEvidence;
+	await browser.client.saveExecutionRunEvidence(pack.id, reference.id, reference.key);
+	assert.equal(get(browser.client.demoState).packs[0].completionEvidence, firstEvidence, 'Saving twice never duplicates the run reference.');
+	const reloaded = browserClient(browser.client.exportWorkspaceState());
+	await reloaded.client.refreshDemoState();
+	assert.equal(get(reloaded.client.demoState).packs[0].completionEvidence, firstEvidence);
+	assert.equal(get(reloaded.client.demoState).packs[0].status, 'active');
+	assert.equal(browser.runStarts + browser.runReads + reloaded.runStarts + reloaded.runReads, 0);
+});
+
+test('run evidence capacity refusal preserves prior evidence and the ready reference', async () => {
+	const reference = await authoredPreviewReference(await materializeAuthoredChecker());
+	const pack = { id: reference.input.packId, ...reference.input.pack, status: reference.input.currentStatus,
+		completionEvidence: 'x'.repeat(2000), executionRun: reference };
+	const initial = envelope({ packs: [pack] });
+	const browser = browserClient(initial);
+	await browser.client.refreshDemoState();
+	await assert.rejects(browser.client.saveExecutionRunEvidence(pack.id, reference.id, reference.key), /Completion evidence is full/u);
+	assert.equal(browser.saved, initial);
+	assert.equal(browser.writes, 0);
+});
+
+test('multiline completion evidence stays bounded and rejects unsafe control characters', async () => {
+	const browser = browserClient(envelope(seed()));
+	await browser.client.refreshDemoState();
+	for (const evidence of ['x'.repeat(2001), 'line\u0000break', 'line\u001bbreak', 'line\u007fbreak', 'line\u0085break']) {
+		const state = seed(); state.packs[0].completionEvidence = evidence;
+		assert.throws(() => browser.client.previewWorkspaceImport(envelope(state)), /invalid completionEvidence/u);
+	}
+	assert.equal(browser.writes, 0);
+});
 
 test('approved tool input requirements survive consent, task saving, export and reload', async () => {
 	const plan = makePlan();
