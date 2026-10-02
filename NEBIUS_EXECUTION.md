@@ -78,8 +78,14 @@ sandbox. The WebMCP build retains its original host-page policy.
 
 JSON run requests, including configuration, send
 `X-Nebius-Run-Format: run-diagnostics.v3`. The shared browser client owns this
-header. An older or missing format is rejected with a clear page-reload message
-before request admission. This keeps an already-open page from starting a run
+header. An older or missing format is rejected with `409:run_format_changed`
+and a clear page-reload message before request admission. This code is excluded
+from earlier cached clients' definitive start rejections: an earlier POST may
+have succeeded even when its response was lost. Resuming a saved request never
+clears its reference on a rejected POST; the browser observes that same run ID.
+Only the separate owner-confirmed retirement path, after a fresh parsed
+`404:not_found`, can retire an unresolved historical reference.
+This keeps an already-open page from starting a run
 whose diagnostic fields its old parser cannot read. The HTML preview form
 still submits only its run key.
 

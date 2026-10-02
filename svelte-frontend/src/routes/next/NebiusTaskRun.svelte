@@ -257,19 +257,11 @@
 			if (disposed || pack.id !== capturedPackId) return;
 			await applyRecord(id, key, started);
 		} catch (cause) {
-			if (disposed) return;
-			if (cause instanceof NebiusRunClientError && cause.definitiveStartRejection) {
-				try { await clearUnsentExecutionRunReference(capturedPackId, id, key, input); }
-				catch (clearError) {
-					error = clearError instanceof Error ? `${cause.message} ${clearError.message}` : cause.message;
-					return;
-				}
-				error = cause.message;
-			} else if (cause instanceof NebiusRunClientError && cause.uncertain) {
-				notice = cause.message;
-				if (pack.id === capturedPackId) scheduleRefresh(capturedPackId, id, key, cause.message);
-			}
-			else error = cause instanceof Error ? cause.message : 'The saved task request could not be resumed.';
+			if (disposed || !isCurrentRun(capturedPackId, id, key)) return;
+			// A rejected retry says nothing about the earlier POST's outcome.
+			error = cause instanceof Error ? cause.message : 'The saved task request could not be resumed.';
+			notice = 'The saved request is preserved. Refresh it to check whether the earlier start created a run.';
+			scheduleRefresh(capturedPackId, id, key, notice);
 		} finally {
 			if (!disposed) {
 				requestBusy = false;

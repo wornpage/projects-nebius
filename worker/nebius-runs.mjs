@@ -108,9 +108,9 @@ function runStub(env, id) { return env.NEBIUS_RUNS.getByName(id); }
 
 function assertRecordFormat(request) {
   if (request.headers.get('x-nebius-run-format') !== RUN_RECORD_FORMAT) {
-    // Cached clients already treat invalid_request as a definitive rejection.
-    // Reject before admission so an old parser never spends a run it cannot read.
-    fail(400, 'invalid_request', 'Task execution was updated. Reload this page to use the current run format.');
+    // A cached client may be retrying a POST whose earlier response was lost.
+    // Reject before admission, but never claim that its saved run cannot exist.
+    fail(409, 'run_format_changed', 'Task execution was updated. Reload this page to use the current run format.');
   }
 }
 

@@ -33,11 +33,12 @@ function get(store) { let value; store.subscribe((next) => { value = next; })();
 
 // Execute the actual TypeScript state owner with browser facilities replaced by
 // deterministic storage and locks. No copied persistence/recovery implementation.
-function browserClient(serialized = null, { failWrite = false, failSeed = false, runFetch } = {}) {
+function browserClient(serialized = null, { failWrite = false, failSeed = false, runFetch, runStartFetch } = {}) {
 	let saved = serialized;
 	let writes = 0;
 	let removes = 0;
 	let runReads = 0;
+	let runStarts = 0;
 	let tail = Promise.resolve();
 	let pauseNext = null;
 	const context = vm.createContext({ structuredClone, crypto: webcrypto, Date, Error, TypeError, SyntaxError, console,
@@ -53,9 +54,14 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false,
 		} } },
 		fetch: async (url, options) => {
 			if (String(url).startsWith('/api/nebius/runs/')) {
+				assert.equal(options.headers.get('X-Nebius-Run-Format'), 'run-diagnostics.v3');
+				if (options.method === 'POST') {
+					runStarts += 1;
+					if (!runStartFetch) throw new Error('Unexpected run start');
+					return runStartFetch(url, options);
+				}
 				runReads += 1;
 				assert.equal(options.method, 'GET');
-				assert.equal(options.headers.get('X-Nebius-Run-Format'), 'run-diagnostics.v3');
 				if (!runFetch) throw new Error('Unexpected run read');
 				return runFetch(url, options);
 			}
@@ -81,7 +87,29 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false,
 	const execution = compile('nebius-execution-client.ts');
 	const client = compile('demo-client.ts', { '$lib/demo-workflow': workflow, './nebius-execution-client': execution });
 	return { client, get saved() { return saved; }, get writes() { return writes; }, get removes() { return removes; },
-		get runReads() { return runReads; }, execution,
+		get runReads() { return runReads; }, get runStarts() { return runStarts; }, execution,
+		async resumeComponent(packId) {
+			const source = readFileSync(new URL('../svelte-frontend/src/routes/next/NebiusTaskRun.svelte', import.meta.url), 'utf8');
+			const script = source.slice(source.indexOf('>') + 1, source.indexOf('</script>'));
+			const parsed = ts.createSourceFile('NebiusTaskRun.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+			const declaration = parsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'resumeSavedRequest');
+			assert.ok(declaration, 'Exercise the actual component function, not a copied retry implementation.');
+			const scheduled = [];
+			const pack = get(client.demoState).packs.find(item => item.id === packId);
+			Object.assign(context, { pack, reference: pack.executionRun, resumeDisabled: false, disposed: false,
+				actionRevision: 0, requestBusy: false, requestLabel: '', error: '', notice: '',
+				startRun: execution.startRun, NebiusRunClientError: execution.NebiusRunClientError,
+				clearUnsentExecutionRunReference: client.clearUnsentExecutionRunReference,
+				applyRecord: (id, key, record) => client.saveExecutionRunRecord(packId, id, key, record),
+				isCurrentRun: (capturedId, id, key) => {
+					const current = get(client.demoState).packs.find(item => item.id === capturedId);
+					return current?.id === packId && current.executionRun?.id === id && current.executionRun.key === key;
+				},
+				scheduleRefresh: (...args) => scheduled.push(args) });
+			const code = ts.transpileModule(declaration.getText(parsed), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+			await new vm.Script(`(async () => { ${code}\n await resumeSavedRequest(); })()`, { filename: 'NebiusTaskRun.resumeSavedRequest.ts' }).runInContext(context);
+			return { scheduled, error: context.error, notice: context.notice, requestBusy: context.requestBusy };
+		},
 		pauseWrite(promise) { pauseNext = promise; }, overwrite(value) { saved = value; } };
 }
 const envelope = (state, revision = 'revision-1') => JSON.stringify({ schemaVersion: 1, revision, state });
@@ -168,6 +196,64 @@ function queuedReceipt(reference) {
 		events: [], files: [], checks: [], usage: { modelCalls: 0, inputTokens: null, outputTokens: null, totalsComplete: false }, error: null
 	});
 }
+
+for (const [name, status, code] of [
+	['format change', 409, 'run_format_changed'], ['invalid retry', 400, 'invalid_request'],
+	['model change', 409, 'model_changed'], ['run conflict', 409, 'run_conflict'],
+	['input change', 409, 'run_input_changed'], ['daily ceiling', 429, 'daily_limit'],
+	['rate limit', 429, 'rate_limited'], ['execution disabled', 404, 'execution_disabled']
+]) test(`a lost initial response survives the actual component's ${name} resume rejection`, async () => {
+	let serverReceipt = null, reference;
+	const browser = browserClient(envelope(approve().state), {
+		runStartFetch: () => {
+			if (!serverReceipt) {
+				serverReceipt = queuedReceipt(reference);
+				throw new Error('Authored fixture: POST admitted, response lost.');
+			}
+			return Response.json({ code, error: 'Authored retry rejection; the earlier start may exist.' }, { status });
+		},
+		runFetch: () => Response.json({ run: serverReceipt })
+	});
+	await browser.client.refreshDemoState();
+	const pack = get(browser.client.demoState).packs[1];
+	reference = { id: '00000000-0000-4000-8000-000000000041', key: 'd'.repeat(64),
+		input: browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture'), record: null };
+	await browser.client.reserveExecutionRunReference(pack.id, reference);
+	await assert.rejects(browser.execution.startRun(reference.id, reference.key, reference.input), error => error.uncertain === true);
+	const reservedBytes = browser.saved, serverBefore = json(serverReceipt);
+	const resumed = await browser.resumeComponent(pack.id);
+	assert.equal(browser.saved, reservedBytes, 'A refused retry cannot remove or rewrite the earlier reference.');
+	assert.deepEqual(json(get(browser.client.demoState).packs[1].executionRun), json(reference));
+	assert.deepEqual(json(serverReceipt), serverBefore);
+	assert.equal(browser.runStarts, 2, 'Both POSTs are authored transport fixtures, not model or Sandbox calls.');
+	assert.equal(browser.runReads, 0);
+	assert.equal(resumed.requestBusy, false);
+	assert.match(resumed.notice, /saved request is preserved/u);
+	assert.equal(resumed.scheduled.length, 1);
+	assert.deepEqual(resumed.scheduled[0].slice(0,3), [pack.id, reference.id, reference.key]);
+	const recovered = await browser.execution.readRun(reference.id, reference.key, pack.id);
+	await browser.client.saveExecutionRunRecord(pack.id, reference.id, reference.key, recovered);
+	assert.equal(browser.runReads, 1);
+	assert.deepEqual(json(get(browser.client.demoState).packs[1].executionRun.record), serverBefore);
+	assert.deepEqual(json(serverReceipt), serverBefore);
+});
+
+test('format change keeps the reload diagnostic and an uncertain current-client start', async () => {
+	const browser = browserClient(envelope(approve().state), { runStartFetch: () => Response.json({
+		code: 'run_format_changed', error: 'Task execution was updated. Reload this page.'
+	}, { status: 409 }) });
+	await browser.client.refreshDemoState();
+	const pack = get(browser.client.demoState).packs[1];
+	const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+	await assert.rejects(browser.execution.startRun('00000000-0000-4000-8000-000000000042', 'e'.repeat(64), input), error => {
+		assert.equal(error.code, 'run_format_changed');
+		assert.equal(error.status, 409);
+		assert.equal(error.uncertain, true);
+		assert.equal(error.definitiveStartRejection, false);
+		assert.match(error.message, /Reload/u);
+		return true;
+	});
+});
 
 test('confirmed legacy retirement rereads the server, preserves unknown history and permits a new input review', async () => {
 	const { state, packId, reference } = legacyReservation();

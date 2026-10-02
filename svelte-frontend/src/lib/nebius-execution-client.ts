@@ -225,6 +225,9 @@ export async function startRun(runId: string, runKey: string, input: RunInput, s
 		}, signal);
 		return (await parseRunResponse(checkedResponse(response, value), runId, validated.packId)).run;
 	} catch (error) {
+		if (error instanceof NebiusRunClientError && error.status === 409 && error.code === 'run_format_changed') {
+			throw new NebiusRunClientError(error.message, { code: error.code, status: error.status, uncertain: true });
+		}
 		if (error instanceof NebiusRunClientError && DEFINITIVE_START_REJECTIONS.has(`${error.status}:${error.code}`)) {
 			throw new NebiusRunClientError(error.message, { code: error.code, status: error.status, definitiveStartRejection: true });
 		}

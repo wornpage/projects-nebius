@@ -31,7 +31,7 @@ function completion(content, mutate = () => {}) {
   return Response.json(raw);
 }
 
-async function harness(t, { input = FIXTURE_INPUT, responses = [fixtureText()], exits = [0], reserve = () => true, onModel = async () => {}, onSandbox = async () => {} } = {}) {
+async function harness(t, { input = FIXTURE_INPUT, responses = [fixtureText()], exits = [0], reserve = () => true, onModel = async () => {}, onSandbox = async () => {}, start = true } = {}) {
   const data = new Map(); let alarmAt = null;
   const storage = {
     async get(name) { return structuredClone(data.get(name)); },
@@ -75,8 +75,10 @@ async function harness(t, { input = FIXTURE_INPUT, responses = [fixtureText()], 
     if (operation !== -1 && options.method === 'DELETE') return new Response(null, { status: 202 });
     assert.fail('Unmocked network request.');
   });
-  const started = await current().startAdmitted(id, input, key, admission, 20);
-  assert.equal(started.ok, true);
+  if (start) {
+    const started = await current().startAdmitted(id, input, key, admission, 20);
+    assert.equal(started.ok, true);
+  }
   return { storage, env, current, calls, reservations,
     counts: () => ({ model: modelCount, sandbox: sandboxCount }),
     state: () => storage.get('state'),
@@ -453,9 +455,48 @@ test('old response-format clients are rejected before any run admission', async 
   const response = await handleNebiusRuns(new Request('http://127.0.0.1/api/nebius/runs/config', {
     headers: { 'x-nebius-run-format': 'run-diagnostics.v1' },
   }), {});
-  assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /Reload/u);
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.equal(body.code, 'run_format_changed');
+  assert.match(body.error, /Reload/u);
   assert.equal(RUN_RECORD_FORMAT, 'run-diagnostics.v3');
+});
+
+test('a lost admitted POST survives a stale-format resume and is recovered by current GET', async t => {
+  const h = await harness(t, { start: false });
+  let rateAdmissions = 0, runAdmissions = 0;
+  const env = { ...h.env, NEBIUS_EXECUTION_ENABLED: 'true', NEBIUS_ALLOWED_ORIGIN: 'http://127.0.0.1',
+    NEBIUS_DAILY_CALL_LIMIT: '20', NEBIUS_DAILY_RUN_LIMIT: '3',
+    NEBIUS_IP_RATE_LIMITER: { limit: async () => { rateAdmissions++; return { success: true }; } },
+    NEBIUS_RUN_BUDGET: { getByName: () => ({ reserve: async () => { runAdmissions++; return true; } }) },
+    NEBIUS_RUNS: { getByName: runId => { assert.equal(runId, id); return h.current(); } } };
+  const request = (method, format) => new Request('http://127.0.0.1/api/nebius/runs/' + id, {
+    method, headers: { 'content-type': 'application/json', 'x-nebius-run-format': format,
+      authorization: 'Bearer ' + key, origin: 'http://127.0.0.1' },
+    ...(method === 'POST' ? { body: JSON.stringify(FIXTURE_INPUT) } : {}) });
+  const original = await handleNebiusRuns(request('POST', RUN_RECORD_FORMAT), env);
+  assert.equal(original.status, 202);
+  // The server admitted this POST, but the authored browser fixture loses its body.
+  let localReference = { id, key, input: structuredClone(FIXTURE_INPUT), record: null };
+  const saved = structuredClone(localReference), serverBefore = await h.state();
+  const retry = await handleNebiusRuns(request('POST', 'run-diagnostics.v2'), env);
+  const rejection = await retry.json();
+  assert.equal(retry.status, 409);
+  assert.equal(rejection.code, 'run_format_changed');
+  // Frozen cached-client classification from the earlier published client.
+  const cachedDefinitiveRejections = new Set(['400:invalid_request', '404:execution_disabled',
+    '409:model_changed', '409:run_conflict', '409:run_input_changed', '429:rate_limited', '429:daily_limit']);
+  if (cachedDefinitiveRejections.has(`${retry.status}:${rejection.code}`)) localReference = null;
+  assert.deepEqual(localReference, saved, 'Cached clients must retain the ID, key and original snapshot.');
+  assert.deepEqual(await h.state(), serverBefore);
+  assert.equal(rateAdmissions, 1);
+  assert.equal(runAdmissions, 1);
+  const recovered = await handleNebiusRuns(request('GET', RUN_RECORD_FORMAT), env);
+  assert.equal(recovered.status, 200);
+  assert.deepEqual((await recovered.json()).run, serverBefore.record);
+  assert.deepEqual(await h.state(), serverBefore);
+  assert.deepEqual(h.counts(), { model: 0, sandbox: 0 });
+  assert.equal(h.reservations.length, 0);
 });
 
 test('historical records normalize unknown generation evidence without inventing it', async t => {
