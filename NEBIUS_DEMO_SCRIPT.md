@@ -1,11 +1,98 @@
 # Nebius edition: live demo and observation sheet
 
-This is a rehearsal plan, not a record of live model success. The four bundled
-work items are synthetic. Record the actual model ID, outputs, failures and
-usage after the owner configures Token Factory. Use this fork's own public
-source and hosted Nebius edition for submission; do not modify the earlier
+The plans below use synthetic work inputs. They do not establish that their
+unexecuted advisory calls succeeded. The retained-checker rehearsal uses an
+actual saved model/Sandbox run and labels it accordingly. Record the actual
+model ID, outputs, failures and usage for any fresh call. Use this edition's
+eventual public source and hosted app for submission; do not modify the earlier
 WebMCP challenge repository or present the private Projects app as the public
 source of this edition.
+
+## Retained checker rehearsal (target 2:45)
+
+Use saved run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` in the local app. Label
+the run October 1, 2026; its source and receipts are unchanged. This is a replay
+of an observed result, not a new generation. No new provider call is needed.
+Public judge access and final video publication remain owner release gates.
+
+| Time | Show | Evidence or action |
+| --- | --- | --- |
+| 0:00–0:20 | Work, then the release-packet checker task | Two synthetic packet inputs have distinct expected outputs: three gaps and zero gaps |
+| 0:20–0:45 | Review saved run | Super model ID, two model calls, 6,700 input and 9,083 output tokens in total |
+| 0:45–1:05 | Expand both recorded Sandbox checks | Missing input-change coverage in the first check, then 14 assertions and 6/6 events after repair |
+| 1:05–1:35 | Try your tool; load and check incomplete, then complete example | Three actual gaps become zero; activate Check with Tab and Enter |
+| 1:35–1:55 | Edit the input, then check malformed JSON | The old ready result clears and the named result shows an input error |
+| 1:55–2:20 | Restore the complete example; open Input formats, then close preview | The saved input declares Plain text; historical JSON-loader coverage remains 0/2 |
+| 2:20–2:45 | Show source, saved evidence and the separate completion control | Keep the task open; final publication must use the released edition's source and working judge URL |
+
+The narration below is a straight paragraph with pause durations in tenths of
+a second. It is a draft to align with actual recorded actions; it does not
+guarantee a 2:45 spoken duration. Keep provider waiting and any edits clear in
+the final recording.
+
+Wornpage Projects brings the next step into the work itself. [0.4s] This task asks for a small release-packet checker, with an incomplete example and a corrected example. [0.6s] I am opening a saved October first run. Nebius Token Factory used Nemotron Super to write the tool and its checks. [0.4s] These are the actual two model calls and their recorded token totals. [0.6s] The first Sandbox check found that the generated tests had missed the input-change event. [0.3s] One repair passed the next check, with fourteen assertions and all six control events covered. [0.7s] Now I can try the result. [0.3s] The incomplete packet shows three gaps: health, review and rollback. [0.5s] I load the corrected packet and check it with the keyboard. [0.4s] It shows zero gaps and is ready for human review. [0.6s] Editing clears that old result. [0.3s] Malformed JSON produces an input error. [0.6s] The generated input still declares plain text, and that mismatch stays visible here. Its original JSON-loader check count remains zero of two. [0.7s] The files, failed check and successful repair remain available in Review. [0.4s] I can save evidence, then make a separate human decision about completion. [0.6s] This rehearsal uses the local Nebius edition. The released source and judge demo must reproduce this same workflow.
+
+### Repeatable tab-bound recording
+
+The optional development helper
+[nebius-retained-tool-recording.mjs](scripts/nebius-retained-tool-recording.mjs)
+imports into an initialized CUA JavaScript session. It uses that session's bound
+local Review tab, native keyboard surface and CDP recording capability. It does
+not launch a test browser or substitute authored output for the saved tool.
+
+Close the volatile preview first. Supply the observed run ID, checked digest and
+five HTML control IDs; they are not run-access or provider keys. With the tab
+and capability handles already bound, use:
+
+```js
+const { startRetainedToolRecording } = await import(
+  'file:///ABSOLUTE-REPOSITORY-PATH/scripts/nebius-retained-tool-recording.mjs'
+);
+const take = await startRetainedToolRecording({
+  tab, surface, cdp, outputBase: 'C:/path/to/new-take',
+  expectedRunId, expectedSourceDigest, bindings,
+  onProgress: event => nodeRepl.write(event),
+});
+await take.next(); // Repeat in bounded tool calls until take.done is true.
+```
+
+Its seven stages use real Tab, Shift+Tab, Enter, PageDown and typing. Each stage
+checks the resulting accessibility state before proceeding. The last stage
+stops the tab-bound recording and saves raw video, actual cue times and a
+credential-free receipt. Existing output files are never overwritten. Early
+failure retains a stopped take; an uncertain recorder stop is labeled uncertain
+and permits one explicit stop recovery with a separate receipt.
+
+If start acknowledgement fails, the thrown error exposes `recordingRecovery`
+and the helper writes a separate `.start-uncertain.json` receipt. It does not
+retry start or stop automatically. Inspect the bound recorder and establish
+that the capture belongs to this take before calling
+`error.recordingRecovery.stop({ confirmOwnedCapture: true })`. An already
+active recorder from another take must be left with its original controller.
+
+The helper requests no generation and never activates Save evidence or Mark
+done. Its request audit permits only the selected run's preview POST; it strips
+headers, bodies and query strings. Confirm unchanged budgets and records
+separately. The capture is silent and uses the current viewport. Keep the raw
+capture and receipt when converting video for playback or adding narration.
+
+On October 1, 2026, the helper completed all seven stages in a continuous
+108.0-second local take with 75 native key presses. Visual frame review showed
+the distinct three-gap and zero-gap results, cleared output, invalid-JSON error,
+the unchanged format declaration and generated source. One earlier completed
+take was retained after its second scroll moved the zero-gap result out of view;
+the helper now focuses the footer disclosure during result holds. The observed
+request audit contained only the saved run's preview POST. All 15 retained runs,
+provider budgets and the credential-file hash were unchanged after recording.
+
+This is a silent rehearsal of saved output. Its companion narration is one
+paragraph with pauses rounded to tenths and an estimated 160-word-per-minute
+pace mapped to observed action cues; recorded speech remains unverified.
+Independent source review accepted the helper. The scoped documentation-count
+test, syntax and diff checks passed; the full application suite was not rerun
+for this helper change. Projects Acceptance returned an internal error, so no
+formal acceptance receipt was produced. Publication and the judge demo remain
+release work.
 
 ## Project copilot story (target 2:55)
 

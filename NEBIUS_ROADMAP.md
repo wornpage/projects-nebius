@@ -6,12 +6,15 @@ deployed operation remain open. M5 has local UI and portability checks; M6 has
 synthetic scenarios and a video outline. Both remain open. Browser checks use
 synthetic inference.
 
-September 28 source milestone: an existing task can authorize a bounded
-browser-tool build/check/repair run and review its artifact. Static checking,
-compilation and independent source review are complete; live execution is
-unverified and disabled. [Execution scope](NEBIUS_EXECUTION.md) and
-[readiness evidence](NEBIUS_READINESS.md#task-execution-source-milestone)
-record the new path and remaining gates.
+October 1 execution checkpoint: an existing task authorized a real Nemotron
+Super browser-tool run, which passed Sandbox after one repair. Its retained
+checker passed 24 independent packet cases at two widths and interaction in
+the local app. A later renderer follow-up adds result announcements and visible
+input declarations. Broader generation quality, the final video and public
+judge access remain open. [Execution scope](NEBIUS_EXECUTION.md) and
+[current readiness evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026)
+record the result and its limits. Defaults keep execution disabled; configured
+local operation is available while hosted access is paused.
 
 ## Product direction
 
@@ -128,8 +131,9 @@ Current revision: replace the separate suggestion-to-editor transfer with one
 task-change draft. A selected task and optional update produce a proposed next
 step, optional blocker/status changes, rationale, 1–3 references to submitted
 input and up to three missing-information items. One editable before-and-after
-review precedes the human Apply changes action. The actual NVIDIA model's
-ability to produce useful, valid results remains unobserved.
+review precedes the human Apply changes action. Two hosted Nano proposals were
+observed, including a changed draft; neither was applied. The separate six-case
+advisory evaluation and broader usefulness assessment remain open.
 
 The owner approved this direction after reviewing excessive copy and the split
 between model guidance and the inherited action editor. Three tracked child

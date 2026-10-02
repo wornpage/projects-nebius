@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import { generateRunFiles } from '../worker/nebius-run-provider.mjs';
+import { validateRunRecord } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 const model = 'nvidia/synthetic-code-model';
 const fixture = () => [
@@ -11,8 +12,6 @@ const fixture = () => [
     "function handleMessage(message) { return [{id:'result',text:validate(message.values.input)}]; }",
   ]},
   {path:'checks.cjs',lines:[
-    "const assert = require('node:assert/strict');",
-    "const {validate, handleMessage} = require('./app.js');",
     "assert.equal(validate('ok'), 'ok');",
     "assert.equal(handleMessage({type:'event',event:'input',id:'input',values:{input:'ok'}})[0].text, 'ok');",
   ]},
@@ -37,11 +36,22 @@ test('native file blocks become materialized files with one server runtime bridg
   const files = fixture();
   const result = await generate(files, request => {
     assert.equal(Object.hasOwn(request,'response_format'),false);
+    assert.deepEqual(request.messages[0].content.split('\n').filter(line=>line.startsWith('```')),
+      ['```html index.html','```','```javascript app.js','```','```javascript checks.cjs','```']);
+    assert.match(request.messages[0].content,/language and filename together on the same physical line/u);
+    assert.match(request.messages[0].content,/Start immediately with the index\.html opening fence shown above/u);
+    assert.doesNotMatch(request.messages[0].content,/"```(?:html|javascript) /u);
     assert.equal(request.max_tokens, 8000);
-    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:false});
     assert.match(request.messages[0].content, /The server appends its own message handler and Node export/u);
-    assert.match(request.messages[0].content, /call the actual exported validate and handleMessage functions/u);
-    assert.match(request.messages[0].content, /Never keep a readiness or success result for an earlier input/u);
+    assert.match(request.messages[0].content, /supplies assert \(strict Node assertions\), validate and handleMessage as fixed bindings/u);
+    assert.match(request.messages[0].content, /checks\.cjs has no browser DOM: never use document, window, DOM selectors or DOM emulation/u);
+    assert.match(request.messages[0].content, /assert\.deepEqual\(validate\(exampleInput\), expectedResult\)/u);
+    assert.match(request.messages[0].content, /Distinguish malformed input from valid but incomplete task states/u);
+    assert.match(request.messages[0].content, /Every textual input, textarea and select.*explicit data-input-format/u);
+    assert.match(request.messages[0].content, /A JSON input is not plain text merely because a textarea stores its value as a string/u);
+    assert.match(request.messages[0].content, /The preview owns result announcements/u);
+    assert.match(request.messages[0].content, /Never return an old result for new input/u);
     assert.match(request.messages[0].content, /an invalid enum must produce an input error/u);
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
     assert.doesNotMatch(request.messages[0].content, /Input error:|1 gap:|demo-42/u);
@@ -55,6 +65,46 @@ test('native file blocks become materialized files with one server runtime bridg
     } else assert.equal(file.content,logic);
   }
   assert.deepEqual(result.usage,{inputTokens:10,outputTokens:20});
+});
+
+test('each generation mode receives one unambiguous output contract and balanced framing', async () => {
+  const previous = await generate(fixture());
+  for (const [mode, repair, partial] of [
+    ['initial generation',null,false],
+    ['Sandbox repair',{files:previous.files,check:{exitCode:1,stderr:'Authored syntax diagnostic.'}},true],
+    ['source-rejection repair',{rejected:{responseText:'Authored malformed response.',diagnostic:{code:'invalid_model_output',stage:'tool_files',message:'Invalid file framing.'}}},false],
+  ]) {
+    await generate(fixture(),request=>{
+      const prompt=request.messages[0].content;
+      assert.deepEqual(prompt.match(/Current operation: [^.]+\./gu),['Current operation: '+mode+'.']);
+      assert.deepEqual(prompt.split('\n').filter(line=>line.startsWith('```')),
+        ['```html index.html','```','```javascript app.js','```','```javascript checks.cjs','```']);
+      assert.match(prompt,/Stop immediately after the last file's closing fence; there is no outer fence to close/u);
+      assert.equal(prompt.includes('Omitted files remain byte-for-byte unchanged'),partial);
+      assert.equal(prompt.includes('Return all three complete files exactly once'),!partial);
+      assert.equal(prompt.includes('No previous file is implicitly kept'),mode==='source-rejection repair');
+      assert.equal(request.max_tokens,8000);
+      assert.equal(request.temperature,1.0);
+      assert.equal(request.top_p,0.95);
+      assert.deepEqual(request.chat_template_kwargs,{enable_thinking:true,force_nonempty_content:false});
+    },repair);
+  }
+});
+
+test('the supplied event syntax keeps malformed JSON data separate from valid JavaScript', async () => {
+  let sample;
+  await generate(fixture(),request=>{
+    sample=request.messages[0].content.match(/const editedValues = [\s\S]*?const editPatches = handleMessage\(editMessage\);/u)?.[0];
+    assert.ok(sample);
+  });
+  // Only this server-authored prompt example executes, never retained model code.
+  for (const eventName of ['input','change']) {
+    let seen;
+    const initialValues={entry:'earlier',other:'preserved'};
+    runInNewContext(sample,{initialValues,inputId:'entry',editedText:'{',eventName,handleMessage:message=>{seen=JSON.parse(JSON.stringify(message));return [];}},{timeout:1000});
+    assert.deepEqual(seen,{type:'event',event:eventName,id:'entry',values:{entry:'{',other:'preserved'}});
+    assert.deepEqual(initialValues,{entry:'earlier',other:'preserved'});
+  }
 });
 
 for (const [name, mutate] of [
@@ -88,6 +138,35 @@ test('ordinary comments and logging reach the trusted runtime assertion gate', a
   assert.equal(result.files[2].content,files[2].lines.join('\n'));
 });
 
+test('checks use server-owned bindings without generated imports', async () => {
+  const files=fixture();
+  const result=await generate(files);
+  assert.equal(result.files[2].content,files[2].lines.join('\n'));
+  assert.doesNotMatch(result.files[2].content,/\brequire\b/u);
+});
+
+test('an exhausted reasoning-only response preserves usage without treating reasoning as files', async () => {
+  await assert.rejects(generateRunFiles({ apiKey: 'synthetic-key', model }, {}, null, {
+    fetcher: async (url, options) => {
+      const request = JSON.parse(options.body);
+      assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true, force_nonempty_content: false });
+      assert.equal(request.max_tokens, 8000);
+      return Response.json({ model, usage: { prompt_tokens: 10, completion_tokens: 8000 }, choices: [{
+        finish_reason: 'length', message: { role: 'assistant', content: null, reasoning_content: fileBlocks(fixture()) },
+      }] });
+    },
+  }), error => {
+    assert.equal(error.code, 'invalid_model_output');
+    assert.equal(error.stage, 'tool_files');
+    assert.match(error.message, /output limit/u);
+    assert.deepEqual(error.usage, { inputTokens: 10, outputTokens: 8000 });
+    assert.equal(error.response, null);
+    assert.equal(error.uncertain, false);
+    assert.doesNotMatch(JSON.stringify(error), /function validate|reasoning_content/u);
+    return true;
+  });
+});
+
 test('repair preserves the maximum line count and canonical content exactly', async () => {
   const files=fixture();
   files[0].lines=[...files[0].lines,...Array(1022).fill('')];
@@ -98,11 +177,83 @@ test('repair preserves the maximum line count and canonical content exactly', as
     assert.ok(prompt.includes(fileBlocks(files)));
     assert.match(prompt, /"exitCode": 1/u);
     assert.equal(prompt.includes('self.onmessage'),false);
-    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:true});
+    assert.deepEqual(request.chat_template_kwargs, {enable_thinking:true,force_nonempty_content:false});
     assert.equal(request.max_tokens,8000);
+    assert.match(request.messages[0].content, /checks\.cjs has no browser DOM/u);
+    assert.match(request.messages[0].content, /assert\.deepEqual\(validate\(exampleInput\), expectedResult\)/u);
+    assert.match(request.messages[0].content, /Distinguish malformed input from valid but incomplete task states/u);
+    assert.match(request.messages[0].content, /never change expected task outcomes to match faulty logic/u);
     assert.match(request.messages[0].content, /Preserve and assert any exact output prefixes, capitalization, separators and singular\/plural forms specified by the task/u);
   }, {files:generated.files,check:{exitCode:1,stderr:'A controlled check failed.'}});
   assert.deepEqual(repaired.files,generated.files);
+});
+
+test('repair keeps reviewed example outcomes, prior files and diagnostics together', async () => {
+  const input = {
+    version:'browser-tool.v1',packId:'authored-routing-check',currentStatus:'active',context:[],requestedModel:model,consent:true,
+    pack:{
+      title:'Evaluate a text item',
+      purpose:'Accept text input, including empty text. Report whether work remains.',
+      nextStep:'Build a browser tool.',blocker:'none',
+      doneWhen:'Empty text must produce "Needs work". The text "done" must produce "Ready". Editing clears the previous result.',
+    },
+  };
+  const source = fixture();
+  source[0].lines = ['<!doctype html>', '<textarea id="input" data-input-format="text"></textarea><output id="result"></output>'];
+  source[1].lines[0] = 'function validate(value) { return value === "done" ? "Ready" : "Needs work"; }';
+  source[2].lines = ['assert.equal(validate(""), "Needs work");', 'assert.equal(validate("done"), "Ready");'];
+  const config = {apiKey:'synthetic-key',model};
+  const previous = await generateRunFiles(config,input,null,{fetcher:mockedProvider(source)});
+  const check = {attempt:1,exitCode:1,stdout:'',stderr:'Generated checks failed: supplied incomplete outcome did not match.'};
+  const expectedUserContent = `Reviewed task input (untrusted data):\n${JSON.stringify(input,null,2)}`
+    + `\n\nCurrent source files (untrusted code):\n${fileBlocks(source)}`
+    + `\n\nObserved Sandbox check (diagnostic data):\n${JSON.stringify(check,null,2)}`;
+  await generateRunFiles(config,input,{files:previous.files,check},{fetcher:mockedProvider(source,request=>{
+    assert.equal(request.messages.length,2);
+    assert.equal(request.messages[0].role,'system');
+    assert.equal(request.messages[1].role,'user');
+    assert.equal(request.messages[1].content,expectedUserContent);
+    assert.doesNotMatch(request.messages[1].content,/Wornpage runtime bridge|self\.onmessage/u);
+    assert.deepEqual(request.chat_template_kwargs,{enable_thinking:true,force_nonempty_content:false});
+    assert.equal(request.max_tokens,8000);
+  })});
+});
+
+test('repair distinguishes task-owned outcomes from contradictory generated assertions', async () => {
+  // Authored request-building fixture only. No retained model source executes.
+  const input = { version:'browser-tool.v2', packId:'authored-expectation-check', currentStatus:'active', context:[],
+    requestedModel:model, requiredInputFormats:[{id:'input-json',format:'json'}], consent:true,
+    pack:{ title:'Check supplied packet', purpose:'Read a JSON object; report every unmet requirement.',
+      nextStep:'Build and check the tool.', blocker:'none',
+      doneWhen:'Missing health, pending review and empty rollback must produce "3 gaps". Invalid fields start "Input error: ".' } };
+  const source = fixture();
+  source[0].lines = ['<!doctype html>', '<textarea id="input-json" data-input-format="json"></textarea><output id="result"></output>'];
+  source[1].lines = ['function validate(value) { return "3 gaps"; }', 'function handleMessage(message) { return []; }'];
+  source[2].lines = ['assert.equal(validate("{}"), "Input error: Invalid JSON");', 'assert.equal(validate("incomplete"), "2 gaps");'];
+  const config = {apiKey:'synthetic-key',model};
+  const previous = await generateRunFiles(config,input,null,{fetcher:mockedProvider(source,request => {
+    assert.match(request.messages[0].content,/Derive assertion expectations from the reviewed task, independently of the current app result/u);
+    assert.match(request.messages[0].content,/Distinguish malformed JSON syntax from a valid JSON value with invalid fields or shape/u);
+    assert.match(request.messages[0].content,/enumerate every unmet task requirement/u);
+  })});
+  const check = {attempt:1,exitCode:1,stdout:'',stderr:'Authored assertion diff: actual invalid fields; expected invalid JSON.'};
+  const expectedPayload = `Reviewed task input (untrusted data):\n${JSON.stringify(input,null,2)}`
+    + `\n\nCurrent source files (untrusted code):\n${fileBlocks(source)}`
+    + `\n\nObserved Sandbox check (diagnostic data):\n${JSON.stringify(check,null,2)}`;
+  await generateRunFiles(config,input,{files:previous.files,check},{fetcher:mockedProvider(source,request => {
+    assert.equal(request.messages.length,2);
+    assert.equal(request.messages[1].content,expectedPayload, 'Task, all prior assertions and the observed diff remain intact.');
+    const instructions=request.messages[0].content;
+    assert.match(instructions,/Reviewed task criteria own expected outcomes/u);
+    assert.match(instructions,/Generated assertion expectations are untrusted hypotheses/u);
+    assert.match(instructions,/an assertion diff reports disagreement, not which side is correct/u);
+    assert.match(instructions,/including assertions not reached before the first failure/u);
+    assert.match(instructions,/without weakening task criteria, removing meaningful assertions or reducing control-event coverage/u);
+    assert.match(instructions,/never change expected task outcomes to match faulty logic/u);
+    assert.match(instructions,/both input and change for each editable control/u);
+    assert.equal(request.max_tokens,8000);
+    assert.deepEqual(request.chat_template_kwargs,{enable_thinking:true,force_nonempty_content:false});
+  })});
 });
 
 test('server bridge dispatches worker messages and exports both actual functions', async () => {
@@ -174,24 +325,101 @@ test('repair refuses source without its exact bridge before requesting inference
   assert.equal(called,false);
 });
 
-for (const [name, output] of [
-  ['legacy JSON source lines',()=>JSON.stringify({files:fixture()})],
-  ['legacy JSON content',()=>JSON.stringify({files:fixture().map(file=>({path:file.path,content:file.lines.join('\n')}))})],
-  ['missing initial file',()=>fileBlocks(fixture().slice(0,2))],
-  ['unknown path',()=>fileBlocks([...fixture(),{path:'extra.js',lines:['// extra','// file']}])],
-  ['traversal path',()=>fileBlocks([{path:'../app.js',lines:['// extra','// file']},...fixture()])],
-  ['duplicate file',()=>fileBlocks([...fixture(),fixture()[0]])],
-  ['leading prose',()=> 'Here are your files:\n'+fileBlocks(fixture())],
-  ['trailing prose',()=>fileBlocks(fixture())+'\nAll tests pass.'],
-  ['unterminated block',()=>fileBlocks(fixture()).slice(0,-3)],
-  ['nested fence',()=>fileBlocks(fixture()).replace('<!doctype html>','```javascript extra.js')],
-  ['empty file',()=>fileBlocks([{path:'index.html',lines:[]},...fixture().slice(1)])],
-  ['wrong language',()=>fileBlocks(fixture()).replace('```javascript app.js','```python app.js')],
+for (const [name, output, reason] of [
+  ['legacy JSON source lines',()=>JSON.stringify({files:fixture()}), /exact allowed file header on response line 1/u],
+  ['legacy JSON content',()=>JSON.stringify({files:fixture().map(file=>({path:file.path,content:file.lines.join('\n')}))}), /exact allowed file header on response line 1/u],
+  ['missing initial file',()=>fileBlocks(fixture().slice(0,2)), /Missing required source files: checks\.cjs\./u],
+  ['unknown path',()=>fileBlocks([...fixture(),{path:'extra.js',lines:['// extra','// file']}]), /exact allowed file header on response line \d+/u],
+  ['traversal path',()=>fileBlocks([{path:'../app.js',lines:['// extra','// file']},...fixture()]), /exact allowed file header on response line 1/u],
+  ['duplicate file',()=>fileBlocks([...fixture(),fixture()[0]]), /index\.html is repeated on response line \d+/u],
+  ['leading prose',()=> 'Here are your files:\n'+fileBlocks(fixture()), /exact allowed file header on response line 1/u],
+  ['trailing prose',()=>fileBlocks(fixture())+'\nAll tests pass.', /exact allowed file header on response line \d+/u],
+  ['extra final closing fence',()=>fileBlocks(fixture())+'\n```', /exact allowed file header on response line \d+/u],
+  ['unterminated block',()=>fileBlocks(fixture()).slice(0,-3), /checks\.cjs is missing its closing file fence/u],
+  ['nested fence',()=>fileBlocks(fixture()).replace('<!doctype html>','```javascript extra.js'), /Nested or indented file fence in index\.html on response line 2/u],
+  ['empty file',()=>fileBlocks([{path:'index.html',lines:[]},...fixture().slice(1)]), /index\.html must contain 2 to 1024 source lines/u],
+  ['wrong language',()=>fileBlocks(fixture()).replace('```javascript app.js','```python app.js'), /exact allowed file header on response line \d+/u],
 ]) {
   test(`native file parser rejects ${name}`,async()=>{
-    await assert.rejects(generate(output()),error=>error.code==='invalid_model_output'&&error.stage==='tool_files'&&error.usage.outputTokens===20);
+    await assert.rejects(generate(output()),error=>{
+      assert.equal(error.code,'invalid_model_output');
+      assert.equal(error.stage,'tool_files');
+      assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
+      assert.match(error.message,reason);
+      assert.equal(error.uncertain,false);
+      return true;
+    });
   });
 }
+
+for (const [name, mutate, reason] of [
+  ['empty reply',()=>'', /At least one source file block is required/u],
+  ['bare CR',text=>text.replace('<!doctype html>','<!doctype\rhtml>'), /LF or CRLF source line separators/u],
+  ['Unicode separator',text=>text.replace('<!doctype html>','<!doctype\u2028html>'), /LF or CRLF source line separators/u],
+  ['indented closing fence',text=>text.replace('\n```','\n ```'), /Nested or indented file fence in index\.html/u],
+  ['overlong source line',text=>text.replace('<!doctype html>','x'.repeat(1025)), /index\.html source line 1 exceeds 1024 characters/u],
+  ['too many source lines',text=>text.replace('<!doctype html>',Array(1024).fill('// line').join('\n')), /index\.html must contain 2 to 1024 source lines/u],
+  ['blank page',text=>text.replace('<!doctype html>\n<output id="result"></output>',' \n '), /The generated files are invalid/u],
+  ['NUL in page',text=>text.replace('<!doctype html>','<!doctype html>\u0000'), /The generated files are invalid/u],
+  ['oversized file',text=>text.replace('<!doctype html>',Array(33).fill('x'.repeat(1024)).join('\n')), /A generated file exceeds its size limit/u],
+]) {
+  test(`file diagnostics retain ${name} reason without the rejected reply`,async()=>{
+    const reply=mutate(fileBlocks(fixture()));
+    await assert.rejects(generate(reply),error=>{
+      assert.match(error.message,reason);
+      assert.equal(error.stage,'tool_files');
+      assert.equal(error.code,'invalid_model_output');
+      assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
+      assert.deepEqual(Object.keys(error).sort(),['code','stage','uncertain','usage']);
+      assert.ok(error.message.length<240);
+      return true;
+    });
+  });
+}
+
+test('file diagnostics never echo unknown headers or private provider text',async()=>{
+  const marker='SYNTHETIC_PRIVATE_PROVIDER_TEXT';
+  await assert.rejects(generate(marker+'\n'+fileBlocks(fixture())),error=>{
+    assert.match(error.message,/exact allowed file header on response line 1/u);
+    assert.doesNotMatch(error.message,new RegExp(marker));
+    assert.doesNotMatch(JSON.stringify(error),new RegExp(marker));
+    return true;
+  });
+});
+
+test('shared total-size rejection retains its safe diagnostic',async()=>{
+  const files=fixture().map(file=>({...file,lines:[...file.lines,...Array(23).fill('x'.repeat(1024))]}));
+  await assert.rejects(generate(files),error=>{
+    assert.match(error.message,/The generated tool exceeds its total size limit/u);
+    assert.equal(error.stage,'tool_files');
+    assert.deepEqual(error.usage,{inputTokens:10,outputTokens:20});
+    return true;
+  });
+});
+
+test('failed RunRecord preserves the parser reason and usage without inventing files or checks',async()=>{
+  let failure;
+  try { await generate('SYNTHETIC_REJECTED_SOURCE'); }
+  catch (error) { failure=error; }
+  assert.ok(failure);
+  const record=validateRunRecord({
+    id:'00000000-0000-4000-8000-000000000000',version:'browser-tool.v1',packId:'synthetic-task',
+    pack:{title:'Build a tool',purpose:'Diagnose file format',nextStep:'Build the tool',blocker:'none',doneWhen:'Return the required files'},
+    currentStatus:'active',context:[],requestedModel:model,status:'failed',attempt:0,
+    createdAt:'2026-09-30T00:00:00.000Z',updatedAt:'2026-09-30T00:00:01.000Z',events:[],files:[],checks:[],
+    usage:{modelCalls:1,...failure.usage,totalsComplete:true},error:failure.message,
+    failure:{code:failure.code,stage:failure.stage},
+  });
+  assert.equal(record.error,failure.message);
+  assert.match(record.error,/exact allowed file header on response line 1/u);
+  assert.deepEqual(record.failure,{code:'invalid_model_output',stage:'tool_files'});
+  assert.deepEqual(record.usage,{modelCalls:1,inputTokens:10,outputTokens:20,totalsComplete:true});
+  assert.deepEqual(record.files,[]);
+  assert.deepEqual(record.checks,[]);
+  assert.doesNotMatch(JSON.stringify(record),/SYNTHETIC_REJECTED_SOURCE/u);
+  assert.throws(()=>validateRunRecord({...record,status:'ready'}),/The execution failure details are invalid/u);
+  assert.throws(()=>validateRunRecord({...record,status:'ready',error:null,failure:null}),/A ready result needs observed successful checks/u);
+});
 
 test('native files preserve JavaScript escaping, indentation and trailing blank lines',async()=>{
   const files=fixture();
@@ -215,6 +443,8 @@ test('repair replaces only named files and preserves other source exactly',async
   changed.lines[0]='function validate(value) { return value.trim(); }';
   const repaired=await generate([changed],request=>{
     assert.equal(Object.hasOwn(request,'response_format'),false);
+    assert.match(request.messages[0].content,/Start immediately with the exact opening line of the first file being replaced/u);
+    assert.match(request.messages[0].content,/Do not preface the response with a heading, introduction or filename label/u);
     assert.match(request.messages[0].content,/Omitted files remain byte-for-byte unchanged/u);
     assert.ok(request.messages[1].content.includes(fileBlocks(fixture())));
   },{files:original.files,check:{exitCode:1,stderr:'Controlled fixture error'}});

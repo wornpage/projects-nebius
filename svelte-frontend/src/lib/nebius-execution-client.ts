@@ -1,4 +1,5 @@
 import {
+	RUN_VERSION,
 	RUN_RECORD_FORMAT,
 	isRunConfig,
 	validRunId,
@@ -18,6 +19,7 @@ const DEFINITIVE_START_REJECTIONS = new Set([
 	'404:execution_disabled',
 	'409:model_changed',
 	'409:run_conflict',
+	'409:run_input_changed',
 	'429:rate_limited',
 	'429:daily_limit'
 ]);
@@ -68,10 +70,12 @@ function parseApiError(value: unknown): ApiErrorBody | DisabledConfigBody | null
 async function boundedText(response: Response, maximumBytes: number, expectedMime: 'application/json' | 'text/html'): Promise<string> {
 	const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
 	if (mime !== expectedMime) {
+		await response.body?.cancel().catch(() => {});
 		throw new NebiusRunClientError(`The task execution service returned an unexpected ${mime || 'missing'} content type.`, { status: response.status });
 	}
 	const declared = response.headers.get('content-length');
 	if (declared !== null && Number.isFinite(Number(declared)) && Number(declared) > maximumBytes) {
+		await response.body?.cancel().catch(() => {});
 		throw new NebiusRunClientError('The task execution response exceeded its size limit.', { status: response.status });
 	}
 	if (!response.body) throw new NebiusRunClientError('The task execution response body is unavailable.', { status: response.status });
@@ -79,13 +83,13 @@ async function boundedText(response: Response, maximumBytes: number, expectedMim
 	const decoder = new TextDecoder('utf-8', { fatal: true });
 	let total = 0;
 	let body = '';
+	let finished = false;
 	try {
 		while (true) {
 			const { value, done } = await reader.read();
-			if (done) break;
+			if (done) { finished = true; break; }
 			total += value.byteLength;
 			if (total > maximumBytes) {
-				await reader.cancel();
 				throw new NebiusRunClientError('The task execution response exceeded its size limit.', { status: response.status });
 			}
 			body += decoder.decode(value, { stream: true });
@@ -96,6 +100,7 @@ async function boundedText(response: Response, maximumBytes: number, expectedMim
 		if (error instanceof NebiusRunClientError || (error instanceof DOMException && error.name === 'AbortError')) throw error;
 		throw new NebiusRunClientError('The task execution response was not valid UTF-8.', { status: response.status });
 	} finally {
+		if (!finished) await reader.cancel().catch(() => {});
 		reader.releaseLock();
 	}
 }
@@ -208,6 +213,7 @@ export async function getRunConfig(signal?: AbortSignal): Promise<RunConfigState
 
 export async function startRun(runId: string, runKey: string, input: RunInput, signal?: AbortSignal): Promise<RunRecord> {
 	const validated = validateRunInput(input);
+	if (validated.version !== RUN_VERSION) throw new NebiusRunClientError('Review the current input requirements before starting a new run.', { code: 'run_input_changed', definitiveStartRejection: true });
 	try {
 		const { response, value } = await fetchJson(endpoint(runId), {
 			method: 'POST',
@@ -222,6 +228,9 @@ export async function startRun(runId: string, runKey: string, input: RunInput, s
 		}, signal);
 		return (await parseRunResponse(checkedResponse(response, value), runId, validated.packId)).run;
 	} catch (error) {
+		if (error instanceof NebiusRunClientError && error.status === 409 && error.code === 'run_format_changed') {
+			throw new NebiusRunClientError(error.message, { code: error.code, status: error.status, uncertain: true });
+		}
 		if (error instanceof NebiusRunClientError && DEFINITIVE_START_REJECTIONS.has(`${error.status}:${error.code}`)) {
 			throw new NebiusRunClientError(error.message, { code: error.code, status: error.status, definitiveStartRejection: true });
 		}

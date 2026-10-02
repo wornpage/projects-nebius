@@ -1,4 +1,5 @@
 import { isRecord } from './nebius-contract.mjs';
+import { validateToolInputRequirements } from './nebius-execution-contract.mjs';
 
 export const PLAN_VERSION = 'project-plan.v1';
 export const PLAN_LIMITS = Object.freeze({ brief: 4000, title: 120, summary: 600, tasks: 8, taskTitle: 200, purpose: 1000, nextStep: 200, doneWhen: 1000, missingInformation: 5 });
@@ -28,7 +29,9 @@ export function validateProjectPlan(value) {
   const title = text(value.title, PLAN_LIMITS.title, 'Project title');
   const summary = text(value.summary, PLAN_LIMITS.summary, 'Summary', { empty: true, multiline: true });
   const tasks = Array.from(value.tasks, task => {
-    if (!exactKeys(task, ['id', 'title', 'purpose', 'nextStep', 'doneWhen', 'dependsOn'])
+    const taskKeys = ['id', 'title', 'purpose', 'nextStep', 'doneWhen', 'dependsOn'];
+    if (isRecord(task) && Object.hasOwn(task, 'executionInputs')) taskKeys.push('executionInputs');
+    if (!exactKeys(task, taskKeys)
       || typeof task.id !== 'string' || !/^[a-z][a-z0-9_-]{0,39}$/u.test(task.id)
       || !(task.dependsOn === null || typeof task.dependsOn === 'string')) {
       throw new TypeError('Every task needs an id, title, purpose, nextStep, doneWhen and dependsOn.');
@@ -37,7 +40,8 @@ export function validateProjectPlan(value) {
       purpose: text(task.purpose, PLAN_LIMITS.purpose, 'Task purpose', { multiline: true }),
       nextStep: text(task.nextStep, PLAN_LIMITS.nextStep, 'Task next step'),
       doneWhen: text(task.doneWhen, PLAN_LIMITS.doneWhen, 'Task completion criteria', { multiline: true }),
-      dependsOn: task.dependsOn };
+      dependsOn: task.dependsOn,
+      ...(Object.hasOwn(task, 'executionInputs') ? { executionInputs: validateToolInputRequirements(task.executionInputs) } : {}) };
   });
   const byId = new Map(tasks.map(task => [task.id, task]));
   if (byId.size !== tasks.length) throw new TypeError('Task ids must be unique.');

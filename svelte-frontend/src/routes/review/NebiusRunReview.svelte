@@ -263,7 +263,7 @@
 				{:else}
 					{#each record.checks as check (check.attempt)}
 						<details>
-							<summary>Attempt {check.attempt} · exit {check.exitCode}</summary>
+							<summary>Model attempt {check.attempt} · Sandbox exit {check.exitCode}</summary>
 							<dl><dt>Operation</dt><dd>{check.operationId}</dd><dt>Checkpoint</dt><dd>{check.checkpointId || 'Unknown'}</dd><dt>Source digest</dt><dd>{check.sourceDigest}</dd></dl>
 							<h4>stdout</h4><pre>{check.stdout || '(empty)'}</pre>
 							<h4>stderr</h4><pre>{check.stderr || '(empty)'}</pre>
@@ -271,6 +271,23 @@
 					{/each}
 				{/if}
 			</section>
+
+			{#if verified?.generationAttempts.length}
+				<details data-run-generation-history>
+					<summary>Generation responses ({verified.generationAttempts.length})</summary>
+					<p class="run-muted">Private response history. Passing source validation does not mean the tool passed its checks.</p>
+					{#each verified.generationAttempts as generation (generation.attempt)}
+						<details>
+							<summary>Model attempt {generation.attempt} · {generation.outcome === 'accepted' ? 'source validation passed' : 'source rejected'}</summary>
+							{#if generation.diagnostic}<p>{generation.diagnostic.message}</p><p class="run-muted">{generation.diagnostic.stage} · {generation.diagnostic.code}</p>{/if}
+							{#if generation.retention === 'retained'}<pre>{generation.responseText}</pre>
+							{:else}<p class="run-muted">Response text exceeded the retention size limit and was not saved.</p>{/if}
+						</details>
+					{/each}
+				</details>
+			{:else if verified && verified.usage.modelCalls > 0}
+				<p class="run-muted">No identified generation response was retained for this run.</p>
+			{/if}
 
 			{#if verified?.files.length}
 				<section class="run-files" aria-labelledby="run-files-title">
@@ -298,9 +315,10 @@
 </section>
 
 <style>
-	.run-review { border: 1px solid var(--worn-border); display: grid; gap: 14px; margin-bottom: 18px; padding: 16px; }
+	.run-review { border: 1px solid var(--worn-border); display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); margin-bottom: 18px; min-inline-size: 0; padding: 16px; }
 	.run-try { display: grid; gap: 8px; justify-items: start; }
-	.run-review-head { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+	.run-review-head { align-items: start; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) max-content; min-inline-size: 0; }
+	.run-review-head > div { min-inline-size: 0; }
 	.run-review-head h2, .run-review-id, .run-review-criteria p, .run-checks > p, .run-approval-note { margin: 0; }
 	.run-review-kicker { color: var(--worn-text-muted); font-family: var(--font-typewriter); font-size: 11px; font-weight: 700; letter-spacing: .04em; margin: 0 0 3px; text-transform: uppercase; }
 	.run-review-id, .run-muted, .run-approval-note { color: var(--worn-text-muted); font-size: .875rem; overflow-wrap: anywhere; }

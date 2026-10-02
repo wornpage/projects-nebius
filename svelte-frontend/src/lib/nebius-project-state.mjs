@@ -2,6 +2,7 @@
 import { validatePlanInput, validateProjectPlan, PLAN_LIMITS } from './nebius-plan-contract.mjs';
 import { normalizeWorkTitle } from './canonical-text.mjs';
 import { DEMO_BLOCKER_NONE } from './workflow-rules.mjs';
+import { validateToolInputRequirements } from './nebius-execution-contract.mjs';
 
 // The task limit belongs to approved projects, not the pre-existing ungrouped workspace.
 export const PROJECT_STATE_LIMITS = Object.freeze({ projects: 100, tasks: 1000 });
@@ -47,6 +48,7 @@ export function assertProjectState(state) {
 	if (state.selectedProjectId !== undefined && state.selectedProjectId !== null && !ids.has(state.selectedProjectId)) throw new TypeError('Selected project does not exist.');
 	const tasks = new Map(state.packs.map((pack) => [pack.id, pack]));
 	for (const pack of state.packs) {
+		if (Object.hasOwn(pack, 'executionInputs')) validateToolInputRequirements(pack.executionInputs);
 		if (pack.projectId !== undefined && (typeof pack.projectId !== 'string' || !ids.has(pack.projectId))) throw new TypeError(`Work item "${pack.id}" references a missing project.`);
 		if (pack.projectId && pack.blockedBy && tasks.get(pack.blockedBy)?.projectId !== pack.projectId) throw new TypeError(`Project task "${pack.id}" has a dependency outside its project.`);
 		if (pack.projectId) {
@@ -79,6 +81,7 @@ export function createProjectPlanState(state, { brief, plan, approvalId, source,
 	const tasks = approvedPlan.tasks.map((task) => ({
 		id: `${approvalId}:${task.id}`, projectId: approvalId, title: titles.get(task.id),
 		purpose: task.purpose, nextStep: task.nextStep, doneWhen: task.doneWhen,
+		...(Object.hasOwn(task, 'executionInputs') ? { executionInputs: structuredClone(task.executionInputs) } : {}),
 		next: 'Open', status: task.dependsOn ? 'blocked' : 'active',
 		blocker: task.dependsOn ? `Waiting for ${titles.get(task.dependsOn)}`.slice(0, 200).replace(/[\uD800-\uDBFF]$/u, '') : DEMO_BLOCKER_NONE,
 		...(task.dependsOn ? { blockedBy: `${approvalId}:${task.dependsOn}` } : {})

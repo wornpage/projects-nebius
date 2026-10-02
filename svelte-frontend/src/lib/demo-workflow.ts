@@ -16,13 +16,21 @@ import {
 	normalizeText as normalizeRuleText,
 	rebaseSeedPacks as rebasePacks
 } from './workflow-rules.mjs';
-import type { RunInput, RunRecord } from './nebius-execution-contract.mjs';
+import type { RunInput, RunRecord, ToolInputRequirement } from './nebius-execution-contract.mjs';
 
 export interface DemoExecutionRunReference {
 	id: string;
 	key: string;
 	input: RunInput;
 	record: RunRecord | null;
+}
+
+export const RETIRED_EXECUTION_RUN_LIMIT = 8;
+
+export interface DemoRetiredExecutionRun {
+	reference: DemoExecutionRunReference;
+	retiredAt: string;
+	reason: 'server_not_found';
 }
 
 export interface DemoPack {
@@ -40,6 +48,8 @@ export interface DemoPack {
 	doneWhen?: string;
 	completionEvidence?: string;
 	executionRun?: DemoExecutionRunReference;
+	retiredExecutionRuns?: DemoRetiredExecutionRun[];
+	executionInputs?: ToolInputRequirement[] | null;
 	purpose?: string;
 	pinned?: boolean;
 	archived?: boolean;

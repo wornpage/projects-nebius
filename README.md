@@ -17,10 +17,12 @@ and limits; accepting the result remains a separate action.
 The Nebius Worker's public address and preview URLs are disabled. Reopening
 hosted access requires separate owner authorization for release.
 
-**Development status:** Nano guidance has hosted runtime evidence. Sandbox access is enabled
-and a real Node 24 execution completed successfully. The first tool-building
-attempts were rejected before execution; a complete generated tool and preview
-remain in validation. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
+**Development status:** A real Nemotron Super run produced a release-packet
+checker, repaired a failed Sandbox check, and passed the next check. Its retained
+tool passed 24 independent packet cases at two screen widths and was exercised
+in the local app. This establishes one working result; broader model quality,
+hosted judge access and the final video remain open. See
+[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
 temporarily private MIT-licensed continuation; the earlier WebMCP entry remains
@@ -97,12 +99,13 @@ checks in a Token Factory Sandbox, and allows one repair. Open **Review** to
 inspect the tool, its source and observed check output, then explicitly save
 run evidence. A successful run does not mark the task done.
 
-Execution has a separate Sandbox credential binding and limits. The hosted demo
-enables it; the local defaults keep it off. A Token Factory key with Sandbox
+Execution has a separate Sandbox credential binding and limits. The configured
+`demo` environment enables it, while public routing is paused; local defaults
+keep it off. A Token Factory key with Sandbox
 access can supply both credential bindings. [Execution setup and boundaries](NEBIUS_EXECUTION.md) describes the
 contract, image requirements, cancellation and seven-day server retention.
-Sandbox connectivity is proven; generated-tool behavior still needs a completed
-run. The demo permits 20 model calls and 3 task runs per UTC day;
+The retained checker has successful Sandbox and local browser observations.
+The configured demo allowance is 20 model calls and 3 task runs per UTC day;
 failed attempts count. Workspace backups include run
 access keys and any saved results; treat them as private workspace data.
 
@@ -128,6 +131,7 @@ npm run test:nebius:tool-preview
 npm run test:nebius:projects
 npm run test:nebius:browser
 npm run test:nebius:offline
+npm run test:nebius:portability
 ```
 
 These suites use isolated test workspaces and synthetic responses. Run them
@@ -141,7 +145,7 @@ Chromium 153.0.8010.12. Those observations do not qualify other environments.
 The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
 defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
 both locked installs and its own hosted Chrome lookup, then runs
-`verify:nebius` and all four browser suites above in order. It supplies no
+`verify:nebius` and all five browser suites above in order. It supplies no
 provider credentials or deployment step. Local qualification, a prepared
 workflow and an observed passing GitHub run remain separate results; this
 candidate has not yet passed hosted CI.
@@ -168,7 +172,7 @@ and for the planned public submission. Earlier public or private MIT grants
 remain effective; dependencies retain their own licenses and notices. Public
 release requires separate owner authorization during submission week.
 
-The current source inventory contains 207/207 paths. The historical filename
+The current source inventory contains 210/210 paths. The historical filename
 `PUBLIC_SOURCE_MANIFEST.txt` describes an inventory, not permission to publish
 private source. [WEBMCP_BASELINE.md](WEBMCP_BASELINE.md) records the corresponding
 verification denominators and the earlier demo's documentation.

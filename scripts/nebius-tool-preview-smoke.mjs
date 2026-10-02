@@ -100,19 +100,22 @@ try {
     await access(path.join(staticRoot, 'review.html')).catch(() => { throw new Error('Build the current review UI with npm run build:nebius before authored preview qualification.'); });
     parentReference = await authoredPreviewReference(files);
     report.scope = 'production renderer and compiled review UI in a local test host with synthetic API; not authenticated app routes or provider evidence';
-    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 10,
+    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 12,
       component: 'svelte-frontend/src/routes/review/NebiusRunReview.svelte', recordIsProviderEvidence: false };
     // A deliberately slow authored handler proves event ordering in the real
     // renderer. This is never inserted into a retained RunRecord or model file.
     const bridgeFiles = authoredCheckerFiles();
+    bridgeFiles[0].content = bridgeFiles[0].content.replace('</main>', '<button id="load-input-only" data-example-for="packet">Load input only</button></main>');
     bridgeFiles[1].content = bridgeFiles[1].content.replace('function handleMessage(message) {', `function handleMessage(message) {
+  if (message.type === 'event' && ['input', 'change'].includes(message.event)) return [];
   if (message.type === 'event' && message.event === 'click') {
     const start = Date.now();
     while (Date.now() - start < 1000) {}
-  }`);
+    if (message.id === 'load-input-only') return [{ id: 'packet', value: JSON.stringify({ candidate: 'probe', health: 'missing', review: 'pending', rollback: '' }) }];
+  }`).replace("return [{ id: 'packet', value }, { id: 'result', text: validate(value) }];", "return [{ id: 'result', text: validate(value) }, { id: 'packet', value }];");
     const materialized = await materializeAuthoredChecker(bridgeFiles);
     bridgePreview = await renderRunPreview(materialized);
-    report.bridgeFixture = { kind: 'authored-slow-handler', delayMilliseconds: 1000, sourceDigest: await runFilesDigest(materialized), expectedChecks: 6 };
+    report.bridgeFixture = { kind: 'authored-slow-handler-without-edit-patches', delayMilliseconds: 1000, sourceDigest: await runFilesDigest(materialized), expectedChecks: 8 };
     await writeFile(path.join(output, 'bridge-files.json'), JSON.stringify(materialized, null, 2) + '\n');
   }
   assert.match(preview.csp, /connect-src 'none'/u);
@@ -271,6 +274,80 @@ addEventListener('message', event => {
         assert.equal(await interaction.page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
         record('opaque preview denies service worker access and the fresh host has no registrations', { width });
 
+        const presentation = { width, inputFormat: null, inputFormatLabel: null, outputName: null };
+        await observe('renderer names results and exposes unchanged input declarations', presentation, async () => {
+          const announcer = interaction.frame.locator('body > p[role="status"][aria-label="Tool updates"]');
+          assert.equal(await announcer.count(), 1);
+          assert.equal(await announcer.getAttribute('aria-live'), 'polite');
+          assert.equal(await announcer.getAttribute('aria-atomic'), 'true');
+          presentation.outputName = await interaction.control('output').getAttribute('aria-label');
+          assert.ok(presentation.outputName?.trim());
+          assert.equal(await interaction.control('output').getAttribute('role'), 'group');
+          assert.equal(await interaction.control('output').getAttribute('aria-live'), 'off');
+          presentation.inputFormat = await interaction.control('input').getAttribute('data-input-format');
+          presentation.inputFormatLabel = presentation.inputFormat === 'json' ? 'JSON' : presentation.inputFormat === 'text' ? 'Plain text' : 'Not declared';
+          const formats = interaction.frame.locator('body > details').last();
+          await formats.locator('summary').click();
+          assert.ok((await formats.locator('dd').allTextContents()).includes(presentation.inputFormatLabel));
+          await formats.locator('summary').click();
+        });
+        const readability = { width };
+        await observe('preview text, control sizing and keyboard focus remain readable without horizontal overflow', readability, async () => {
+          Object.assign(readability, await interaction.frame.evaluate(ids => {
+            const input = document.getElementById(ids.input), output = document.getElementById(ids.output);
+            return { inputFont: parseFloat(getComputedStyle(input).fontSize), outputFont: parseFloat(getComputedStyle(output).fontSize),
+              buttons: ['check', 'incomplete', 'corrected'].map(name => ({ id: ids[name], height: document.getElementById(ids[name]).getBoundingClientRect().height })),
+              documentWidth: document.documentElement.scrollWidth, viewportWidth: document.documentElement.clientWidth };
+          }, bindings));
+          await interaction.action(() => interaction.control('input').focus());
+          await interaction.action(() => interaction.page.keyboard.press('Tab'));
+          readability.focus = await interaction.frame.evaluate(() => {
+            const element = document.activeElement, style = getComputedStyle(element);
+            const colorProbe = document.createElement('canvas').getContext('2d');
+            colorProbe.fillStyle = style.outlineColor;
+            colorProbe.fillRect(0, 0, 1, 1);
+            return { id: element.id, visible: element.matches(':focus-visible'), outlineStyle: style.outlineStyle,
+              outlineWidth: parseFloat(style.outlineWidth), outlineColor: style.outlineColor, outlineAlpha: colorProbe.getImageData(0, 0, 1, 1).data[3] };
+          });
+          assert.ok(readability.inputFont >= 16 && readability.outputFont >= 16, 'Packet input and result need readable text.');
+          assert.ok(readability.buttons.every(button => button.height >= 44), 'Packet actions need usable target height.');
+          assert.ok(readability.documentWidth <= readability.viewportWidth + 1, 'The isolated page must fit its width.');
+          assert.ok(['check', 'incomplete', 'corrected'].some(name => bindings[name] === readability.focus.id));
+          assert.equal(readability.focus.visible, true);
+          assert.ok(readability.focus.outlineWidth >= 2 && !['none', 'hidden'].includes(readability.focus.outlineStyle) && readability.focus.outlineAlpha > 0, 'Keyboard focus needs a nontransparent outline.');
+        });
+        const announcements = { width, complete: null, repeated: null, afterEdit: null, invalid: null, focus: null };
+        await observe('polite result announcements preserve focus and clear stale readiness', announcements, async () => {
+          const announcer = interaction.frame.locator('body > p[role="status"][aria-label="Tool updates"]');
+          await interaction.fill(CORRECTED);
+          assert.equal(await interaction.check(), READY);
+          announcements.complete = await announcer.textContent();
+          assert.equal(announcements.complete, presentation.outputName + ': ' + READY);
+          announcements.focus = await interaction.frame.evaluate(() => document.activeElement.id);
+          assert.equal(announcements.focus, bindings.check);
+          await interaction.frame.evaluate(() => {
+            window.previewAnnouncements = [];
+            const region = document.querySelector('body > p[role="status"][aria-label="Tool updates"]');
+            window.previewAnnouncementObserver = new MutationObserver(() => window.previewAnnouncements.push(region.textContent));
+            window.previewAnnouncementObserver.observe(region, {childList:true,characterData:true,subtree:true});
+          });
+          await interaction.check();
+          announcements.repeated = await interaction.frame.evaluate(() => {
+            window.previewAnnouncementObserver.disconnect();
+            return window.previewAnnouncements;
+          });
+          assert.ok(announcements.repeated.includes(''));
+          assert.equal(announcements.repeated.filter(text=>text===announcements.complete).length, 1);
+          await interaction.fill('{');
+          announcements.afterEdit = await announcer.textContent();
+          assert.doesNotMatch(announcements.afterEdit, /Ready for human review|0 gaps/u);
+          const invalidResult = await interaction.check();
+          announcements.invalid = await announcer.textContent();
+          assert.equal(announcements.invalid, presentation.outputName + ': ' + invalidResult);
+          assert.match(announcements.invalid, /Input error:/u);
+          assert.equal(await interaction.frame.evaluate(() => document.activeElement.id), bindings.check);
+        });
+
         const loaders = { width, incomplete: null, corrected: null };
         await observe('both example loaders set inputs and corresponding checked outputs by keyboard', loaders, async () => {
           await interaction.action(() => interaction.control('incomplete').focus());
@@ -301,14 +378,14 @@ addEventListener('message', event => {
       } finally { await interaction.page.close(); }
 
       if (bridgePreview) {
-        for (const scenario of ['check then edit', 'two example loaders', 'example loader then edit']) {
+        for (const scenario of ['check then edit', 'two example loaders', 'example loader then edit', 'input-only loader']) {
           const detail = { width, category: 'bridge', case: scenario, fixtureKind: 'authored-slow-handler', actualInput: null, actualOutput: null, replies: null, nativeEvents: null };
           let tool;
           let before = 0, eventCount = 0;
           await observe('busy bridge: ' + scenario, detail, async () => {
             tool = await openTool(true);
             try {
-              if (scenario === 'check then edit') {
+              if (scenario === 'check then edit' || scenario === 'input-only loader') {
                 await tool.fill(CORRECTED);
                 assert.equal(await tool.check(), READY);
               }
@@ -318,19 +395,26 @@ addEventListener('message', event => {
                 await tool.control('check').focus();
                 await tool.page.keyboard.press('Enter');
                 await tool.control('input').fill('{');
+                assert.equal(await tool.text(), '', 'Old readiness must clear before the slow Worker replies.');
               } else if (scenario === 'two example loaders') {
                 await tool.control('incomplete').focus();
                 await tool.page.keyboard.press('Enter');
                 await tool.control('corrected').focus();
                 await tool.page.keyboard.press('Space');
-              } else {
+              } else if (scenario === 'example loader then edit') {
                 await tool.control('corrected').focus();
                 await tool.page.keyboard.press('Space');
                 await tool.control('input').fill('{');
+              } else {
+                await tool.frame.locator('#load-input-only').focus();
+                await tool.page.keyboard.press('Enter');
               }
-              const expected = scenario === 'two example loaders' ? READY : 'Input changed. Check packet again.';
+              const minimumReplies = scenario === 'input-only loader' ? 1 : 2;
+              await tool.page.waitForFunction(({ before, minimumReplies }) => window.fixtureMessages.length >= before + minimumReplies, { before, minimumReplies });
+              const expected = scenario === 'two example loaders' ? READY : '';
               await tool.frame.waitForFunction(({ id, expected }) => document.getElementById(id).textContent === expected, { id: bindings.output, expected });
               if (scenario === 'two example loaders') assert.deepEqual(JSON.parse(await tool.control('input').inputValue()), JSON.parse(CORRECTED));
+              else if (scenario === 'input-only loader') assert.equal(JSON.parse(await tool.control('input').inputValue()).candidate, 'probe');
               else assert.equal(await tool.control('input').inputValue(), '{', 'A late reply must not overwrite newer user input.');
               assert.notEqual(await tool.page.locator('#preview-status').textContent(), 'failed');
             } finally {
@@ -429,6 +513,73 @@ addEventListener('message', event => {
           });
           await page?.close();
         }
+        const rejectedDetail = { width, category: 'parent', case: 'rejected-source-history', fixtureKind: 'authored-synthetic-run-reference', layout: null, clippingRegressionDetected: null };
+        await observe('compiled parent: rejected generation remains inert, contained and keyboard readable', rejectedDetail, async () => {
+          const page = await context.newPage(); page.setDefaultTimeout(4000);
+          page.on('pageerror', error => pageErrors.push(error.message));
+          const failedSeed = structuredClone(seed);
+          const raw = '</pre><img id="injected-generation" src="x" onerror="window.generationInjected=true">';
+          const record = failedSeed.packs[0].executionRun.record;
+          Object.assign(record, { status: 'failed', attempt: 0, files: [], checks: [],
+            error: 'Authored source rejection fixture.', failure: { code: 'invalid_model_output', stage: 'tool_files' },
+            generationAttempts: [{ attempt: 1, outcome: 'rejected', responseText: raw, retention: 'retained',
+              diagnostic: { code: 'invalid_model_output', stage: 'tool_files', message: 'Authored source rejection fixture.' } }] });
+          await validateRunIntegrity(record);
+          await page.addInitScript(({ key, seed }) => { if (window === top) localStorage.setItem(key, JSON.stringify(seed)); }, { key: storageKey, seed: failedSeed });
+          try {
+            await page.goto(origin + '/review?focus=' + encodeURIComponent(parentReference.input.packId));
+            const review = page.locator('[data-nebius-run-review]');
+            const history = review.locator('[data-run-generation-history]');
+            await history.waitFor({ state: 'visible' });
+            const summary = history.locator(':scope > summary');
+            for (let count = 0; count < 120 && !await summary.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
+            assert.equal(await summary.evaluate(element => element === document.activeElement), true);
+            await page.keyboard.press('Enter');
+            await history.locator('details > summary').focus(); await page.keyboard.press('Enter');
+            assert.equal(await history.locator('pre').textContent(), raw);
+            assert.equal(await review.locator('#injected-generation, iframe').count(), 0);
+            assert.equal(await page.evaluate(() => Boolean(window.generationInjected)), false);
+            assert.equal(await review.getByRole('button', { name: 'Try your tool', exact: true }).count(), 0);
+            assert.equal(await review.getByRole('button', { name: 'Save run evidence', exact: true }).count(), 0);
+            // Document scrollWidth alone misses clipped children when an ancestor
+            // hides overflow. Measure the actual compiled card and its contents.
+            const measure = () => review.evaluate(card => {
+              const bounds = element => {
+                const rect = element.getBoundingClientRect();
+                return { left: rect.left, right: rect.right, height: rect.height };
+              };
+              const box = bounds(card), style = getComputedStyle(card);
+              const left = box.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+              const right = box.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight);
+              const elements = [...new Set([...card.children, ...card.querySelectorAll('.run-review-head > *, .worn-alert, .worn-alert *')])];
+              const violations = elements.filter(element => element.getClientRects().length).flatMap(element => {
+                const rect = bounds(element);
+                return rect.left < left - 1 || rect.right > right + 1
+                  ? [{ element: element.className || element.tagName, ...rect }] : [];
+              });
+              const badge = card.querySelector('.run-review-head .worn-badge');
+              if (!badge) throw new Error('The actual status badge must be present.');
+              return { card: box, content: { left, right }, viewport: document.documentElement.clientWidth,
+                badge: { ...bounds(badge), text: badge.textContent.trim(), lineHeight: parseFloat(getComputedStyle(badge).lineHeight) }, violations };
+            });
+            rejectedDetail.layout = await measure();
+            assert.deepEqual(rejectedDetail.layout.violations, [], 'Every visible card child, alert and heading must fit inside the card padding.');
+            assert.ok(rejectedDetail.layout.card.left >= -1 && rejectedDetail.layout.card.right <= rejectedDetail.layout.viewport + 1);
+            assert.equal(rejectedDetail.layout.badge.text, 'failed');
+            assert.ok(rejectedDetail.layout.badge.height < 2 * rejectedDetail.layout.badge.lineHeight, 'The status label stays on one line.');
+            if (width === 375) {
+              // Negative control: reproduce the old implicit grid minimum in
+              // this synthetic page only, proving the check sees real clipping.
+              await review.evaluate(card => { card.style.gridTemplateColumns = 'auto'; });
+              try {
+                const regressed = await measure();
+                rejectedDetail.clippingRegressionDetected = regressed.violations.length > 0;
+                assert.equal(rejectedDetail.clippingRegressionDetected, true, 'Removing containment must reproduce detectable child overflow.');
+              } finally { await review.evaluate(card => { card.style.removeProperty('grid-template-columns'); }); }
+            }
+            await review.screenshot({ path: path.join(output, 'rejected-source-history-' + width + '.png') });
+          } finally { await page.close(); }
+        });
         await observe('compiled parent: stale result remains inspection only', { width, category: 'parent', case: 'stale', fixtureKind: 'authored-synthetic-run-reference' }, async () => {
           const page = await context.newPage(); page.setDefaultTimeout(4000);
           page.on('pageerror', error => pageErrors.push(error.message));

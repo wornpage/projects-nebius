@@ -5,10 +5,11 @@
   import type { NebiusChanges } from '$lib/nebius-contract.mjs';
   import { canonicalizeText } from '$lib/canonical-text.mjs';
   import { normalizeStoredBlocker } from '$lib/workflow-rules.mjs';
+  import { TERMINAL_RUN_STATUSES, TOOL_INPUT_LIMITS, validateToolInputRequirements, type ToolInputRequirement } from '$lib/nebius-execution-contract.mjs';
   import { WornAlert, WornButton, WornInput, WornTextarea } from '$lib/components';
 
   type Proposal = { packId: string; changes: NebiusChanges; nonce: number } | null;
-  type Draft = { title: string; purpose: string; blocker: string; status: string; nextStep: string; doneWhen: string; memoryText: string; sourcesText: string };
+  type Draft = { title: string; purpose: string; blocker: string; status: string; nextStep: string; doneWhen: string; memoryText: string; sourcesText: string; executionInputs: ToolInputRequirement[] | null };
   let { pack, dependencyTitle = null, proposal = null, disabled = false, ondirty = () => {} }: {
     pack: DemoPack; dependencyTitle?: string | null; proposal?: Proposal; disabled?: boolean; ondirty?: (dirty: boolean) => void;
   } = $props();
@@ -18,6 +19,7 @@
       title: item.title || '', purpose: item.purpose || '', blocker: displayBlocker(item.blocker), status: item.status || 'draft',
       nextStep: item.nextStep || '', doneWhen: item.doneWhen || '',
       memoryText: (item.memory || []).join('\n'), sourcesText: (item.sources || []).join('\n'),
+      executionInputs: structuredClone(item.executionInputs ?? null),
     };
   }
   function displayBlocker(value: unknown): string {
@@ -39,18 +41,26 @@
   let notice = $state('');
   let dirty = $derived(JSON.stringify(draft) !== JSON.stringify(baseline));
   let stale = $derived(packPathSignature(pack) !== baselineSignature);
+  let inputsLocked = $derived(pack.status === 'done' || Boolean(pack.archived) || Boolean(pack.executionRun && (!pack.executionRun.record || !TERMINAL_RUN_STATUSES.includes(pack.executionRun.record.status))));
   const labels: Array<[keyof Draft, string]> = [
     ['nextStep', 'Next step'], ['status', 'Status'], ['blocker', 'Blocker'],
     ['title', 'Title'], ['purpose', 'Purpose'], ['doneWhen', 'Done when'],
     ['memoryText', 'Task notes'], ['sourcesText', 'Source excerpts or references'],
+    ['executionInputs', 'Tool inputs'],
   ];
   function normalized(value: Draft): Draft {
-    return Object.fromEntries(Object.entries(value).map(([field, text]) => [field,
-      field === 'memoryText' || field === 'sourcesText' ? lines(text).join('\n') : field === 'blocker' ? displayBlocker(text) : canonicalizeText(text)
+    return Object.fromEntries(Object.entries(value).map(([field, entry]) => [field,
+      field === 'executionInputs' ? value.executionInputs?.map(input => ({ id: input.id.trim(), format: input.format })) ?? null
+        : field === 'memoryText' || field === 'sourcesText' ? lines(entry as string).join('\n') : field === 'blocker' ? displayBlocker(entry) : canonicalizeText(entry as string)
     ])) as Draft;
   }
+  function displayValue(value: Draft[keyof Draft]): string {
+    if (value === null) return 'Let the tool choose';
+    if (Array.isArray(value)) return value.length ? value.map(input => `${input.id}: ${input.format === 'json' ? 'JSON' : 'plain text'}`).join('\n') : 'No text inputs';
+    return value;
+  }
   let reviewed = $derived(normalized(draft));
-  let changed = $derived(labels.filter(([field]) => draft[field] !== baseline[field] && reviewed[field] !== baseline[field]));
+  let changed = $derived(labels.filter(([field]) => JSON.stringify(draft[field]) !== JSON.stringify(baseline[field]) && JSON.stringify(reviewed[field]) !== JSON.stringify(baseline[field])));
 
   $effect(() => { ondirty(dirty || reviewing || saving); });
   $effect(() => {
@@ -112,6 +122,8 @@
       const entries = lines(draft[field]);
       if (entries.length > 50 || entries.some((entry) => entry.length > 2000)) { await showError('Use at most 50 notes or sources, each at most 2000 characters.', field); return; }
     }
+    try { validateToolInputRequirements(reviewed.executionInputs); }
+    catch (cause) { await showError(cause instanceof Error ? cause.message : 'Tool inputs are invalid.', 'executionInputs'); return; }
     if (!changed.length) { notice = 'No task details have changed.'; return; }
     if ((reviewed.status !== baseline.status || reviewed.blocker !== baseline.blocker)
       && ((pack.blockedBy && (reviewed.status !== 'blocked' || reviewed.blocker === 'None'))
@@ -127,7 +139,7 @@
     error = message;
     if (detailsElement) detailsElement.open = true;
     await tick();
-    const fieldIds: Record<keyof Draft, string> = { title: 'nebius-task-title', purpose: 'nebius-task-purpose', nextStep: 'nebius-written-step', doneWhen: 'nebius-task-done-when', blocker: 'nebius-task-blocker', status: 'nebius-task-status', memoryText: 'nebius-task-notes', sourcesText: 'nebius-task-sources' };
+    const fieldIds: Record<keyof Draft, string> = { title: 'nebius-task-title', purpose: 'nebius-task-purpose', nextStep: 'nebius-written-step', doneWhen: 'nebius-task-done-when', blocker: 'nebius-task-blocker', status: 'nebius-task-status', memoryText: 'nebius-task-notes', sourcesText: 'nebius-task-sources', executionInputs: 'nebius-task-input-scope' };
     const input = field ? detailsElement?.querySelector<HTMLElement>(`#${fieldIds[field]}`) : null;
     for (let parent = input?.parentElement; parent; parent = parent.parentElement) {
       if (parent instanceof HTMLDetailsElement) parent.open = true;
@@ -140,6 +152,17 @@
     reviewing = false;
     await tick(); detailsElement?.querySelector<HTMLElement>('#nebius-written-step')?.focus();
   }
+  async function addInput() {
+    if (inputsLocked || disabled || saving || draft.executionInputs === null || draft.executionInputs.length >= TOOL_INPUT_LIMITS.items) return;
+    const index = draft.executionInputs.length;
+    draft.executionInputs = [...draft.executionInputs, { id: '', format: 'text' }];
+    await tick(); detailsElement?.querySelector<HTMLElement>(`#nebius-task-input-id-${index}`)?.focus();
+  }
+  async function removeInput(index: number) {
+    if (inputsLocked || disabled || saving || draft.executionInputs === null) return;
+    draft.executionInputs = draft.executionInputs.filter((_, position) => position !== index);
+    await tick(); detailsElement?.querySelector<HTMLElement>('#nebius-task-input-scope')?.focus();
+  }
   async function save() {
     if (!reviewing || saving || stale || disabled) return;
     saving = true; error = '';
@@ -147,7 +170,7 @@
       const fields: Record<string, unknown> = { status: reviewed.status };
       for (const [field] of changed) {
         fields[field === 'memoryText' ? 'memory' : field === 'sourcesText' ? 'sources' : field] =
-          field === 'memoryText' || field === 'sourcesText' ? lines(reviewed[field]) : reviewed[field];
+          field === 'memoryText' || field === 'sourcesText' ? lines(reviewed[field] as string) : reviewed[field];
       }
       // The review explicitly preserves the existing dependency; blocker edits must not clear it.
       if (Object.prototype.hasOwnProperty.call(fields, 'blocker')) fields.blockedBy = pack.blockedBy || '';
@@ -178,6 +201,21 @@
     <label for="nebius-task-purpose">Purpose<WornTextarea id="nebius-task-purpose" rows={3} maxlength={1000} bind:value={draft.purpose} /></label>
     <label for="nebius-task-done-when">Done when<WornTextarea id="nebius-task-done-when" rows={3} maxlength={1000} bind:value={draft.doneWhen} /></label>
     </div></details>
+    <details><summary>Tool input requirements</summary><fieldset class="context-fields" disabled={inputsLocked}>
+    <label for="nebius-task-input-scope">Text inputs<select id="nebius-task-input-scope" value={draft.executionInputs === null ? 'unspecified' : draft.executionInputs.length ? 'defined' : 'none'} onchange={event => { draft.executionInputs = event.currentTarget.value === 'unspecified' ? null : event.currentTarget.value === 'none' ? [] : [{ id: '', format: 'text' }]; }}><option value="unspecified">Let the tool choose</option><option value="none">No text inputs</option><option value="defined">Specify inputs</option></select></label>
+    {#if draft.executionInputs !== null}
+      {#each draft.executionInputs as input, index}
+        <div class="tool-input-row">
+          <label for={`nebius-task-input-id-${index}`}>Input {index + 1} ID<WornInput id={`nebius-task-input-id-${index}`} maxlength={TOOL_INPUT_LIMITS.id} bind:value={input.id} /></label>
+          <label for={`nebius-task-input-format-${index}`}>Input {index + 1} format<select id={`nebius-task-input-format-${index}`} bind:value={input.format}><option value="text">Plain text</option><option value="json">JSON</option></select></label>
+          <WornButton type="button" onclick={() => void removeInput(index)}>Remove input {index + 1}</WornButton>
+        </div>
+      {/each}
+      <WornButton type="button" disabled={draft.executionInputs.length >= TOOL_INPUT_LIMITS.items} onclick={() => void addInput()}>Add input</WornButton>
+    {/if}
+    <p>These are the complete text inputs the generated tool must use. Checkbox and button controls are separate.</p>
+    {#if inputsLocked}<p>Finish the current run before changing its input requirements.</p>{/if}
+    </fieldset></details>
     <details><summary>Notes and sources</summary><div class="context-fields">
     <label for="nebius-task-notes">Task notes · one per line<WornTextarea id="nebius-task-notes" rows={3} bind:value={draft.memoryText} /></label>
     <label for="nebius-task-sources">Source excerpts or references · one per line<WornTextarea id="nebius-task-sources" rows={3} bind:value={draft.sourcesText} /></label>
@@ -194,7 +232,7 @@
       {/snippet}
       <!-- svelte-ignore a11y_no_redundant_roles -->
       <table role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Field</th><th scope="col" role="columnheader">Before</th><th scope="col" role="columnheader">After</th></tr></thead><tbody role="rowgroup">
-      {#each changed as [field, label]}{@render comparisonRow(label, baseline[field], reviewed[field])}{/each}
+      {#each changed as [field, label]}{@render comparisonRow(label, displayValue(baseline[field]), displayValue(reviewed[field]))}{/each}
       </tbody></table>
       <p>Other task details stay the same. Apply saves these changes to this browser.</p>
       {#if pack.blockedBy}<p>Linked dependency stays: {dependencyTitle || 'Linked task is unavailable'}.</p>{/if}
@@ -228,6 +266,8 @@
   label { display: grid; font-weight: 650; gap: var(--worn-space-2); min-inline-size: 0; }
   select { background: var(--worn-surface); border: 1px solid var(--worn-border); border-radius: var(--worn-radius-sm); color: var(--worn-text); font: inherit; min-block-size: 44px; padding: 0.5rem; }
   .context-fields { display: grid; gap: var(--worn-space-4); margin-block-start: var(--worn-space-4); }
+  .tool-input-row { display: grid; gap: var(--worn-space-2); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .tool-input-row :global(button) { justify-self: start; }
   .nebius-review { background: var(--worn-surface); border: 1px solid var(--worn-border); border-radius: var(--worn-radius-sm); display: grid; gap: 0.75rem; overflow-wrap: anywhere; padding: 0.75rem; }
   table { border-collapse: collapse; table-layout: fixed; width: 100%; }
   th, td { border-block-end: 1px solid var(--worn-border); padding: 0.75rem 0.5rem; text-align: start; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }

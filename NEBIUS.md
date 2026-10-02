@@ -161,9 +161,10 @@ separately enabled execution path: it uses the reasoning model, a persistent
 run record, up to two sandbox checks and one repair, then returns the artifact
 to Review. Saving its evidence and marking the task done are separate actions.
 See [NEBIUS_EXECUTION.md](NEBIUS_EXECUTION.md) for its credentials, fixed limits,
-preview isolation and retention. Sandbox access and a Node 24 diagnostic are
-confirmed; a complete generated tool and interactive preview remain unverified.
-See the current status in [NEBIUS_READINESS.md](NEBIUS_READINESS.md).
+preview isolation and retention. One Super-generated release-packet checker
+passed a real Sandbox check after repair, then passed independent local packet
+cases and interaction in Review. Broader generation quality remains open. See
+[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
 
 ## Advisory runtime and limits
 
@@ -226,12 +227,15 @@ JSON schema with input-relative basis IDs. The provider schema uses core shape,
 type, enum and size constraints; local validation additionally enforces unique
 basis IDs, single-line text and consistent status/blocker changes. The other
 advisory operations retain their existing model reasoning settings and JSON-object
-mode. Tool generation separately requests a strict three-file schema and disables
-thinking to reserve its 8,000-token ceiling for the generated files.
+mode. Tool generation separately requests native fenced blocks for exactly three
+source files. It enables standard thinking with `force_nonempty_content: false`
+and an 8,000-output-token ceiling per model call. Source parsing, accepted usage
+and the resulting checks are retained in the run record.
 Truncated responses, wrong model identity, malformed JSON, tool calls and
 invalid output are refused. The four advisory operations have no automatic
 retries, fallback model or automatic task writes. The execution path may make
-one explicitly authorized repair using actual failed sandbox output. The
+one repair within the authorized run using a retained source rejection or actual
+failed Sandbox output. The
 service worker excludes all Nebius APIs from caching.
 
 The default Worker configuration disables inference and public routing. The

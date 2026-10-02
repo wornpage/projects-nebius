@@ -6,7 +6,7 @@ import { runFilesDigest, validateRunInput, validateRunIntegrity } from '../../sv
 // Do not load provider credentials, emit run records, or persist this fixture in a workspace.
 export const FIXTURE_MODEL = 'nvidia/synthetic-checker-fixture';
 export const FIXTURE_INPUT = validateRunInput({
-  version: 'browser-tool.v1', packId: 'authored-release-checker', currentStatus: 'active',
+  version: 'browser-tool.v2', packId: 'authored-release-checker', currentStatus: 'active', requiredInputFormats: null,
   pack: {
     title: 'Authored release-packet checker fixture', blocker: 'None',
     purpose: 'Check supplied packet text only; never approve or deploy a release.',
@@ -36,10 +36,10 @@ output { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padding
 <h1>Release-packet checker</h1>
 <p>Authored test fixture, not AI-generated output. Checks supplied text only.</p>
 <label for="packet">Packet JSON</label>
-<textarea id="packet" rows="8" spellcheck="false"></textarea>
+<textarea id="packet" rows="8" spellcheck="false" data-input-format="json"></textarea>
 <div>
-<button id="load-incomplete" type="button">Load incomplete example</button>
-<button id="load-corrected" type="button">Load corrected example</button>
+<button id="load-incomplete" type="button" data-example-for="packet">Load incomplete example</button>
+<button id="load-corrected" type="button" data-example-for="packet">Load corrected example</button>
 <button id="check-packet" type="button">Check packet</button>
 </div>
 <output id="result" for="packet" aria-live="polite"></output>
@@ -116,9 +116,7 @@ function handleMessage(message) {
   }
   return [];
 }` },
-    { path: 'checks.cjs', content: `const assert = require('node:assert/strict');
-const { validate, handleMessage } = require('./app.js');
-const incomplete = { candidate: 'demo-42', health: 'missing', review: 'pending', rollback: '' };
+    { path: 'checks.cjs', content: `const incomplete = { candidate: 'demo-42', health: 'missing', review: 'pending', rollback: '' };
 const corrected = { candidate: 'demo-42', health: 'passing', review: 'approved', rollback: 'Restore demo-41' };
 assert.equal(validate(JSON.stringify(incomplete)), '3 gaps: Health must be passing; Review must be approved; Rollback step is required');
 assert.equal(validate(JSON.stringify(corrected)), '0 gaps: Ready for human review');

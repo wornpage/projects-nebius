@@ -44,6 +44,7 @@ scripts/generate-public-manifest.mjs
 scripts/inline-script-bodies.mjs
 scripts/nebius-browser-smoke.mjs
 scripts/nebius-project-browser-smoke.mjs
+scripts/nebius-retained-tool-recording.mjs
 scripts/nebius-runtime-smoke.mjs
 scripts/nebius-tool-preview-smoke.mjs
 scripts/offline-browser-smoke.mjs
@@ -169,6 +170,7 @@ tests/full-border-webmcp-contract.test.mjs
 tests/handoff-session-webmcp-contract.test.mjs
 tests/nebius-api.test.mjs
 tests/nebius-client.test.mjs
+tests/nebius-execution-client.test.mjs
 tests/nebius-plan-client.test.mjs
 tests/nebius-plan.test.mjs
 tests/nebius-project-completion.test.mjs
@@ -180,6 +182,7 @@ tests/nebius-replan-state.test.mjs
 tests/nebius-replan.test.mjs
 tests/nebius-routing.test.mjs
 tests/nebius-run-provider.test.mjs
+tests/nebius-run-state.test.mjs
 tests/nebius-sandbox.test.mjs
 tests/nebius-tool-traversal.test.mjs
 tests/next-webmcp-page-contract.test.mjs

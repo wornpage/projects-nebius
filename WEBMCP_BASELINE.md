@@ -140,7 +140,13 @@ There is no `server/`, `worker/`, Pages Functions, or hidden compatibility route
 npm run verify
 ```
 
-The gate runs Svelte diagnostics, focused WebMCP contracts, recording-preflight and static-artifact contracts, the content-addressed raster social-card smoke, and a production prerender. Current expected denominators are 207/207 source inventory paths, 140/140 WebMCP contracts, 6/6 recording-preflight contracts, and 9/9 static-artifact contracts. A static contract derives those values from the current manifest and test sources so this reviewer-facing summary cannot silently drift. The historical `PUBLIC_SOURCE_MANIFEST.txt` filename identifies an inventory and does not authorize publication during private submission preparation. Manual WebMCP checks are listed in [docs/submission/webmcp/reviewer-tests.md](docs/submission/webmcp/reviewer-tests.md).
+The gate runs Svelte diagnostics, focused WebMCP contracts, recording-preflight and static-artifact contracts, the content-addressed raster social-card smoke, and a production prerender. Current expected denominators are 210/210 source inventory paths, 140/140 WebMCP contracts, 6/6 recording-preflight contracts, and 9/9 static-artifact contracts. A static contract derives those values from the current manifest and test sources so this reviewer-facing summary cannot silently drift. The historical `PUBLIC_SOURCE_MANIFEST.txt` filename identifies an inventory and does not authorize publication during private submission preparation. Manual WebMCP checks are listed in [docs/submission/webmcp/reviewer-tests.md](docs/submission/webmcp/reviewer-tests.md).
+
+The preceding manifest contained 208 paths; the documentation's 207-path count
+was stale. The optional Nebius saved-tool recorder brought the inventory to 209;
+the execution-client regression test adds the 210th path. These additions do not
+change the frozen public WebMCP entry. Verification results are recorded against
+their exact source revision.
 
 ## License and trademarks
 

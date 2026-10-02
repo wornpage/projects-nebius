@@ -50,7 +50,8 @@ function browserClient(serialized = envelope(seed()), { failWrite = false, nebiu
     };
     new vm.Script(`(function(exports, require) { ${code}\n })`, { filename: name }).runInContext(context)(exports, resolve); return exports;
   }
-  const workflow = compile('demo-workflow.ts'), client = compile('demo-client.ts', { '$lib/demo-workflow': workflow });
+  const workflow = compile('demo-workflow.ts'), execution = compile('nebius-execution-client.ts');
+  const client = compile('demo-client.ts', { '$lib/demo-workflow': workflow, './nebius-execution-client': execution });
   const undo = compile('undo.ts', { '$lib/demo-workflow': workflow, '$lib/demo-client': client });
   return { client, workflow, undo, get saved() { return saved; }, get writes() { return writes; }, pauseWrite(promise) { pauseNext = promise; }, overwrite(value) { saved = value; } };
 }

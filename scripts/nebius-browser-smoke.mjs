@@ -5,6 +5,8 @@ import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { revisePendingDraftChoice } from '../svelte-frontend/src/lib/pending-next-action.mjs';
 import { OPERATION_PROFILES } from '../svelte-frontend/src/lib/nebius-routing-contract.mjs';
+import { RUN_VERSION, RUN_LIMITS, validateRunInput } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { projectTask } from '../svelte-frontend/src/lib/nebius-contract.mjs';
 
 const root = path.resolve('dist/static-publish');
 const model = 'nvidia/synthetic-model';
@@ -69,8 +71,78 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 let browser;
 const results = [];
+async function checkUnavailableRequestRetirement(browser) {
+  const cases = [];
+  for (const width of [375, 1280]) for (const drift of ['task', 'model']) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
+    const pack = { id: 'retirement-fixture', title: 'Inspect an unavailable tool request', status: 'active',
+      purpose: 'Check a synthetic packet.', nextStep: 'Build the checker.', doneWhen: 'Packet gaps are shown.',
+      blocker: 'None', memory: [], activity: [], executionInputs: [{ id: 'packet', format: 'json' }] };
+    const reference = { id: '00000000-0000-4000-8000-000000000091', key: 'a'.repeat(64), record: null,
+      input: validateRunInput({ version: RUN_VERSION, packId: pack.id, pack: projectTask(pack), currentStatus: pack.status,
+        context: [], requestedModel: reasoningModel, requiredInputFormats: pack.executionInputs, consent: true }) };
+    pack.executionRun = structuredClone(reference);
+    if (drift === 'task') pack.purpose = 'Updated packet requirements.';
+    let reads = 0, starts = 0;
+    const external = [], errors = [];
+    await context.route('**/*', async route => {
+      const request = route.request(), url = new URL(request.url());
+      if (url.origin !== origin) { external.push(url.href); return route.abort(); }
+      if (!url.pathname.startsWith('/api/nebius/runs/')) return route.continue();
+      if (url.pathname.endsWith('/config')) return route.fulfill({ json: { available: true, version: RUN_VERSION,
+        requestedModel: drift === 'model' ? 'nvidia/changed-fixture-model' : reasoningModel, limits: RUN_LIMITS } });
+      assert.equal(url.pathname, '/api/nebius/runs/' + reference.id);
+      if (request.method() === 'GET') { reads++; return route.fulfill({ status: 404, json: { code: 'not_found', error: 'The saved run was not found.' } }); }
+      assert.equal(request.method(), 'POST'); assert.equal(drift, 'model'); starts++;
+      return route.fulfill({ status: 409, json: { code: 'model_changed', error: 'The configured model changed.' } });
+    });
+    await context.addInitScript(({ key, pack }) => {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, revision: 'retirement-fixture', state: { packs: [pack] } }));
+    }, { key: storageKey, pack });
+    const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
+    try {
+      await page.goto(origin + '/next?pack=' + pack.id);
+      await page.getByRole('tab', { name: 'Build tool', exact: true }).click();
+      const review = page.getByRole('button', { name: 'Review local retirement', exact: true });
+      await review.waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Run this task', exact: true }).isDisabled(), true);
+      const resume = page.getByRole('button', { name: 'Resume saved request', exact: true });
+      if (drift === 'task') assert.equal(await resume.isDisabled(), true);
+      else {
+        await resume.click();
+        await page.getByText('The saved request is preserved.', { exact: false }).waitFor();
+        assert.equal(starts, 1);
+      }
+      const before = await page.evaluate(key => localStorage.getItem(key), storageKey);
+      await review.click();
+      const dialog = page.getByRole('dialog', { name: 'Retire unavailable local request', exact: true });
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Keep local reference', exact: true }).click();
+      assert.equal(await page.evaluate(key => localStorage.getItem(key), storageKey), before);
+      await reachByTab(page, review); await page.keyboard.press('Enter'); await dialog.waitFor();
+      const readsBeforeConfirmation = reads;
+      await reachByTab(page, dialog.getByRole('button', { name: 'Confirm local retirement', exact: true }));
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(key => !JSON.parse(localStorage.getItem(key)).state.packs[0].executionRun, storageKey);
+      assert(reads > readsBeforeConfirmation, 'Confirmation performs a fresh server read.');
+      const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).state.packs[0], storageKey);
+      assert.deepEqual(saved.retiredExecutionRuns[0].reference, reference);
+      assert.equal(saved.status, 'active'); assert.equal(saved.purpose, pack.purpose);
+      assert.equal(starts, drift === 'model' ? 1 : 0, 'Retirement does not start replacement work.');
+      await page.reload(); await page.getByRole('tab', { name: 'Build tool', exact: true }).click();
+      await page.locator('[data-retired-run-history] > summary').click();
+      await page.getByText('Their outcomes remain unknown.', { exact: false }).waitFor();
+      await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Run this task' && !button.disabled));
+      assert.equal(await page.getByRole('button', { name: 'Run this task', exact: true }).isEnabled(), true);
+      assert.deepEqual(external, []); assert.deepEqual(errors, []);
+      cases.push({ width, drift, keptBeforeConfirmation: true, freshRead: true, exactHistoryReload: true, automaticStarts: 0 });
+    } finally { await context.close(); }
+  }
+  return cases;
+}
 try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined });
+  const retirementCases = await checkUnavailableRequestRetirement(browser);
   for (const width of [375, 1280]) {
     failInference = false; configEnabled = true; proposalMode = 'next-step';
     const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
@@ -498,7 +570,7 @@ try {
   keyboardCases.push({ width, workToNext: true, modelGuidanceToSave: true, reviewToRecordedEvidence: true, candidateLayout: candidateGeometry, unifiedProposalApproval: true, guideDialogs: true });
   await freshContext.close();
   }
-  console.log(JSON.stringify({ syntheticInference: true, freshSyntheticWorkItems: 4, linkedDependencyClearanceRefused: true, recoveryCases, keyboardCases, cases: results }, null, 2));
+  console.log(JSON.stringify({ syntheticInference: true, freshSyntheticWorkItems: 4, linkedDependencyClearanceRefused: true, retirementCases, recoveryCases, keyboardCases, cases: results }, null, 2));
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));
