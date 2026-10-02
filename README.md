@@ -171,7 +171,7 @@ and for the planned public submission. Earlier public or private MIT grants
 remain effective; dependencies retain their own licenses and notices. Public
 release requires separate owner authorization during submission week.
 
-The current source inventory contains 207/207 paths. The historical filename
+The current source inventory contains 209/209 paths. The historical filename
 `PUBLIC_SOURCE_MANIFEST.txt` describes an inventory, not permission to publish
 private source. [WEBMCP_BASELINE.md](WEBMCP_BASELINE.md) records the corresponding
 verification denominators and the earlier demo's documentation.

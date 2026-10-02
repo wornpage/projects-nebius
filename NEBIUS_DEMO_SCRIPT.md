@@ -32,6 +32,68 @@ the final recording.
 
 Wornpage Projects brings the next step into the work itself. [0.4s] This task asks for a small release-packet checker, with an incomplete example and a corrected example. [0.6s] I am opening a saved October first run. Nebius Token Factory used Nemotron Super to write the tool and its checks. [0.4s] These are the actual two model calls and their recorded token totals. [0.6s] The first Sandbox check found that the generated tests had missed the input-change event. [0.3s] One repair passed the next check, with fourteen assertions and all six control events covered. [0.7s] Now I can try the result. [0.3s] The incomplete packet shows three gaps: health, review and rollback. [0.5s] I load the corrected packet and check it with the keyboard. [0.4s] It shows zero gaps and is ready for human review. [0.6s] Editing clears that old result. [0.3s] Malformed JSON produces an input error. [0.6s] The generated input still declares plain text, and that mismatch stays visible here. Its original JSON-loader check count remains zero of two. [0.7s] The files, failed check and successful repair remain available in Review. [0.4s] I can save evidence, then make a separate human decision about completion. [0.6s] This rehearsal uses the local Nebius edition. The released source and judge demo must reproduce this same workflow.
 
+### Repeatable tab-bound recording
+
+The optional development helper
+[nebius-retained-tool-recording.mjs](scripts/nebius-retained-tool-recording.mjs)
+imports into an initialized CUA JavaScript session. It uses that session's bound
+local Review tab, native keyboard surface and CDP recording capability. It does
+not launch a test browser or substitute authored output for the saved tool.
+
+Close the volatile preview first. Supply the observed run ID, checked digest and
+five HTML control IDs; they are not run-access or provider keys. With the tab
+and capability handles already bound, use:
+
+```js
+const { startRetainedToolRecording } = await import(
+  'file:///ABSOLUTE-REPOSITORY-PATH/scripts/nebius-retained-tool-recording.mjs'
+);
+const take = await startRetainedToolRecording({
+  tab, surface, cdp, outputBase: 'C:/path/to/new-take',
+  expectedRunId, expectedSourceDigest, bindings,
+  onProgress: event => nodeRepl.write(event),
+});
+await take.next(); // Repeat in bounded tool calls until take.done is true.
+```
+
+Its seven stages use real Tab, Shift+Tab, Enter, PageDown and typing. Each stage
+checks the resulting accessibility state before proceeding. The last stage
+stops the tab-bound recording and saves raw video, actual cue times and a
+credential-free receipt. Existing output files are never overwritten. Early
+failure retains a stopped take; an uncertain recorder stop is labeled uncertain
+and permits one explicit stop recovery with a separate receipt.
+
+If start acknowledgement fails, the thrown error exposes `recordingRecovery`
+and the helper writes a separate `.start-uncertain.json` receipt. It does not
+retry start or stop automatically. Inspect the bound recorder and establish
+that the capture belongs to this take before calling
+`error.recordingRecovery.stop({ confirmOwnedCapture: true })`. An already
+active recorder from another take must be left with its original controller.
+
+The helper requests no generation and never activates Save evidence or Mark
+done. Its request audit permits only the selected run's preview POST; it strips
+headers, bodies and query strings. Confirm unchanged budgets and records
+separately. The capture is silent and uses the current viewport. Keep the raw
+capture and receipt when converting video for playback or adding narration.
+
+On October 1, 2026, the helper completed all seven stages in a continuous
+108.0-second local take with 75 native key presses. Visual frame review showed
+the distinct three-gap and zero-gap results, cleared output, invalid-JSON error,
+the unchanged format declaration and generated source. One earlier completed
+take was retained after its second scroll moved the zero-gap result out of view;
+the helper now focuses the footer disclosure during result holds. The observed
+request audit contained only the saved run's preview POST. All 15 retained runs,
+provider budgets and the credential-file hash were unchanged after recording.
+
+This is a silent rehearsal of saved output. Its companion narration is one
+paragraph with pauses rounded to tenths and an estimated 160-word-per-minute
+pace mapped to observed action cues; recorded speech remains unverified.
+Independent source review accepted the helper. The scoped documentation-count
+test, syntax and diff checks passed; the full application suite was not rerun
+for this helper change. Projects Acceptance returned an internal error, so no
+formal acceptance receipt was produced. Publication and the judge demo remain
+release work.
+
 ## Project copilot story (target 2:55)
 
 Use one website-release project throughout. All scenario facts below are

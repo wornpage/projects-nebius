@@ -44,6 +44,7 @@ scripts/generate-public-manifest.mjs
 scripts/inline-script-bodies.mjs
 scripts/nebius-browser-smoke.mjs
 scripts/nebius-project-browser-smoke.mjs
+scripts/nebius-retained-tool-recording.mjs
 scripts/nebius-runtime-smoke.mjs
 scripts/nebius-tool-preview-smoke.mjs
 scripts/offline-browser-smoke.mjs
