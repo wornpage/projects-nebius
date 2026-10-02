@@ -49,10 +49,24 @@ Failed references now expose an Inspect run link from Next step. Native Enter
 opened the actual retained failure, with preview and passed-evidence actions
 still unavailable. A 375px screenshot exposed clipping that document scroll
 width did not detect. Source `816698c` constrains the card's grid track and title
-minimum size; Svelte checking and the static build passed. The final responsive
-render recheck remains pending: the available browser connector refused both
-the private backup and a separately authored synthetic fixture under its file
-access policy. Earlier clipped screenshots remain failed layout evidence.
+minimum size. The compiled Review component now passes the existing isolated
+browser harness at 375px and 1280px: 86/86 total observations, including 48/48
+authored packet cases, 8/8 bridge cases and 12/12 parent cases. Those denominators
+are unchanged; the rejected-source cases gained card-content bounds and badge
+checks. Reintroducing the old implicit grid minimum in the synthetic 375px page
+reproduced detectable clipping, confirming the regression check catches it.
+Independent read-only review found no issues in the added assertions.
+
+This browser evidence uses an authored fixture and synthetic API with the actual
+compiled UI, Node 24.18.0 and Chromium 153.0.8010.12. It does not qualify either
+failed model output, authenticated saved-run rendering, hosted behavior or every
+accessibility concern. The private backup was not imported. An initial Edge
+launch was intercepted by the installed redirect utility and recorded zero
+browser observations; the successful run used an already installed Chromium.
+Earlier clipped screenshots and the interrupted launch remain retained evidence.
+No new model or Sandbox call was made. The static rebuild and 209-file source
+inventory check passed. Current reports and full-card screenshots are under
+`C:/Users/jared/Videos/Nebius/approved-json-repair-e528a98-2026-10-02/contained-review-final`.
 
 ## Historical successful checker — October 1, 2026
 

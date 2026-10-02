@@ -513,7 +513,8 @@ addEventListener('message', event => {
           });
           await page?.close();
         }
-        await observe('compiled parent: rejected generation remains inert and keyboard readable', { width, category: 'parent', case: 'rejected-source-history', fixtureKind: 'authored-synthetic-run-reference' }, async () => {
+        const rejectedDetail = { width, category: 'parent', case: 'rejected-source-history', fixtureKind: 'authored-synthetic-run-reference', layout: null, clippingRegressionDetected: null };
+        await observe('compiled parent: rejected generation remains inert, contained and keyboard readable', rejectedDetail, async () => {
           const page = await context.newPage(); page.setDefaultTimeout(4000);
           page.on('pageerror', error => pageErrors.push(error.message));
           const failedSeed = structuredClone(seed);
@@ -540,7 +541,43 @@ addEventListener('message', event => {
             assert.equal(await page.evaluate(() => Boolean(window.generationInjected)), false);
             assert.equal(await review.getByRole('button', { name: 'Try your tool', exact: true }).count(), 0);
             assert.equal(await review.getByRole('button', { name: 'Save run evidence', exact: true }).count(), 0);
-            await page.screenshot({ path: path.join(output, 'rejected-source-history-' + width + '.png') });
+            // Document scrollWidth alone misses clipped children when an ancestor
+            // hides overflow. Measure the actual compiled card and its contents.
+            const measure = () => review.evaluate(card => {
+              const bounds = element => {
+                const rect = element.getBoundingClientRect();
+                return { left: rect.left, right: rect.right, height: rect.height };
+              };
+              const box = bounds(card), style = getComputedStyle(card);
+              const left = box.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+              const right = box.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight);
+              const elements = [...new Set([...card.children, ...card.querySelectorAll('.run-review-head > *, .worn-alert, .worn-alert *')])];
+              const violations = elements.filter(element => element.getClientRects().length).flatMap(element => {
+                const rect = bounds(element);
+                return rect.left < left - 1 || rect.right > right + 1
+                  ? [{ element: element.className || element.tagName, ...rect }] : [];
+              });
+              const badge = card.querySelector('.run-review-head .worn-badge');
+              if (!badge) throw new Error('The actual status badge must be present.');
+              return { card: box, content: { left, right }, viewport: document.documentElement.clientWidth,
+                badge: { ...bounds(badge), text: badge.textContent.trim(), lineHeight: parseFloat(getComputedStyle(badge).lineHeight) }, violations };
+            });
+            rejectedDetail.layout = await measure();
+            assert.deepEqual(rejectedDetail.layout.violations, [], 'Every visible card child, alert and heading must fit inside the card padding.');
+            assert.ok(rejectedDetail.layout.card.left >= -1 && rejectedDetail.layout.card.right <= rejectedDetail.layout.viewport + 1);
+            assert.equal(rejectedDetail.layout.badge.text, 'failed');
+            assert.ok(rejectedDetail.layout.badge.height < 2 * rejectedDetail.layout.badge.lineHeight, 'The status label stays on one line.');
+            if (width === 375) {
+              // Negative control: reproduce the old implicit grid minimum in
+              // this synthetic page only, proving the check sees real clipping.
+              await review.evaluate(card => { card.style.gridTemplateColumns = 'auto'; });
+              try {
+                const regressed = await measure();
+                rejectedDetail.clippingRegressionDetected = regressed.violations.length > 0;
+                assert.equal(rejectedDetail.clippingRegressionDetected, true, 'Removing containment must reproduce detectable child overflow.');
+              } finally { await review.evaluate(card => { card.style.removeProperty('grid-template-columns'); }); }
+            }
+            await review.screenshot({ path: path.join(output, 'rejected-source-history-' + width + '.png') });
           } finally { await page.close(); }
         });
         await observe('compiled parent: stale result remains inspection only', { width, category: 'parent', case: 'stale', fixtureKind: 'authored-synthetic-run-reference' }, async () => {
