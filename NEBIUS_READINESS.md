@@ -10,7 +10,39 @@ retained as dated historical evidence and do not describe current repository
 access. This source-only change does not establish any change to the hosted
 demo, Devpost entry, or challenge eligibility.
 
-## Current runtime status — September 28, 2026
+## Current runtime status — October 1, 2026
+
+| Capability | Observed result | Remaining evidence |
+| --- | --- | --- |
+| Generated browser tool | Nemotron Super run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` became ready after one repair | One successful run does not establish general generation reliability |
+| Actual Sandbox checks | First check failed for missing `change:input-json` coverage; repair passed with 14 assertions, 9 validate calls, 6 handler calls, 6/6 control events and 2/2 post-output edits | Checks are model-authored; declared JSON-loader coverage remains 0/2 because the saved input declares text |
+| Independent packet behavior | Unchanged retained files passed 24 frozen cases at 375px and 1280px: 48/48 observations; current renderer passed 64/64 total checks | Local renderer evidence; actual screen-reader speech and full accessibility remain unverified |
+| Local application | Review opened the authenticated saved run; keyboard activation showed incomplete, corrected and invalid inputs, and editing cleared the old result | Evidence was saved while the task remained open; human acceptance is still separate |
+| Source verification | Commit `18ed70f` passed 595/595 local tests and 84/84 authored preview checks; independent source review accepted the metadata and announcement changes | No hosted CI or new provider run is established by these checks |
+| Repository and hosting | GitHub reports `wornpage/projects-nebius` PRIVATE; the previous hosted landing address returned HTTP 404 during this follow-up | Public source and judge access require the owner's release decision |
+| Projects Acceptance | The connector returned MCP -32603 Internal error | This follow-up has no formal Projects Acceptance receipt |
+
+The actual run used `nvidia/nemotron-3-super-120b-a12b` with standard reasoning,
+two model calls, 6,700 reported input tokens and 9,083 reported output tokens in
+total. The final checked source digest is
+`8e67976200cfc06c6e41017beee84a9ff88f772f91cdfd9012656900c9c53d35`.
+Its successful files and prior failed check remain unchanged. The subsequent
+renderer supplies result labels, one polite atomic announcement region and an
+Input formats disclosure; it displays the saved text declaration without
+rewriting it or upgrading the historical JSON-loader denominator.
+
+The local app runs on port 8787. Configuration remains at 20 model calls and
+3 task starts per UTC day; failed attempts still count. Before/after local state
+audits for the renderer follow-up found 15 retained runs, no active runs, and
+identical records, budgets and credential-file bytes. That count spans retained
+history and is not a claim of 15 starts within one day's allowance.
+
+No model or Sandbox call, quota change, remote deployment or publication was
+performed for the renderer follow-up. Devpost and its video have not been
+refreshed from this result. The earlier submission observations below remain
+dated history; they do not establish current judge access or public source.
+
+## Historical runtime checkpoint — September 28, 2026
 
 | Capability | Observed result | Remaining evidence |
 | --- | --- | --- |
@@ -57,8 +89,9 @@ generated tool. The existing embedded video was retained and identified as an
 earlier Projects demonstration. The current narration draft and recorder's
 Sandbox segment were updated; no new video was recorded in this pass.
 
-The sections below retain earlier milestone observations. This current-status
-section supersedes their access, hosting, publication and pending-run statements.
+The sections below retain earlier milestone observations. The October 1
+current-status section supersedes their access, hosting, publication and
+pending-run statements.
 
 ## Fifth tool attempt and source guidance — September 28, 2026
 
@@ -240,9 +273,10 @@ frontend build completed. No test suite was run for this setup update.
 
 The primary entry is a project copilot for the Best Apps and Agents track:
 create a plan, choose useful work, adapt the plan, and review supplied evidence.
-The new execution milestone connects an existing task to browser-tool generation,
-Sandbox checks, one repair and result review. It is disabled by default;
-live execution remains unverified. See [execution design](NEBIUS_EXECUTION.md)
+The execution milestone connects an existing task to browser-tool generation,
+Sandbox checks, one repair and result review. It is disabled by default; one
+configured local run has successful provider and browser evidence. See
+[execution design](NEBIUS_EXECUTION.md)
 and [track design](NEBIUS_TRACK_DESIGN.md).
 
 ## Requirement audit
@@ -254,11 +288,11 @@ and [track design](NEBIUS_TRACK_DESIGN.md).
 | Reliable local state | Atomic plan/replan saves, stale revisions, reload, import/export, dependency release and undo checks | Browser-local workspace; no shared private backend |
 | Concise responsive UI | Native task disclosures, explicit progress counts, current Ready next links | Phone/desktop, keyboard disclosure/error focus, and explicit-filter precedence checks passed locally |
 | Nemotron model strategy | Separate routine/reasoning roles, verified official model/JSON documentation, exact configured model in each preview | Nano/Super candidates; Ultra requires deliberate owner selection and live comparison |
-| Usage and spend controls | Shared daily/IP admission, bounded inputs/output tokens, one call per request, provider-reported token usage | Call/token caps are not a dollar budget; failed requests can still cost money |
-| Independent review | Separate workers and reviewers; concrete local handoffs and rework recorded in Projects Acceptance | No hosted GitHub acceptance is claimed |
-| Reproducible source | Public source manifest, pinned dependencies, MIT license, setup/build/check commands in NEBIUS.md | Separate public repository published with fresh history |
+| Usage and spend controls | Shared daily/IP admission, bounded inputs/output tokens, one call per advisory request and at most two per task run, provider-reported token usage | Call/token caps are not a dollar budget; failed requests can still cost money |
+| Independent review | Separate source reviewers and retained local evidence; earlier milestones were recorded in Projects Acceptance | Current follow-up has local review only; the connector is unavailable and no hosted GitHub acceptance is claimed |
+| Reproducible source | Source manifest, pinned dependencies, MIT license, setup/build/check commands in NEBIUS.md | Repository is temporarily private; public release remains an owner decision |
 | Private/public boundaries | Fresh demo modules, existing public UI dependencies, no private Projects backend port | Frozen WebMCP repository and its deployment are separate |
-| Reviewable delivery | Separate public repository and hosted Worker; live routine inference observed | Broader model evaluation, Sandbox execution and formal acceptance remain outstanding |
+| Reviewable delivery | Live routine inference and a retained Super-generated checker with passing Sandbox and local browser observations | Public source, hosted judge access, broader model evaluation, final video and formal acceptance remain outstanding |
 
 ## Local verification
 
@@ -478,11 +512,11 @@ or a fresh-machine installation. Their exact revisions remain in the lockfile.
 | Gate | Actual evidence collected |
 | --- | --- |
 | Live model quality | Two ad-hoc routine responses observed; 0 of the separate 6 planned evaluation cases completed |
-| Exact model/JSON compatibility | Nano guidance succeeded; Super returned files that reached Sandbox syntax checking but failed, and its repair was rejected; planning/replanning/evidence-review quality is not yet qualified |
+| Exact model/output compatibility | Nano guidance succeeded; Super produced one checker that passed after repair using native fenced source blocks. The retained input declares text, with 0/2 declared JSON-loader coverage. Planning/replanning/evidence-review quality is not yet qualified |
 | Measured latency and cost comparison | Pending actual calls; no fabricated estimates or benchmark claims |
-| Hosted demo and judge access | Hosted app is public; owner-approved limits are 20 model calls and 3 task runs per UTC day; remaining-capacity visibility is still pending |
-| Public submission repository | Published at wornpage/projects-nebius under MIT, separately from the private fork |
-| Submission video | Devpost has a video; the newer live-guidance recording and final Sandbox footage have not replaced it |
+| Hosted demo and judge access | Hosted access is paused; local operation is available. Restored configuration permits 20 model calls and 3 task starts per UTC day; release-day judge access remains open |
+| Public submission repository | wornpage/projects-nebius retains MIT and is currently private; authorized public release is pending |
+| Submission video | The September 28 submission record has an older video; a final cut showing the successful retained checker is still required |
 
 These pending gates are separate from local implementation. Optional Nebius
 Serverless Endpoints or Jobs remain architectural candidates and have not been

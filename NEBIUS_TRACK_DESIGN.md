@@ -40,7 +40,9 @@ and [official Nemotron cookbook](https://github.com/nebius/token-factory-cookboo
 
 ## Spend and evidence
 
-Each explicit generation makes at most one provider call. All operations share
+Each explicit advisory generation makes at most one provider call. Task execution
+permits at most two model calls within the run, including its one repair.
+All operations share
 the configured daily call ceiling and IP limit. A bounded input and output cap
 constrain request size; these limits are not a dollar budget. Displayed token
 usage is provider-reported actual usage for a successful response, not an
@@ -72,10 +74,12 @@ uses the existing task, criteria, state and approval owners. Its generated
 checks are agent-authored; they are not independent acceptance. See
 [execution design and setup](NEBIUS_EXECUTION.md).
 
-This is a source implementation with execution disabled by default. Actual
-model quality, sandbox interoperability, preview interaction and track claims
-still require a live demonstration. The application's own checks do not prove
-that runtime story.
+Execution is disabled by default. One configured local Super run has actual
+provider evidence: a failed Sandbox check, one repair and a passing check.
+Its unchanged retained files passed independent packet cases and interaction
+in Review. This gives the coding-track story a working example; broader quality,
+the final demonstration video and track eligibility remain separate gates. See
+[current readiness](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
 
 ## Hosting and remaining gates
 

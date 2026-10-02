@@ -532,7 +532,17 @@ configuration. The source change itself neither provisions nor deploys them.
 
 ## Verification status
 
-Sandbox access is enabled in the hosted demo. On September 28, a real isolated
+One configured local Super run now has successful Sandbox and browser evidence.
+Run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` passed after one repair; its retained
+files passed 48/48 independent packet observations at two widths. The current
+renderer passed 64/64 checks on those files, including result labels and
+announcements. The original declared JSON-loader coverage remains 0/2.
+See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
+The original failures below remain historical evidence. Public hosting is paused.
+
+### Historical attempts — September 28, 2026
+
+Sandbox access was enabled in the hosted demo. On September 28, a real isolated
 Node 24 diagnostic returned exit code 0 with networking disabled, UID/GID 1000
 and writable `/tmp`. It used operator-written diagnostic code, not model output.
 
@@ -555,13 +565,13 @@ An uncertain start or explicit resume schedules a saved-run read; a read failure
 stops polling, and no read starts another run. Live validation of these source
 changes is still pending. Source `be06c9973bef01b42726111f24771acf380704fb`
 is deployed as Worker `fda3257b-4352-4c99-b60e-3165ddf9313c`, retaining the
-normal 20-call/3-run daily limits.
+then-configured 20-call/3-run daily limits.
 
 The original five-call and one-run limits were restored after the first two attempts.
 The owner subsequently raised the hosted allowance to 20 model calls and
 3 task runs per UTC day. Existing daily counts were retained; per-run limits
 remain two model calls, 8,000 output tokens per call, and two 30-second Sandbox
-executions. See [current runtime evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
+executions. See [current runtime evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
 
 Runtime and product reviews are recorded in Projects Acceptance as development
 evidence. That review tooling is outside this app and is not a required service

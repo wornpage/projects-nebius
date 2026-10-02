@@ -37,7 +37,7 @@ Public component reuse is prior work, not a new model or backend contribution.
 | Demonstration data | Existing WebMCP garage sample | Four synthetic Projects scenarios for the Nebius edition | `data/nebius-demo-packs.json`; fresh browser session rendered all four |
 | Continuity | Browser persistence and cache-backed shell | Unsaved evidence protection, task-editor focus return, and offline task-query recovery | Keyboard journeys at 375px/1280px and generated service-worker offline checks passed locally |
 | Usage controls | Static app | IP rate limit and transactional daily call ceiling | `worker/nebius-api.mjs`, `worker/nebius-budget.mjs`; hosted limits configured, temporary owner-approved allowances restored |
-| Task execution | No model-driven artifact execution | Existing task authorizes browser-tool files, fixed sandbox checks, one repair and human result review | Sandbox access and a Node diagnostic succeeded; two tool-building calls stopped before generated-code execution; complete artifact still pending |
+| Task execution | No model-driven artifact execution | Existing task authorizes browser-tool files, fixed sandbox checks, one repair and human result review | One Super-generated checker passed Sandbox after repair and 24 independent packet cases at two widths; broader generation quality and final demonstration remain open |
 | Presentation | WebMCP guide and landing | Nebius landing, direct navigation and contribution explanation | Local 375px/1280px journeys and hosted Work/Next/Review interfaces inspected; formal acceptance remains separate |
 
 Renaming the edition is presentation work. The substantive contribution is the

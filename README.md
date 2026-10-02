@@ -17,10 +17,12 @@ and limits; accepting the result remains a separate action.
 The Nebius Worker's public address and preview URLs are disabled. Reopening
 hosted access requires separate owner authorization for release.
 
-**Development status:** Nano guidance has hosted runtime evidence. Sandbox access is enabled
-and a real Node 24 execution completed successfully. The first tool-building
-attempts were rejected before execution; a complete generated tool and preview
-remain in validation. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--september-28-2026).
+**Development status:** A real Nemotron Super run produced a release-packet
+checker, repaired a failed Sandbox check, and passed the next check. Its retained
+tool passed 24 independent packet cases at two screen widths and was exercised
+in the local app. This establishes one working result; broader model quality,
+hosted judge access and the final video remain open. See
+[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-1-2026).
 The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
 temporarily private MIT-licensed continuation; the earlier WebMCP entry remains
@@ -97,12 +99,13 @@ checks in a Token Factory Sandbox, and allows one repair. Open **Review** to
 inspect the tool, its source and observed check output, then explicitly save
 run evidence. A successful run does not mark the task done.
 
-Execution has a separate Sandbox credential binding and limits. The hosted demo
-enables it; the local defaults keep it off. A Token Factory key with Sandbox
+Execution has a separate Sandbox credential binding and limits. The configured
+`demo` environment enables it, while public routing is paused; local defaults
+keep it off. A Token Factory key with Sandbox
 access can supply both credential bindings. [Execution setup and boundaries](NEBIUS_EXECUTION.md) describes the
 contract, image requirements, cancellation and seven-day server retention.
-Sandbox connectivity is proven; generated-tool behavior still needs a completed
-run. The demo permits 20 model calls and 3 task runs per UTC day;
+The retained checker has successful Sandbox and local browser observations.
+The configured demo allowance is 20 model calls and 3 task runs per UTC day;
 failed attempts count. Workspace backups include run
 access keys and any saved results; treat them as private workspace data.
 
