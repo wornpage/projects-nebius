@@ -837,3 +837,30 @@ These pending gates are separate from local implementation. Optional Nebius
 Serverless Endpoints or Jobs remain architectural candidates and have not been
 provisioned. Configure credentials locally when ready; never put them in a
 public source commit or browser code.
+
+### October 3 private reproduction
+
+The fresh authorized run `5f42fb39-a8c2-404f-9bb3-b40a72250c4e` used the same
+frozen JSON-checker input as the proposed reproduction. It **failed before
+Sandbox**: both responses omitted required opening file-fence characters; the
+repair fixed the first reported opening but left later openings malformed.
+Actual usage was 2 model calls, 6,912 input tokens, 10,415 output tokens and
+0 Sandbox checks. No files were admitted, so this run has no independent
+packet-case result. All 18 earlier server records and credentials were preserved;
+19 records are retained. The October 2 success remains a separate observation.
+
+The parser remains strict. The shared generation instruction now explicitly
+requires an audit of every opening and closing boundary and explains that a
+diagnostic identifies the first rejection. Its effectiveness with a live model
+has **not been observed**. Pinned Node 24.18.0 local `verify:nebius` passed
+673 tests, up from 671 because two malformed-boundary rejection cases were added;
+Svelte reported zero errors/warnings, and the disabled runtime made no inference
+calls. These are offline checks. The previous approved run's model allowance is
+used; another evaluation requires new bounded owner authorization.
+
+Private draft PR #9's GitHub run `37138036528` passed both jobs at `9dc926e`,
+including all five Nebius browser commands. Its predecessor `37136993747` failed
+an immediate focus assertion; a bounded wait now preserves the focus and storage
+assertions. The later framing-instruction revision needs its own exact-head CI
+result. Neither CI nor the framing change makes the failed reproduction successful.
+Public and preview hosting remain disabled, and the repository remains private.
