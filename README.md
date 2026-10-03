@@ -4,33 +4,41 @@ This standalone edition retains its original [MIT License](LICENSE).
 See [LICENSING.md](LICENSING.md) for source, hosting and provider-access
 boundaries and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependencies.
 
-A project copilot for turning a goal into tasks, choosing the next step,
-recording evidence and adapting a plan when circumstances change.
-NVIDIA models through Nebius Token Factory propose plans, task changes and
-evidence assessments. The task execution milestone adds a bounded browser-tool
-build, sandbox checks and result review. You authorize a run's selected task
-and limits; accepting the result remains a separate action.
+Turn a task into a small browser tool with NVIDIA Nemotron through Nebius Token
+Factory. Review the task and limits, authorize a bounded build with Sandbox
+checks, then try the generated result in an isolated preview. Source, failed
+checks and usage stay available; evidence saving and completion are separate
+human decisions.
 
-**Manual preview:** [Open the workspace](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)
-to create projects, edit tasks, inspect blockers and record evidence in your
-browser. AI guidance and Sandbox execution are disabled in this preview.
-The Build tool view explains the workflow and disables Run this task; it does
-not simulate a model response or expose a private retained run.
+The project workspace keeps the brief, tasks, dependencies and evidence around
+that result. Nebius also proposes plans, next steps and evidence assessments;
+these remain drafts until a person approves them.
 
-You can also run the app locally at [http://127.0.0.1:8787/](http://127.0.0.1:8787/).
+**Current access — October 3, 2026:** the repository is private and the hosted
+Cloudflare site is disabled during local development. Public judge access
+will need to be restored before submission review.
+
+Run the app locally at [http://127.0.0.1:8787/](http://127.0.0.1:8787/).
 The setup below needs no provider credentials. Enabling real Nebius features
 is a separate configuration and spending decision.
+
+The [earlier manual preview](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)
+is currently unavailable. That release supported manual project work with AI
+guidance and Sandbox execution disabled; it did not expose private retained runs.
 
 **Development status:** A real Nemotron Super run produced a release-packet
 checker, repaired a failed Sandbox check, and passed the next check. Its retained
 tool passed 24 independent packet cases at two screen widths and was exercised
 in the local app. This establishes one working result; broader model quality
 and live AI access for judges remain open. See
-[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
+[current evidence](NEBIUS_READINESS.md#local-checkpoint--october-3-2026).
 The [published captioned demonstration](https://www.youtube.com/watch?v=ssBXmrdvHdE)
 records the earlier October 1 checker. The October 2 JSON-checker result and its
 2/2 declared JSON loaders are separate, newer evidence; the video does not
 demonstrate that newer run.
+The [October 3 scripted replay](NEBIUS_DEMO_SCRIPT.md#verified-scripted-local-take--october-3-2026)
+of the JSON checker is the newest local narrated draft. It awaits human review
+and publication; its private saved-run state and media are not included in a clone.
 The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
 MIT-licensed continuation; the earlier WebMCP entry remains separate.
@@ -145,12 +153,29 @@ npm run test:nebius:portability
 
 These suites use isolated test workspaces and synthetic responses. Run them
 after `verify:nebius`, which creates the required Nebius build.
+
+**Keyboard follow-up — October 3, 2026:** source `522a7ec` preserves focus after
+refreshing a saved run, including a failed refresh, and respects focus moved
+elsewhere during the request. The local app confirmed this with native Tab/Enter
+and an authenticated GET of the same retained checker. Pinned qualification
+passed 671 tests and all five browser commands; the authored preview now has
+96 observations (six new focus cases). The separate WebMCP baseline still passes
+140 contract and 15 artifact tests. This is retained-run recovery, not a fresh
+generation. [Evidence and remaining work](NEBIUS_READINESS.md#retained-run-recovery-and-keyboard-focus--october-3-2026).
 The tool-preview suite exercises the production renderer with an authored
 checker and a synthetic parent run. Passing it does not establish the quality
 of a Nebius-generated tool.
 
-Local Windows qualification has used Node 24.18.0, its bundled npm 11.16.0 and
-Chromium 153.0.8010.12. Those observations do not qualify other environments.
+Earlier local Windows qualification used Node 24.18.0, its bundled npm 11.16.0
+and Chromium 153.0.8010.12. The October 3 clean checkout of `ac0e049` passed with
+Node 24.19.0, npm 11.17.0 and that Chromium version. The dated results retain
+their separate source revisions and do not qualify other environments.
+The latest clean qualification of `47f23b5` reran both locked installs with the
+pinned Node 24.18.0/npm 11.16.0 and passed `verify:nebius`, all five browser
+commands and the preserved WebMCP `verify`. See the
+[pinned-runtime results](NEBIUS_READINESS.md#pinned-runtime-follow-up--october-3-2026)
+for counts and scope; this did not switch the live development process or make
+new provider calls.
 The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
 defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
 both locked installs and its own hosted Chrome lookup, then runs

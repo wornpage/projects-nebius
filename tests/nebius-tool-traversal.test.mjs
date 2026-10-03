@@ -509,7 +509,7 @@ test('DOM bridge reports ready after patches and ignores unsolicited idle replie
 function parentPreviewHarness() {
   const source = readFileSync(new URL('../svelte-frontend/src/routes/review/NebiusRunReview.svelte', import.meta.url), 'utf8');
   const start = source.indexOf('function stopPreviewListener()');
-  const end = source.indexOf('async function refreshResult()', start);
+  const end = source.indexOf('async function refreshResult(', start);
   assert.ok(start >= 0 && end > start);
   const functions = source.slice(start, end).replace(': HTMLIFrameElement', '').replace(': MessageEvent', '');
   const listeners = new Set(), timers = new Map(); let timerId = 0;

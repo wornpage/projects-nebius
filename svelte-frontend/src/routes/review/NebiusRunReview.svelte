@@ -84,10 +84,18 @@
 		}, 8000);
 	}
 
-	async function refreshResult() {
+	async function refreshResult(event: MouseEvent) {
 		if (!reference || busy) return;
 		const { id, key } = reference;
 		const packId = pack.id;
+		const trigger = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null;
+		const ownedFocus = trigger !== null && document.activeElement === trigger;
+		let focusMoved = false;
+		const trackFocus = (next: FocusEvent) => {
+			if (next.target instanceof HTMLElement && next.target !== trigger &&
+				next.target !== document.body && next.target !== document.documentElement) focusMoved = true;
+		};
+		if (ownedFocus) document.addEventListener('focusin', trackFocus, true);
 		busy = 'refresh';
 		error = '';
 		savedMessage = '';
@@ -99,6 +107,13 @@
 			error = cause instanceof Error ? cause.message : 'The saved run could not be refreshed.';
 		} finally {
 			busy = '';
+			await tick();
+			if (ownedFocus) document.removeEventListener('focusin', trackFocus, true);
+			if (ownedFocus && !focusMoved && document.hasFocus() && trigger?.isConnected && !trigger.disabled &&
+				pack.id === packId && reference?.id === id && reference.key === key &&
+				(document.activeElement === trigger || document.activeElement === document.body || document.activeElement === document.documentElement)) {
+				trigger.focus({ preventScroll: true });
+			}
 		}
 	}
 
@@ -207,7 +222,7 @@
 	<div class="run-review-head">
 		<div>
 			<p class="run-review-kicker">Task result</p>
-			<h2 id="run-review-title" class="demo-card-title">{record ? 'Review generated browser tool' : 'Review task execution'}</h2>
+			<h2 id="run-review-title" class="demo-card-title">{verified?.files.length ? 'Review generated browser tool' : 'Review task execution'}</h2>
 		</div>
 		<WornBadge label={record?.status || 'Uncertain'} />
 	</div>
