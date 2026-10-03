@@ -60,6 +60,32 @@ Draft narration, in one paragraph with pauses specified in tenths of a second:
 
 Wornpage Projects turns a task into a tool you can try. [0.4s] This is a saved October second run from Nebius Token Factory using Nemotron Super. [0.4s] It used two model calls, with seven thousand eight hundred fifteen input tokens and seven thousand four hundred twenty-five output tokens. [0.6s] The first Sandbox check caught an inconsistent expected error message. [0.4s] One repair passed the next check, with twenty-eight assertions, all six control events and both JSON example loaders observed. [0.6s] Now I can try the actual result. [0.3s] The incomplete packet has three gaps: health, review and rollback. [0.5s] The corrected packet has zero gaps and is ready for human review. [0.6s] Editing replaces the old result, and malformed JSON produces an input error. [0.5s] This input declares JSON, matching the task's requirement. [0.5s] The generated files, original failure and repaired check remain available in Review. [0.4s] Saving evidence and completing the task are separate human decisions. [0.5s] This recording replays a retained local result. The public preview is currently unavailable during private local development. The source includes instructions for running the Nebius integration.
 
+### Verified scripted local take — October 3, 2026
+
+The committed helper completed all seven stages against the actual retained
+JSON checker in the local app. The selected continuous take is 95.5 seconds,
+with 74 native key presses during capture and nine before capture. It visibly shows three gaps, zero
+gaps, an edit clearing the old result, and an invalid-JSON error. The first
+149.0-second take remains preserved; pauses between tool calls made it slower.
+
+Both request audits contain only the selected run's preview POST. All 18
+retained run records, both provider budget counters and the credential-file
+hash remained unchanged. No new model or Sandbox call, evidence save, task
+completion, public upload or Devpost edit was performed.
+
+Private media and receipts are retained locally in
+`C:/Users/jared/Videos/Nebius/scripted-replay-2026-10-03/`. They require local
+file access and are not supplied by cloning this repository. The 95.5-second
+narrated draft uses the installed Microsoft Zira voice. Its ten speech blocks
+fit the observed action intervals; adding audio preserves the playback video's
+H264 stream. The original AV1 capture is retained separately. Human listening,
+pronunciation and comprehension remain unverified.
+
+Measured narration in one paragraph; each pause marker rounds inserted silence
+to 0.1 seconds, while pauses within speech remain part of the voice recording:
+
+Projects built this release checker with Nemotron Super on Nebius. [1.6s] This saved run used two model calls. The first Sandbox check caught an incorrect expected error message. [1.6s] One repair passed twenty-eight assertions, all six control events and both JSON example loaders. The checked source and original failure remain available. [4.7s] Now I can try the generated tool. This incomplete packet has three gaps: health, review and rollback. [3.9s] I load the corrected packet and check it with the keyboard. It shows zero gaps and is ready for human review. A release decision still belongs to the person reviewing it. [9.8s] Editing the packet clears the old ready result. [2.9s] Malformed JSON produces an input error instead of retaining that earlier result. [4.3s] The input declares JSON, matching the task. Both example loaders were observed in the saved checks. [3.3s] The generated files, checked source digest and Sandbox logs remain available. [1.7s] Evidence and completion are separate human decisions. This is a private local replay. [0.8s]
+
 ## Historical retained checker rehearsal (target 2:45)
 
 Use saved run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` in the local app. Label
