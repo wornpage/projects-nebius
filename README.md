@@ -153,6 +153,15 @@ npm run test:nebius:portability
 
 These suites use isolated test workspaces and synthetic responses. Run them
 after `verify:nebius`, which creates the required Nebius build.
+
+**Keyboard follow-up — October 3, 2026:** source `522a7ec` preserves focus after
+refreshing a saved run, including a failed refresh, and respects focus moved
+elsewhere during the request. The local app confirmed this with native Tab/Enter
+and an authenticated GET of the same retained checker. Pinned qualification
+passed 671 tests and all five browser commands; the authored preview now has
+96 observations (six new focus cases). The separate WebMCP baseline still passes
+140 contract and 15 artifact tests. This is retained-run recovery, not a fresh
+generation. [Evidence and remaining work](NEBIUS_READINESS.md#retained-run-recovery-and-keyboard-focus--october-3-2026).
 The tool-preview suite exercises the production renderer with an authored
 checker and a synthetic parent run. Passing it does not establish the quality
 of a Nebius-generated tool.

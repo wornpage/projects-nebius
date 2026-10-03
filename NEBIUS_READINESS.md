@@ -125,6 +125,50 @@ No new model/Sandbox call, quota change, source push, deployment or publication
 occurred. This local Windows evidence does not establish current-source hosted
 CI, authenticated recovery, human comprehension or fresh provider reproduction.
 
+### Retained-run recovery and keyboard focus — October 3, 2026
+
+The actual local app recovered run `2947cffc-84e3-4f71-8325-1e35f29c170a` across
+Next and Review reloads, then refreshed it through its authenticated GET and
+reopened the same isolated tool. Native controls showed three gaps, zero gaps
+and an invalid-JSON error replacing readiness. Closing returned focus to Try
+your tool; reopening discarded the old preview input. Project progress remained
+0/2, with seven browser work items. No evidence or completion action was taken.
+The first request-log window was truncated, so it does not prove a complete
+no-start request trace. Its failed observations remain retained.
+
+Refresh exposed a keyboard defect: temporarily disabling its button dropped
+focus to the document root. Source `522a7ecd530292544f8a0cf837d24491494e26f4`
+restores the original button after rendering, provided the same task/run remains
+selected and the user has not moved focus elsewhere. The authored compiled-UI
+suite gained success, error and intentional focus-movement cases at both widths:
+22 parent observations replace 16, increasing the total from 90 to 96. Packet
+coverage remains 48 and bridge coverage eight. The old UI passed 92/96, failing
+the four success/error focus cases; the repair passed 96/96.
+
+A source-extraction boundary in seven existing unit cases initially failed after
+the handler gained its event parameter. Updating that boundary preserved the
+same extracted preview-listener functions and tests. A clean checkout of the
+exact commit then passed 671/671 tests, Svelte 0/0, build/dry-run, disabled-runtime
+checks and all five browser commands on Node 24.18.0/npm 11.16.0/Chromium 153.
+Its Nebius artifact was frozen before the separate WebMCP verification passed
+140/140 contracts and 15/15 artifact tests.
+
+The verified 58-file build is served locally with a rollback copy. In the real
+tab, eight native Tabs reached Refresh saved run; Enter made one authenticated
+GET (HTTP 200) and returned focus to that button. This second request window is
+complete and contains no start, preview or inference request. The response body
+was unavailable through CDP; no exact returned-body hash is claimed. Read-only
+audits preserved all 18 server records, historical budget values, credentials
+and configuration. The public landing still returns 404. Reports and screenshots
+are under `C:/Users/jared/Videos/Nebius/local-retained-recovery-2026-10-03-bcef9d6/`.
+
+This qualifies local recovery of an existing ready run, not uncertain-start
+recovery or fresh generation. The repeated update notice has a source-level
+activation race and stale flag; its precise live lifecycle remains unobserved
+and repair is next. Human listening/fresh-person comprehension and a separately
+authorized fresh provider reproduction remain pending. No public push,
+deployment, publication or formal acceptance occurred.
+
 ## Current runtime status — October 2, 2026
 
 The [public video](https://www.youtube.com/watch?v=ssBXmrdvHdE) was published
