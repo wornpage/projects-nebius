@@ -98,6 +98,33 @@ authenticated provider recovery is established. Failed observations, the
 counter correction, final reports and screenshots are retained under
 `C:/Users/jared/Videos/Nebius/completion-audit-2026-10-03/`.
 
+### Pinned runtime follow-up — October 3, 2026
+
+Reviewed source `47f23b50ecc78e75407ed4bb0c277836afae9a3a` now also passes in a
+clean isolated checkout with the repository-pinned Node 24.18.0 and its bundled
+npm 11.16.0. Both locked installs were rerun with scripts disabled using physical
+dependency directories; the checkout contains no credential file. The existing
+portable runtime was used without changing the global Node installation.
+
+`verify:nebius` passed 671/671 tests with zero failures or skips, Svelte zero
+errors or warnings, build, Worker dry run and four disabled-runtime checks.
+All five browser commands passed on Chromium 153.0.8010.12: tool preview,
+projects, Next/Review, offline and portability. The authored preview remains
+90/90 (48 packet, 8 bridge, 16 parent and 18 general); these are fixture
+observations, not fresh model output. The project and Next/Review journeys
+passed at 375px and 1280px. Offline reload/inference-cache bypass and the
+portability/import confirmation checks also passed in their existing scope.
+
+The 58-file Nebius artifact was retained before the separate WebMCP `verify`
+rebuilt its own edition and passed 140/140 contracts and 15/15 artifact tests.
+Reports and hashed logs are under
+`C:/Users/jared/Videos/Nebius/pinned-qualification-2026-10-03-47f23b5/`.
+Earlier Node 24.19.0 observations remain separate dated results. The live local
+app and its Node 24.19.0 development process were not changed by qualification.
+No new model/Sandbox call, quota change, source push, deployment or publication
+occurred. This local Windows evidence does not establish current-source hosted
+CI, authenticated recovery, human comprehension or fresh provider reproduction.
+
 ## Current runtime status — October 2, 2026
 
 The [public video](https://www.youtube.com/watch?v=ssBXmrdvHdE) was published

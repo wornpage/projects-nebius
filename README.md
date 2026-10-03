@@ -161,6 +161,12 @@ Earlier local Windows qualification used Node 24.18.0, its bundled npm 11.16.0
 and Chromium 153.0.8010.12. The October 3 clean checkout of `ac0e049` passed with
 Node 24.19.0, npm 11.17.0 and that Chromium version. The dated results retain
 their separate source revisions and do not qualify other environments.
+The latest clean qualification of `47f23b5` reran both locked installs with the
+pinned Node 24.18.0/npm 11.16.0 and passed `verify:nebius`, all five browser
+commands and the preserved WebMCP `verify`. See the
+[pinned-runtime results](NEBIUS_READINESS.md#pinned-runtime-follow-up--october-3-2026)
+for counts and scope; this did not switch the live development process or make
+new provider calls.
 The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
 defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
 both locked installs and its own hosted Chrome lookup, then runs
