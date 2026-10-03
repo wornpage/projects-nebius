@@ -2,10 +2,12 @@
 
 ## Release evidence boundaries
 
-The manual preview supports browser-local project work with AI guidance and
-Sandbox execution disabled. It does not establish live AI access for judges.
-Source visibility, the exact deployed revision and the five disabled AI
-configurations must be checked separately during the authorized cutover.
+As of October 3, 2026, the repository is private and the Cloudflare-hosted
+Nebius preview is disabled. Local project work and replay of the retained
+checker are available. The earlier manual preview had AI guidance and Sandbox
+execution disabled; it did not establish live AI access for judges.
+Public source, a working judge URL and provider access require a separate
+authorized release with observations of the actual published configuration.
 Earlier source, model and browser observations below retain their original
 revisions and denominators.
 
@@ -16,6 +18,85 @@ preparation and hosted routes were disabled. The original [MIT License](LICENSE)
 remained in force. See [LICENSING.md](LICENSING.md) for the access policy.
 These dated observations do not establish current repository visibility,
 hosted access or challenge eligibility.
+
+## Local checkpoint — October 3, 2026
+
+At the start of this checkpoint, the local app at `http://127.0.0.1:8787/` served source
+`ac0e049fac7ee52e49e9a82c64931b4ea39af576`, preserving the original local
+configuration, credentials and retained state. The public Nebius root,
+`/landing` and `/work` return HTTP 404; GitHub reports the repository PRIVATE.
+Cloudflare lists the Nebius host as the `projects-nebius` Worker. There is no
+Nebius Pages project in the observed inventory; the original WebMCP Pages
+project remains separate and unchanged.
+
+A clean detached checkout of that source completed the following local checks.
+It used physical locked dependency installs, no credential file, Node 24.19.0,
+npm 11.17.0 and Chromium 153.0.8010.12. This is not qualification of the pinned
+Node 24.18.0 runtime or fresh provider execution.
+
+| Check | Observed scope and result |
+| --- | --- |
+| `npm run verify:nebius` | 671/671 tests, zero failures or skips; Svelte zero errors or warnings; static build, Worker dry run and four disabled-operation runtime checks passed |
+| Five Nebius browser commands | Tool preview, projects, Next/Review, offline and portability all completed successfully; this counts commands, not individual assertions |
+| Authored checker preview | 86/86 observations: 48 packet cases (24 cases at two widths), 8 bridge, 12 parent and 18 general checks in the production renderer/compiled UI with synthetic data |
+| Preserved WebMCP verification | 140/140 contract tests and 15/15 artifact tests using the WebMCP build |
+
+Three earlier Edge launch timeouts rendered no test pages. An initial artifact
+check used the Nebius build and passed 12/15; the unchanged checks then passed
+15/15 with the correct WebMCP build. Failed logs remain retained. These local
+fixture results do not qualify generated source or every browser/environment.
+Reports, the frozen artifact and screenshots are under
+`C:/Users/jared/Videos/Nebius/local-verification-2026-10-03-ac0e049/`.
+
+The committed tab-bound recorder subsequently completed 7/7 stages in the
+actual local Review tab against retained run `2947cffc-84e3-4f71-8325-1e35f29c170a`.
+The selected continuous raw take lasts 95.5 seconds, with 74 native keys during
+capture and nine before capture. It shows three gaps, zero gaps, an edit clearing
+the old result and an invalid-JSON error. The 95.533-second narrated draft uses
+ten measured speech blocks in one paragraph, with pause markers rounded to
+0.1 seconds. Both takes and their receipts remain under
+`C:/Users/jared/Videos/Nebius/scripted-replay-2026-10-03/`.
+
+The replay preserved all 18 retained records, both budget counters and the
+credential-file hash. It made no new model or Sandbox call, saved no evidence
+and left the task open. Mechanical evidence review passed; human listening,
+pronunciation and fresh-person comprehension are still unobserved. A fresh
+bounded provider reproduction also awaits its own approval. Local source and
+documentation changes are unpushed; hosting, video and Devpost publication
+remain separate owner release decisions. No formal acceptance is established.
+
+### Completion-audit follow-up
+
+The authored preview suite now includes an unknown start response with no
+record and an uncertain model response with incomplete usage, at both widths.
+It passed 90/90 observations: 48 packet, 8 bridge, 16 parent and 18 general.
+The four new parent observations account for the increase from 12 to 16; the
+earlier 86/86 result above remains a separate dated receipt. Neither of these
+two fixtures offers Try your tool, Inspect previous tool, Download tool or Save
+run evidence. They make no preview POST and leave stored task state unchanged.
+The existing refresh action remains
+reachable by native Tab navigation. Preview requests are counted before body
+or key validation, and the suite now requires every planned packet, bridge and
+parent observation to be recorded before verification can complete.
+
+The initial pass used the unchanged `ac0e049` UI. Adding a heading check then
+failed both uncertain-result cases (88/90 overall): the card claimed a generated
+tool existed despite receiving no files. Source `9d28be36a4ceeb869096e97a7b921ddb0f1bd930`
+changes that heading to depend on integrity-verified files. The new check passed
+90/90 in a clean checkout of that exact commit; ready cases retain the generated
+tool heading. `verify:nebius` also passed at that commit with 671/671 tests,
+zero skips, zero Svelte errors or warnings, build/dry-run and disabled runtime
+checks. Other browser-suite results above remain scoped to `ac0e049`.
+
+The verified build is now served locally. Its landing/work HTML matches the
+build, and read-only audits confirm all 18 retained records, both historical
+budget counters and the credential-file hash are unchanged. The first folder
+swap was refused by Windows; files were replaced in place with a rollback copy.
+A transient SQLite observation error did not establish state change; repeating
+the same read-only audit confirmed preservation. No new provider call or
+authenticated provider recovery is established. Failed observations, the
+counter correction, final reports and screenshots are retained under
+`C:/Users/jared/Videos/Nebius/completion-audit-2026-10-03/`.
 
 ## Current runtime status — October 2, 2026
 
@@ -608,12 +689,12 @@ or a fresh-machine installation. Their exact revisions remain in the lockfile.
 
 | Gate | Actual evidence collected |
 | --- | --- |
-| Live model quality | Two ad-hoc routine responses observed; 0 of the separate 6 planned evaluation cases completed |
-| Exact model/output compatibility | Nano guidance succeeded; Super produced one checker that passed after repair using native fenced source blocks. The retained input declares text, with 0/2 declared JSON-loader coverage. Planning/replanning/evidence-review quality is not yet qualified |
+| Broader model quality | Two historical ad-hoc routine responses observed; 0 of the separate 6 planned advisory evaluation cases completed. This broader study is tracked separately from the focused checker milestone |
+| Exact model/output compatibility | October 2 Super run `2947cffc` declares JSON and passed after one repair: 28 authored assertions, 2/2 declared JSON loaders, 48/48 independent packet observations and 66/66 total local renderer checks. The October 1 plaintext checker's 0/2 loader denominator remains historical. One success is not general reliability; fresh provider reproduction and broader operation quality remain unqualified |
 | Measured latency and cost comparison | Pending actual calls; no fabricated estimates or benchmark claims |
-| Hosted demo and judge access | Hosted access is paused; local operation is available. Restored configuration permits 20 model calls and 3 task starts per UTC day; release-day judge access remains open |
+| Hosted demo and judge access | Hosted access is disabled; local operation is available. Local configuration retains ceilings of 20 model calls and 3 task starts per UTC day; these ceilings do not authorize a new run or enable judge access. Public access awaits an owner-authorized release |
 | Public submission repository | wornpage/projects-nebius retains MIT and is currently private; authorized public release is pending |
-| Submission video | The September 28 submission record has an older video; a final cut showing the successful retained checker is still required |
+| Submission video | The public video published October 2 replays the older October 1 checker. The newest 95.5-second October 3 scripted/narrated JSON-checker draft remains local; human listening/comprehension, final approval and publication are pending |
 
 These pending gates are separate from local implementation. Optional Nebius
 Serverless Endpoints or Jobs remain architectural candidates and have not been

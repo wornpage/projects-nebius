@@ -4,12 +4,15 @@ This standalone edition retains its original [MIT License](LICENSE).
 See [LICENSING.md](LICENSING.md) for source, hosting and provider-access
 boundaries and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependencies.
 
-A project copilot for turning a goal into tasks, choosing the next step,
-recording evidence and adapting a plan when circumstances change.
-NVIDIA models through Nebius Token Factory propose plans, task changes and
-evidence assessments. The task execution milestone adds a bounded browser-tool
-build, sandbox checks and result review. You authorize a run's selected task
-and limits; accepting the result remains a separate action.
+Turn a task into a small browser tool with NVIDIA Nemotron through Nebius Token
+Factory. Review the task and limits, authorize a bounded build with Sandbox
+checks, then try the generated result in an isolated preview. Source, failed
+checks and usage stay available; evidence saving and completion are separate
+human decisions.
+
+The project workspace keeps the brief, tasks, dependencies and evidence around
+that result. Nebius also proposes plans, next steps and evidence assessments;
+these remain drafts until a person approves them.
 
 **Current access — October 3, 2026:** the repository is private and the hosted
 Cloudflare site is disabled during local development. Public judge access
@@ -28,11 +31,14 @@ checker, repaired a failed Sandbox check, and passed the next check. Its retaine
 tool passed 24 independent packet cases at two screen widths and was exercised
 in the local app. This establishes one working result; broader model quality
 and live AI access for judges remain open. See
-[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
+[current evidence](NEBIUS_READINESS.md#local-checkpoint--october-3-2026).
 The [published captioned demonstration](https://www.youtube.com/watch?v=ssBXmrdvHdE)
 records the earlier October 1 checker. The October 2 JSON-checker result and its
 2/2 declared JSON loaders are separate, newer evidence; the video does not
 demonstrate that newer run.
+The [October 3 scripted replay](NEBIUS_DEMO_SCRIPT.md#verified-scripted-local-take--october-3-2026)
+of the JSON checker is the newest local narrated draft. It awaits human review
+and publication; its private saved-run state and media are not included in a clone.
 The private Projects application is not needed to run it.
 [wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
 MIT-licensed continuation; the earlier WebMCP entry remains separate.
@@ -151,8 +157,10 @@ The tool-preview suite exercises the production renderer with an authored
 checker and a synthetic parent run. Passing it does not establish the quality
 of a Nebius-generated tool.
 
-Local Windows qualification has used Node 24.18.0, its bundled npm 11.16.0 and
-Chromium 153.0.8010.12. Those observations do not qualify other environments.
+Earlier local Windows qualification used Node 24.18.0, its bundled npm 11.16.0
+and Chromium 153.0.8010.12. The October 3 clean checkout of `ac0e049` passed with
+Node 24.19.0, npm 11.17.0 and that Chromium version. The dated results retain
+their separate source revisions and do not qualify other environments.
 The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
 defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
 both locked installs and its own hosted Chrome lookup, then runs

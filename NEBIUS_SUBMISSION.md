@@ -1,12 +1,12 @@
 # Devpost submission
 
-## Repository status correction — September 28, 2026
+## Current local draft — October 3, 2026
 
 `wornpage/projects-nebius` is temporarily **private** during submission
-preparation and retains its original [MIT License](LICENSE). A public MIT
-release is planned for submission week after separate owner authorization.
+preparation and retains its original [MIT License](LICENSE). Public source and
+judge access await separate owner release authorization.
 The entry observation below is dated history. This file is the updated local
-submission draft; it has not been saved to Devpost. The hosted app is paused
+submission draft; it has not been saved to Devpost. The hosted app is disabled
 and the repository is private. See [LICENSING.md](LICENSING.md).
 
 ## Entry
@@ -23,9 +23,9 @@ selection and the judging demonstration remain to be confirmed.
 
 Devpost displayed **Project submitted!** on September 28, 2026 for
 [Wornpage Projects — Nebius edition](https://devpost.com/software/wornpage-projects-nebius-edition).
-The entry links the hosted demo and public GitHub source and remains editable
-until the submission deadline. Submission status does not establish technical
-readiness or judging eligibility.
+That dated entry observation linked the hosted demo and GitHub source. Those
+addresses currently have no public app/source access. The local draft below
+does not update the entry or establish technical readiness or judging eligibility.
 
 ## Inspiration
 
@@ -36,29 +36,38 @@ from deciding the next step to building a small tool for it.
 
 ## What it does
 
-Turn a brief into an editable project plan, ask for a useful next step, adapt
-tasks when circumstances change, and review evidence against completion
-criteria. Proposed changes remain drafts until a person approves them.
-
-The implemented Sandbox workflow takes a selected task and its requirements,
+Turn a selected task into a small browser tool you can try. Review its
+requirements and execution limits, then explicitly authorize the build.
+The implemented Sandbox workflow takes that task and its requirements,
 generates a small browser tool, runs model-authored checks, and allows one repair.
 The result returns to the workspace for an isolated preview, source inspection
 and evidence review. A run never marks the task done or publishes its output.
 
-**Current evidence boundary:** Two hosted Nano suggestions were observed on
-September 28, including a changed proposal after a hypothetical release update;
-both stayed unsaved. On October 1, Nemotron Super produced a release-packet
-checker. The first Sandbox check identified missing change-event test coverage; one
-repair passed with 14 assertions, 6/6 control events and 2/2 post-output edits.
-The run used two model calls and reported 6,700 input / 9,083 output tokens in
-total. Its unchanged retained files passed 24 independent packet cases at two
-screen widths and were exercised through Review in the local app.
+The project workspace keeps the brief, tasks, dependencies and evidence around
+the result. Planning, next-step suggestions, revisions and evidence assessments
+remain editable drafts until a person approves them.
 
-This is one observed working tool. Its saved input declares text, so historical
-declared JSON-loader coverage remains 0/2. Broader generation quality, actual
-screen-reader speech, the final video and restored public judge access remain
-open. See [current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026)
-for source, usage, checks and historical failures.
+**Current observed result:** October 2 Nemotron Super run `2947cffc` produced a
+JSON release-packet checker. The first Sandbox check caught contradictory
+expected error wording; one repair passed with 28 authored assertions, 6/6
+control events, 2/2 declared JSON example loaders and 2/2 post-output edits.
+Its two model calls reported 7,815 input and 7,425 output tokens. The unchanged
+generated files then passed 24 independent packet cases at two widths (48/48)
+and 66/66 total local renderer observations. October 3's actual local scripted
+replay showed three gaps, zero gaps, an edit clearing the old result and an
+invalid-JSON error. Zero gaps concerns the supplied text; it does not validate
+external evidence or approve a release.
+
+This establishes one working result, not general generation reliability or a
+fresh reproduction. Human listening/comprehension, broader model quality,
+actual screen-reader speech and restored public judge access remain open.
+See [current evidence](NEBIUS_READINESS.md#local-checkpoint--october-3-2026).
+
+**Historical results:** Two hosted Nano suggestions on September 28 stayed
+unsaved. The separate October 1 Super checker used 6,700 input / 9,083 output
+tokens, passed after repair with 14 authored assertions and declared text input.
+Its original JSON-loader denominator remains 0/2. That older result is the
+captioned video published October 2; it does not demonstrate the newer JSON run.
 
 ## How we built it
 
@@ -92,34 +101,37 @@ official Node 24 image and running a network-disabled diagnostic succeeded.
 Our early tool-generation attempts produced incomplete or incompatible source.
 The app now requests native named source blocks, supplies the Worker bridge,
 validates source before execution and retains rejected responses and usage.
-The successful Super run used standard reasoning. Its first Sandbox check
-identified the missing change-event test coverage, giving the one repair a concrete
-target; the repaired tool passed that check and independent local packet cases.
+The October 1 Super run used standard reasoning; its first Sandbox check
+identified missing change-event coverage. The October 2 JSON run's first check
+instead caught inconsistent expected input-error wording. Its repair passed
+28 authored assertions and both JSON loaders; independent local packet cases
+then checked the unchanged generated source.
 We still need broader evaluation before claiming reliable generation across
-tasks. The saved input-format mismatch is visible during review.
+tasks. The older input-format mismatch remains historical evidence; the current
+JSON run matches the task's declared input format.
 
 ## Assets to finish
 
 - Local application: http://127.0.0.1:8787/. The previous hosted address,
-  https://projects-nebius.ayivx-do-lmf-982.workers.dev/, is paused; release-day
+  https://projects-nebius.ayivx-do-lmf-982.workers.dev/, is disabled; release-day
   judge access must be restored and checked after owner authorization.
 - Submission repository: https://github.com/wornpage/projects-nebius, currently
   private with MIT license and setup; authorized public release is pending.
-- Final Nebius demonstration video: still outstanding; keep it under three
-  minutes. The latest local 87-second guidance cut includes a real request and
-  a changed, unsaved proposal. It predates Sandbox enablement and does not show
-  a successful generated tool. The older video remains on Devpost.
-- Live inference: two successful hosted Nano suggestions and one repaired
-  Super-generated checker are recorded. Broader model evaluation remains open.
+- Final Nebius demonstration video: the newest local draft is the 95.5-second
+  October 3 scripted/narrated JSON-checker replay. It awaits human listening,
+  comprehension and publication. The public captioned video published October 2
+  shows the older October 1 checker; the 87-second guidance cut remains history.
+- Live inference: two historical hosted Nano suggestions and the dated Super
+  checker runs are retained. Fresh reproduction and broader evaluation remain open.
 - Devpost: [submitted entry](https://devpost.com/software/wornpage-projects-nebius-edition),
   confirmed by the submission-success message on September 28, 2026.
 
 ## Video outline for the available demo
 
-Use the retained successful checker for a new local rehearsal, clearly labeled
-as a saved October 1 run. The existing 87-second guidance cut and its narration
-remain historical evidence. A fresh generation for a future recording needs its
-own bounded run authorization; replaying the saved tool makes no provider call.
+Use saved October 2 JSON run `2947cffc`, as replayed by the committed script
+on October 3. The older October 1 checker video and 87-second guidance cut
+remain historical evidence. A fresh generation for a future recording needs
+its own bounded authorization; replaying the saved tool makes no provider call.
 
 1. Show the release-packet checker task and its two synthetic examples with
    distinct expected results.
@@ -127,13 +139,13 @@ own bounded run authorization; replaying the saved tool makes no provider call.
    totals, then the failed first Sandbox check and successful repaired check.
 3. Try the tool: incomplete input shows three gaps; corrected input shows zero
    gaps; editing clears the previous result; malformed JSON shows an input error.
-4. Show the retained files and input declaration, then the separate human
+4. Show the retained files, declared JSON input and 2/2 observed loaders, then the separate human
    evidence-saving and completion controls. Keep the task open during rehearsal.
 5. Close with the edition's source and setup. In the final cut, use the actual
    public repository and working judge URL after their release gates pass.
 
 Timing and straight-paragraph narration for this saved-run rehearsal are in
-[NEBIUS_DEMO_SCRIPT.md](NEBIUS_DEMO_SCRIPT.md#retained-checker-rehearsal-target-245).
+[NEBIUS_DEMO_SCRIPT.md](NEBIUS_DEMO_SCRIPT.md#verified-scripted-local-take--october-3-2026).
 
 ## Rules checked
 

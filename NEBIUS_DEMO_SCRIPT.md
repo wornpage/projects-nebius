@@ -257,8 +257,10 @@ elapsed time; there is no automatic model escalation.
    approval before making a call. Preserve the new input, source, failures,
    Sandbox results and usage rather than assigning the historical run's claims
    to that new result.
-3. **Retained recording:** the October 1 and October 2 replays require their
-   original private local task/run state and access. Their source digests and
+3. **Retained recording:** the October 1 and October 2 rehearsals and the
+   October 3 scripted replay require their original private local task/run
+   state and access. The October 3 replay uses the October 2 JSON run, not a new
+   model result. Their source digests and
    receipts identify observed results; they do not grant public judge access or
    establish general generation reliability.
 4. Check a fresh browser, narrow viewport, keyboard, offline/reconnect path,
@@ -269,7 +271,9 @@ elapsed time; there is no automatic model escalation.
    Confirm the Worker, static frontend, sample assets, setup instructions and
    visible MIT license remain available. Check the demo, source and video
    against the same edition, including their actual capability limits.
-6. [README](README.md) records the earlier source release, manual-preview URL
-   and October 1 video. The newer October 2 narrated draft remains local,
-   pending human review and publication. Any future live judge access needs its
-   own explicit setup and observed evidence; it is not enabled by these instructions.
+6. [README](README.md) records current private/local access alongside the earlier
+   source release, manual-preview URL and October 1 recording published
+   October 2. The newest 95.5-second October 3 scripted/narrated draft remains
+   local, pending human review and publication; the October 2 draft is preserved
+   as earlier work. Any future live judge access needs its own explicit setup
+   and observed evidence; it is not enabled by these instructions.
