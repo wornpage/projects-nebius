@@ -163,11 +163,60 @@ and configuration. The public landing still returns 404. Reports and screenshots
 are under `C:/Users/jared/Videos/Nebius/local-retained-recovery-2026-10-03-bcef9d6/`.
 
 This qualifies local recovery of an existing ready run, not uncertain-start
-recovery or fresh generation. The repeated update notice has a source-level
-activation race and stale flag; its precise live lifecycle remains unobserved
-and repair is next. Human listening/fresh-person comprehension and a separately
-authorized fresh provider reproduction remain pending. No public push,
-deployment, publication or formal acceptance occurred.
+recovery or fresh generation. At that checkpoint the repeated update notice
+still needed repair; the following record covers that repair. Its precise
+original live lifecycle was not observed. Human listening/fresh-person
+comprehension and a separately authorized fresh provider reproduction remain
+pending. No public push, deployment, publication or formal acceptance occurred.
+
+### Local update lifecycle — October 3, 2026
+
+Source `bafe924868b8f459ecd9efa1e1dc4a66817ca546` fixes the repeated update
+notice through the existing layout registration owner. Reload waits until the
+requested worker is activated and controlling this document. Activation from
+another tab clears the notice without reloading the passive tab. Redundant
+requests are cancelled, listeners are removed on unmount, and the worker's
+message retains the `skipWaiting` promise with `waitUntil`.
+
+The existing offline/cache checks still serve the production worker unchanged.
+A separate browser context stages synthetic worker revisions with distinct
+cache generations, a revision probe, a 700ms activation delay and a failed
+required-asset install. Its 13 Nebius observations include native Tab/Enter,
+controller identity at document creation, passive-tab behavior, unsaved-editor
+and stored-workspace preservation, cache ownership and same-origin GETs only.
+The unchanged UI passed 10/13, failing the early reload and both stale notices.
+The repaired build passed 13/13. The preserved WebMCP edition passed its 12/12
+update observations; the extra Nebius observation covers its unsaved editor.
+These observations are a separate denominator from the unit and tool suites.
+
+A clean exact checkout with physical locked dependencies and no credentials
+passed 671/671 unit tests, Svelte 0/0, build/dry-run, four disabled-operation
+runtime checks and all five Nebius browser commands using Node 24.18.0/npm
+11.16.0/Chromium 153.0.8010.12. The authored checker suite remains 96/96:
+48 packet, eight bridge, 22 parent and 18 general observations. Its 58-file
+artifact was frozen before the separate WebMCP verification passed 140/140
+contracts and 15/15 artifact checks. Independent source review accepted the
+repair; supersession/cancellation, late-unmount cleanup and exact reload count
+are source guards without dedicated browser cases.
+
+That verified build is served locally with a rollback copy. In the actual
+Review tab, two native Shift+Tabs reached Reload to update, and Enter cleared
+the notice. A subsequent tab-API reload kept it cleared and recovered the same
+ready checker. A preceding Ctrl+R produced no verified reload and is not counted.
+The read-only audit preserved all 18 serialized records, historical budget
+values and credential/configuration hashes. Browser storage hashes and precise
+live controller ordering were not obtained. The public landing remains HTTP
+404 and GitHub reports PRIVATE; no source push, provider call, quota change,
+public deployment or publication occurred.
+
+Logs, the before/after fixtures, frozen assets, rollback and real-tab screenshots
+are retained under
+`C:/Users/jared/Videos/Nebius/service-worker-update-2026-10-03-ffba044/`.
+`qualification-complete.json` includes the authored-preview summary; the first
+aggregate receipt is preserved separately. Fresh provider reproduction and
+human listening/comprehension remain separate pending gates. This establishes
+local repair, not current-source hosted CI, challenge eligibility or formal
+acceptance.
 
 ## Current runtime status — October 2, 2026
 
