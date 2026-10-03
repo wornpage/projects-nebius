@@ -440,6 +440,7 @@ try {
     await legacyPanel.waitFor({ state: 'visible' });
     const stateBefore = await legacyPage.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
     await legacyPage.getByRole('link', { name: 'Resolve pending action', exact: true }).click();
+    await legacyPage.waitForFunction(() => document.activeElement?.id === 'nebius-button-action-panel', null, { timeout: 10000 });
     assert.equal(await legacyPanel.evaluate(element => element === document.activeElement), true, 'pending draft resolution focuses its approval panel');
     assert.deepEqual(await legacyPage.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey), stateBefore, 'resolving the view does not save the draft');
     await legacyPanel.getByRole('button', { name: action === 'discard' ? 'Discard draft' : 'Approve and save', exact: true }).click();
