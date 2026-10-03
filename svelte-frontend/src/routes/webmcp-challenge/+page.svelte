@@ -181,7 +181,7 @@
 	{#if __NEBIUS_EDITION__}
 		<div class="nebius-guide" data-nebius-guide>
 			<p class="nebius-guide-intro">Turn a goal into tasks, work through them, and adapt when something changes. NVIDIA models on Nebius can help at each step; you review every proposed change.</p>
-			<p>The <a href="https://projects-nebius.ayivx-do-lmf-982.workers.dev/">public v0.1.0 preview</a> supports manual project workflows. AI guidance and Sandbox execution are disabled in that preview. Follow local setup to run the Nebius integration with your own credentials.</p>
+			<p>This edition is currently private and runs locally. The hosted preview is disabled until release. Follow local setup to configure Nebius with your own credentials.</p>
 			<WornButton href="/work" variant="primary">Open Work</WornButton>
 			<WornButton href="https://github.com/wornpage/projects-nebius#run-without-credentials">Source and local setup</WornButton>
 			<WornButton href="https://devpost.com/software/wornpage-projects-nebius-edition">Recorded tool demonstration</WornButton>

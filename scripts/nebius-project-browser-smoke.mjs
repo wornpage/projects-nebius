@@ -99,7 +99,7 @@ async function checkLandingEntry(width) {
   try {
     await page.goto(`${origin}/webmcp-challenge`);
     await page.locator('[data-nebius-guide]').waitFor();
-    await page.getByText('AI guidance and Sandbox execution are disabled in that preview.', { exact: false }).waitFor();
+    await page.getByText('This edition is currently private and runs locally. The hosted preview is disabled until release.', { exact: false }).waitFor();
     assert.equal(await page.getByRole('link', { name: 'Source and local setup', exact: true }).getAttribute('href'), 'https://github.com/wornpage/projects-nebius#run-without-credentials');
     assert.equal(await page.getByRole('link', { name: 'Recorded tool demonstration', exact: true }).getAttribute('href'), 'https://devpost.com/software/wornpage-projects-nebius-edition');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Guide links fit the viewport');
@@ -110,8 +110,8 @@ async function checkLandingEntry(width) {
     await page.goto(`${origin}/landing.html`);
     const entry = page.getByRole('link', { name: 'Review checker requirements', exact: true });
     assert.equal(await page.getByRole('link', { name: 'Source and local setup', exact: true }).getAttribute('href'), 'https://github.com/wornpage/projects-nebius#run-without-credentials');
-    assert.equal(await page.getByRole('link', { name: 'public v0.1.0 preview', exact: true }).getAttribute('href'), 'https://projects-nebius.ayivx-do-lmf-982.workers.dev/');
-    await page.getByText('has AI guidance and Sandbox execution disabled.', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('link', { name: 'public v0.1.0 preview', exact: true }).count(), 0);
+    await page.getByText('This edition is currently private and runs locally. The hosted preview is disabled until release.', { exact: false }).waitFor();
     await page.getByText('Review checker requirements opens an editable project draft.', { exact: true }).waitFor();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Landing links fit the viewport');
     await page.screenshot({ path: path.resolve(`dist/nebius-landing-clarity-${width}.png`), fullPage: true });
