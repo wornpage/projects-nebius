@@ -70,6 +70,7 @@ const TOKEN_FACTORY_URL = 'https://api.tokenfactory.nebius.com/v1/chat/completio
 const FILE_FRAMING = [
   'Return native source code in fenced file blocks. Each opening fence contains the language and filename together on the same physical line. The following empty blocks demonstrate framing only; fill each emitted body with complete source:',
   ...Object.values(FILE_HEADERS).map(header => `${header}\n\n\`\`\``),
+  'Before returning, audit every emitted opening and closing file fence. Every opening line must begin with the literal three ASCII backtick characters and exactly match its demonstrated language/filename header; a bare language/filename line is invalid. A diagnostic identifies the first rejected boundary, not every framing error. In a repair, fix all emitted file boundaries instead of changing only the reported line.',
   `Use exactly one opening and one closing fence per emitted file. Stop immediately after the last file's closing fence; there is no outer fence to close. Do not put quotes or indentation around a fence or a filename on a separate line. No JSON envelope, quoted source-line arrays, explanation or other text outside the blocks. Each file has ${SOURCE_LINE_LIMITS.minLines} to ${SOURCE_LINE_LIMITS.maxLines} physical lines, each at most ${SOURCE_LINE_LIMITS.maxCharacters} characters. Put separate statements and closing braces on separate lines. Do not minify, omit code or use placeholders.`,
 ].join('\n\n');
 const SHARED_SYSTEM = [

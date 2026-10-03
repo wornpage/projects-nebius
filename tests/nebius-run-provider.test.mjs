@@ -80,6 +80,10 @@ test('each generation mode receives one unambiguous output contract and balanced
       assert.deepEqual(prompt.split('\n').filter(line=>line.startsWith('```')),
         ['```html index.html','```','```javascript app.js','```','```javascript checks.cjs','```']);
       assert.match(prompt,/Stop immediately after the last file's closing fence; there is no outer fence to close/u);
+      assert.match(prompt,/audit every emitted opening and closing file fence/u);
+      assert.match(prompt,/literal three ASCII backtick characters/u);
+      assert.match(prompt,/A diagnostic identifies the first rejected boundary, not every framing error/u);
+      assert.match(prompt,/fix all emitted file boundaries instead of changing only the reported line/u);
       assert.equal(prompt.includes('Omitted files remain byte-for-byte unchanged'),partial);
       assert.equal(prompt.includes('Return all three complete files exactly once'),!partial);
       assert.equal(prompt.includes('No previous file is implicitly kept'),mode==='source-rejection repair');
@@ -339,6 +343,8 @@ for (const [name, output, reason] of [
   ['nested fence',()=>fileBlocks(fixture()).replace('<!doctype html>','```javascript extra.js'), /Nested or indented file fence in index\.html on response line 2/u],
   ['empty file',()=>fileBlocks([{path:'index.html',lines:[]},...fixture().slice(1)]), /index\.html must contain 2 to 1024 source lines/u],
   ['wrong language',()=>fileBlocks(fixture()).replace('```javascript app.js','```python app.js'), /exact allowed file header on response line \d+/u],
+  ['bare initial and later language labels',()=>fileBlocks(fixture()).replace('```html index.html','html index.html').replaceAll('```javascript ','javascript '), /exact allowed file header on response line 1/u],
+  ['bare later language labels after the first opener is fixed',()=>fileBlocks(fixture()).replaceAll('```javascript ','javascript '), /exact allowed file header on response line \d+/u],
 ]) {
   test(`native file parser rejects ${name}`,async()=>{
     await assert.rejects(generate(output()),error=>{
