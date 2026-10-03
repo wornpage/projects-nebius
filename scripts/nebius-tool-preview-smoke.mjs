@@ -4,7 +4,7 @@ import { access, mkdir, open, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { authoredCheckerFiles, authoredPreviewReference, materializeAuthoredChecker } from '../tests/fixtures/nebius-release-checker.mjs';
 import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from '../tests/fixtures/nebius-release-packet-cases.mjs';
-import { runFilesDigest, validateRunIntegrity } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { RUN_RECORD_FORMAT, runFilesDigest, validateRunIntegrity } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 const output = path.resolve(process.env.NEBIUS_PREVIEW_EVIDENCE_DIR || 'dist/nebius-tool-preview');
 const report = {
@@ -100,7 +100,7 @@ try {
     await access(path.join(staticRoot, 'review.html')).catch(() => { throw new Error('Build the current review UI with npm run build:nebius before authored preview qualification.'); });
     parentReference = await authoredPreviewReference(files);
     report.scope = 'production renderer and compiled review UI in a local test host with synthetic API; not authenticated app routes or provider evidence';
-    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 16,
+    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 22,
       component: 'svelte-frontend/src/routes/review/NebiusRunReview.svelte', recordIsProviderEvidence: false,
       previewPostCountScope: 'all attempts before body or key validation' };
     // A deliberately slow authored handler proves event ordering in the real
@@ -455,7 +455,7 @@ addEventListener('message', event => {
       if (parentReference) {
         const storageKey = 'projects-webmcp-challenge-state-v1';
         const seed = { packs: [{ id: parentReference.input.packId, ...parentReference.input.pack, status: parentReference.input.currentStatus,
-          next: 'Review', executionRun: parentReference }], selectedId: parentReference.input.packId, pendingNextActionDrafts: [] };
+          next: 'Review', activity: [], completionEvidence: '', executionRun: parentReference }], selectedId: parentReference.input.packId, pendingNextActionDrafts: [] };
         await context.addInitScript(({ key, seed }) => {
           if (window !== top) return;
           if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(seed));
@@ -514,6 +514,67 @@ addEventListener('message', event => {
             }
           });
           await page?.close();
+        }
+        for (const scenario of ['refresh restores focus', 'failed refresh restores focus', 'refresh preserves moved focus']) {
+          const detail = { width, category: 'parent', case: scenario, fixtureKind: 'authored-synthetic-run-reference',
+            refreshRequests: [], focusPreserved: null, taskFieldsUnchanged: null };
+          await observe('compiled parent: ' + scenario, detail, async () => {
+            const page = await context.newPage(); page.setDefaultTimeout(4000);
+            page.on('pageerror', error => pageErrors.push(error.message));
+            let releaseRefresh;
+            const refreshReleased = new Promise(resolve => { releaseRefresh = resolve; });
+            try {
+              await page.route(origin + '/api/nebius/runs/' + parentReference.id, async route => {
+                const request = route.request();
+                detail.refreshRequests.push({ method: request.method(),
+                  correctKey: request.headers().authorization === 'Bearer ' + parentReference.key,
+                  correctFormat: request.headers()['x-nebius-run-format'] === RUN_RECORD_FORMAT });
+                await refreshReleased;
+                const failed = scenario === 'failed refresh restores focus';
+                await route.fulfill({ status: failed ? 404 : 200, contentType: 'application/json',
+                  body: JSON.stringify(failed ? { code: 'missing_run', error: 'Authored refresh failure fixture.' } : { run: parentReference.record }) });
+              });
+              await page.goto(origin + '/review?focus=' + encodeURIComponent(parentReference.input.packId));
+              const review = page.locator('[data-nebius-run-review]');
+              await review.getByRole('button', { name: 'Try your tool', exact: true }).waitFor({ state: 'visible' });
+              const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
+              const taskBefore = (saved.state || saved).packs.find(pack => pack.id === parentReference.input.packId);
+              const refresh = review.getByRole('button', { name: 'Refresh saved run', exact: true });
+              for (let count = 0; count < 100 && !await refresh.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
+              assert.equal(await refresh.evaluate(element => element === document.activeElement), true, 'Refresh is reachable through native Tab navigation.');
+              await Promise.all([
+                page.waitForRequest(request => request.url() === origin + '/api/nebius/runs/' + parentReference.id && request.method() === 'GET', { timeout: 4000 }),
+                page.keyboard.press('Enter'),
+              ]);
+              const busy = review.getByRole('button', { name: 'Refreshing…', exact: true });
+              assert.equal(await busy.isDisabled(), true, 'The request must be pending before observing focus changes.');
+              if (scenario === 'refresh preserves moved focus') {
+                await page.keyboard.press('Tab');
+                assert.equal(await page.evaluate(() => document.activeElement !== document.body && document.activeElement !== document.documentElement && !document.activeElement.disabled), true, 'Native Tab moves to another usable control while refresh is pending.');
+                await page.evaluate(() => { window.refreshUserFocus = document.activeElement; });
+              }
+              releaseRefresh();
+              await refresh.waitFor({ state: 'visible' });
+              assert.equal(await refresh.isEnabled(), true);
+              if (scenario === 'failed refresh restores focus') await review.getByText('Authored refresh failure fixture.', { exact: true }).waitFor();
+              if (scenario === 'refresh preserves moved focus') {
+                detail.focusPreserved = await page.evaluate(() => document.activeElement === window.refreshUserFocus);
+                assert.equal(detail.focusPreserved, true, 'Completing refresh must not steal focus from another control.');
+              } else {
+                await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-nebius-run-review] button'))
+                  .some(button => button.textContent.trim() === 'Refresh saved run' && button === document.activeElement));
+                detail.focusPreserved = await refresh.evaluate(element => element === document.activeElement);
+                assert.equal(detail.focusPreserved, true, 'Refresh restores its activating button after temporarily disabling it.');
+              }
+              assert.deepEqual(detail.refreshRequests, [{ method: 'GET', correctKey: true, correctFormat: true }]);
+              const next = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
+              const taskAfter = (next.state || next).packs.find(pack => pack.id === parentReference.input.packId);
+              for (const field of ['status', 'completionEvidence', 'activity', 'completionReceipt', 'completedAt']) assert.deepEqual(taskAfter[field] ?? null, taskBefore[field] ?? null, 'Refresh cannot alter task field ' + field);
+              assert.equal(taskAfter.executionRun.id, parentReference.id);
+              assert.equal(taskAfter.executionRun.record.status, 'ready');
+              detail.taskFieldsUnchanged = true;
+            } finally { releaseRefresh(); await page.close(); }
+          });
         }
         const rejectedDetail = { width, category: 'parent', case: 'rejected-source-history', fixtureKind: 'authored-synthetic-run-reference', layout: null, clippingRegressionDetected: null };
         await observe('compiled parent: rejected generation remains inert, contained and keyboard readable', rejectedDetail, async () => {
