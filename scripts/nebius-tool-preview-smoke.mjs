@@ -100,8 +100,9 @@ try {
     await access(path.join(staticRoot, 'review.html')).catch(() => { throw new Error('Build the current review UI with npm run build:nebius before authored preview qualification.'); });
     parentReference = await authoredPreviewReference(files);
     report.scope = 'production renderer and compiled review UI in a local test host with synthetic API; not authenticated app routes or provider evidence';
-    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 12,
-      component: 'svelte-frontend/src/routes/review/NebiusRunReview.svelte', recordIsProviderEvidence: false };
+    report.parentFixture = { kind: 'authored-synthetic-run-reference', sourceDigest: report.sourceDigest, expectedChecks: 16,
+      component: 'svelte-frontend/src/routes/review/NebiusRunReview.svelte', recordIsProviderEvidence: false,
+      previewPostCountScope: 'all attempts before body or key validation' };
     // A deliberately slow authored handler proves event ordering in the real
     // renderer. This is never inserted into a retained RunRecord or model file.
     const bridgeFiles = authoredCheckerFiles();
@@ -150,6 +151,7 @@ addEventListener('message', event => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const headers = { 'cache-control': 'no-store', 'content-type': 'text/html;charset=utf-8', 'referrer-policy': 'same-origin' };
     if (url.pathname === parentPreviewPath && request.method === 'POST') {
+      parentPosts += 1;
       let text = ''; for await (const chunk of request) {
         text += chunk;
         if (Buffer.byteLength(text) > 100) { response.writeHead(413); response.end(); return; }
@@ -158,7 +160,6 @@ addEventListener('message', event => {
       if (text.length > 100 || params.length !== 1 || params[0][0] !== 'key' || params[0][1] !== parentReference.key) {
         response.writeHead(401, { 'content-type': 'application/json' }); response.end('{}'); return;
       }
-      parentPosts += 1;
       response.writeHead(200, { ...headers, 'content-security-policy': preview.csp, 'referrer-policy': 'no-referrer' }); response.end(preview.html); return;
     }
     request.resume();
@@ -470,6 +471,7 @@ addEventListener('message', event => {
             const review = page.locator('[data-nebius-run-review]');
             const button = review.getByRole('button', { name: 'Try your tool', exact: true });
             await button.waitFor({ state: 'visible' });
+             assert.equal(await review.getByRole('heading', { level: 2 }).textContent(), 'Review generated browser tool', 'The generated-tool heading requires validated generated files.');
             assert.equal(await button.evaluate(element => element.classList.contains('is-primary')), true, 'Trying the current tool is the primary action.');
             assert.equal(await review.getByRole('button', { name: 'Save run evidence', exact: true }).evaluate(element => element.classList.contains('is-primary')), false, 'Saving a run is a separate secondary action.');
             assert.equal(await review.locator('[data-run-try]').evaluate(element => {
@@ -580,6 +582,65 @@ addEventListener('message', event => {
             await review.screenshot({ path: path.join(output, 'rejected-source-history-' + width + '.png') });
           } finally { await page.close(); }
         });
+        for (const scenario of ['unknown-start', 'uncertain-result']) {
+          const detail = { width, category: 'parent', case: scenario, fixtureKind: 'authored-synthetic-run-reference',
+            actualStatus: null, keyboardReachable: null, stateUnchanged: null, previewPostsUnchanged: null, layout: null };
+          await observe('compiled parent: ' + scenario + ' never offers a successful tool', detail, async () => {
+            const page = await context.newPage(); page.setDefaultTimeout(4000);
+            page.on('pageerror', error => pageErrors.push(error.message));
+            const unknownSeed = structuredClone(seed);
+            if (scenario === 'unknown-start') unknownSeed.packs[0].executionRun.record = null;
+            else {
+              Object.assign(unknownSeed.packs[0].executionRun.record, { status: 'uncertain', attempt: 1,
+                files: [], checks: [], generationAttempts: [], failure: null,
+                error: 'Authored unknown model-response fixture.',
+                usage: { modelCalls: 1, inputTokens: null, outputTokens: null, totalsComplete: false } });
+              await validateRunIntegrity(unknownSeed.packs[0].executionRun.record);
+            }
+            await page.addInitScript(({ key, seed }) => {
+              if (window === top) localStorage.setItem(key, JSON.stringify(seed));
+            }, { key: storageKey, seed: unknownSeed });
+            const postsBefore = parentPosts;
+            try {
+              await page.goto(origin + '/review?focus=' + encodeURIComponent(parentReference.input.packId));
+              const review = page.locator('[data-nebius-run-review]');
+              const refresh = review.getByRole('button', { name: 'Refresh saved run', exact: true });
+              await refresh.waitFor({ state: 'visible' });
+              if (scenario === 'unknown-start') {
+                await review.getByText('The start response is unknown. Refresh this saved run; do not start another paid operation yet.', { exact: true }).waitFor();
+              } else {
+                await review.getByText('No identified generation response was retained for this run.', { exact: true }).waitFor();
+                await review.getByText('Authored unknown model-response fixture.', { exact: true }).waitFor();
+                await review.getByText('Usage is incomplete. These counts include only recorded usage; the actual total may be higher.', { exact: true }).waitFor();
+                assert.equal(await review.locator('.run-review-facts > div').filter({ hasText: 'Model calls' }).locator('strong').textContent(), '1 of 2');
+                await review.getByText('No sandbox check result is available.', { exact: true }).waitFor();
+              }
+              detail.actualStatus = await review.locator('.run-review-head .worn-badge').textContent();
+              assert.equal(detail.actualStatus.trim(), scenario === 'unknown-start' ? 'Uncertain' : 'uncertain');
+              assert.equal(await review.getByRole('heading', { level: 2 }).textContent(), 'Review task execution', 'An unknown outcome with no generated files must not claim a generated tool exists.');
+              for (const name of ['Try your tool', 'Inspect previous tool', 'Download tool', 'Save run evidence']) {
+                assert.equal(await review.getByRole('button', { name, exact: true }).count(), 0, 'Unknown outcomes must not offer ' + name);
+              }
+              assert.equal(await review.locator('[data-run-try], iframe').count(), 0);
+              const saved = await page.evaluate(key => localStorage.getItem(key), storageKey);
+              for (let count = 0; count < 120 && !await refresh.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
+              detail.keyboardReachable = await refresh.evaluate(element => element === document.activeElement);
+              assert.equal(detail.keyboardReachable, true, 'The existing refresh action remains keyboard reachable without starting it.');
+              detail.layout = await review.evaluate(card => {
+                const box = card.getBoundingClientRect();
+                return { left: box.left, right: box.right, viewport: document.documentElement.clientWidth,
+                  content: document.documentElement.scrollWidth };
+              });
+              assert.ok(detail.layout.left >= -1 && detail.layout.right <= detail.layout.viewport + 1);
+              assert.ok(detail.layout.content <= detail.layout.viewport + 1);
+              detail.stateUnchanged = await page.evaluate(key => localStorage.getItem(key), storageKey) === saved;
+              detail.previewPostsUnchanged = parentPosts === postsBefore;
+              assert.equal(detail.stateUnchanged, true, 'Reading and focusing an unknown result never saves evidence or completes the task.');
+              assert.equal(detail.previewPostsUnchanged, true, 'Unknown results never request a tool preview.');
+              await review.screenshot({ path: path.join(output, scenario + '-' + width + '.png') });
+            } finally { await page.close(); }
+          });
+        }
         await observe('compiled parent: stale result remains inspection only', { width, category: 'parent', case: 'stale', fixtureKind: 'authored-synthetic-run-reference' }, async () => {
           const page = await context.newPage(); page.setDefaultTimeout(4000);
           page.on('pageerror', error => pageErrors.push(error.message));
@@ -611,6 +672,9 @@ addEventListener('message', event => {
       }
     } finally { await context.close(); }
   }
+  assert.equal(report.checks.filter(check => check.category === 'packet').length, report.expectedPacketChecks, 'Every prewritten packet case must be recorded.');
+  if (report.bridgeFixture) assert.equal(report.checks.filter(check => check.category === 'bridge').length, report.bridgeFixture.expectedChecks, 'Every planned bridge observation must be recorded.');
+  if (report.parentFixture) assert.equal(report.checks.filter(check => check.category === 'parent').length, report.parentFixture.expectedChecks, 'Every planned compiled-parent observation must be recorded.');
   report.verificationCompleted = true;
   report.passed = report.checks.every(check => check.passed);
   if (!report.passed) process.exitCode = 1;

@@ -207,7 +207,7 @@
 	<div class="run-review-head">
 		<div>
 			<p class="run-review-kicker">Task result</p>
-			<h2 id="run-review-title" class="demo-card-title">{record ? 'Review generated browser tool' : 'Review task execution'}</h2>
+			<h2 id="run-review-title" class="demo-card-title">{verified?.files.length ? 'Review generated browser tool' : 'Review task execution'}</h2>
 		</div>
 		<WornBadge label={record?.status || 'Uncertain'} />
 	</div>
