@@ -218,6 +218,23 @@ human listening/comprehension remain separate pending gates. This establishes
 local repair, not current-source hosted CI, challenge eligibility or formal
 acceptance.
 
+### GitHub baseline and human review preparation — October 3, 2026
+
+The [GitHub run for baseline `c2a05b6`](https://github.com/wornpage/projects-nebius/actions/runs/37096558061)
+completed successfully. Both the preserved verification job and the Nebius
+provider-free verification job ran their listed checks successfully. The latter
+includes `verify:nebius`, production authored preview, project/task journeys,
+offline and portability checks. The workflow supplies no Nebius credentials
+and has no release step. This proves the workflow gate at that baseline; the newer local
+changes have not been pushed or qualified by a current-source hosted run.
+
+The [human review sheet](NEBIUS_DEMO_SCRIPT.md#human-review-of-the-narrated-draft)
+now identifies the exact narrated media and supplies four uncoached
+comprehension questions plus listening checks. The media hash was rechecked;
+no new video was recorded or shared. All human observations remain not
+observed. It is preparation for the outstanding review, not user feedback or
+evidence that the video is understandable.
+
 ## Current runtime status — October 2, 2026
 
 The [public video](https://www.youtube.com/watch?v=ssBXmrdvHdE) was published

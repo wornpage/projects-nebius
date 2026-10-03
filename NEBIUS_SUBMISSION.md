@@ -146,6 +146,9 @@ its own bounded authorization; replaying the saved tool makes no provider call.
 
 Timing and straight-paragraph narration for this saved-run rehearsal are in
 [NEBIUS_DEMO_SCRIPT.md](NEBIUS_DEMO_SCRIPT.md#verified-scripted-local-take--october-3-2026).
+The [human review sheet](NEBIUS_DEMO_SCRIPT.md#human-review-of-the-narrated-draft)
+identifies the exact private media and records listening and viewer
+comprehension before the final video is selected. Its observations are pending.
 
 ## Rules checked
 

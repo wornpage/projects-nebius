@@ -86,6 +86,39 @@ to 0.1 seconds, while pauses within speech remain part of the voice recording:
 
 Projects built this release checker with Nemotron Super on Nebius. [1.6s] This saved run used two model calls. The first Sandbox check caught an incorrect expected error message. [1.6s] One repair passed twenty-eight assertions, all six control events and both JSON example loaders. The checked source and original failure remain available. [4.7s] Now I can try the generated tool. This incomplete packet has three gaps: health, review and rollback. [3.9s] I load the corrected packet and check it with the keyboard. It shows zero gaps and is ready for human review. A release decision still belongs to the person reviewing it. [9.8s] Editing the packet clears the old ready result. [2.9s] Malformed JSON produces an input error instead of retaining that earlier result. [4.3s] The input declares JSON, matching the task. Both example loaders were observed in the saved checks. [3.3s] The generated files, checked source digest and Sandbox logs remain available. [1.7s] Evidence and completion are separate human decisions. This is a private local replay. [0.8s]
 
+### Human review of the narrated draft
+
+Review the exact local file
+`C:/Users/jared/Videos/Nebius/scripted-replay-2026-10-03/nebius-private-narrated-draft.mp4`.
+Its SHA-256 is
+`a8ed547de70f794a6baf198c4eec9b7e1d4e4b9ec7587f9d453c66d33ae2291f`.
+The current review status is **not observed**. Record listening and a separate
+viewer observation with a person who did not help build the app.
+Keep the review private; choosing a recipient and sharing media are owner actions.
+
+For listening, record whether the speech is understandable, whether Nebius,
+Nemotron and JSON are pronounced clearly, and any distracting silence or
+speech that obscures the displayed action. Include the playback time for each
+problem and a specific proposed edit. An agent's timing check does not fill
+these human observations.
+
+For comprehension, play the draft once without explaining the intended story
+or showing the README. Record any replay or extra context separately, then ask:
+
+1. In one sentence, what did this app help someone do?
+2. What did Nebius/Nemotron do, and what did the Sandbox check?
+3. What changed between the incomplete and corrected packet? What happened
+   after editing the input or entering invalid text?
+4. What can a person conclude from zero gaps, and what still needs their decision?
+
+Record the viewer's words, whether they helped build the app, any replay/context,
+and moments of confusion. Agent review and an owner's listening are separate
+from that viewer observation. Keep each unanswered item **not observed**;
+do not infer a passing result from silence or from the automated checks.
+Review the answers for misunderstanding of the app's purpose, the model/check
+roles, the visible change in result, and the human decision. Revise the affected
+copy or clip before publication when an observed misunderstanding warrants it.
+
 ## Historical retained checker rehearsal (target 2:45)
 
 Use saved run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` in the local app. Label
