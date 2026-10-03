@@ -11,15 +11,17 @@ evidence assessments. The task execution milestone adds a bounded browser-tool
 build, sandbox checks and result review. You authorize a run's selected task
 and limits; accepting the result remains a separate action.
 
-**Manual preview:** [Open the workspace](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)
-to create projects, edit tasks, inspect blockers and record evidence in your
-browser. AI guidance and Sandbox execution are disabled in this preview.
-The Build tool view explains the workflow and disables Run this task; it does
-not simulate a model response or expose a private retained run.
+**Current access — October 3, 2026:** the repository is private and the hosted
+Cloudflare site is disabled during local development. Public judge access
+will need to be restored before submission review.
 
-You can also run the app locally at [http://127.0.0.1:8787/](http://127.0.0.1:8787/).
+Run the app locally at [http://127.0.0.1:8787/](http://127.0.0.1:8787/).
 The setup below needs no provider credentials. Enabling real Nebius features
 is a separate configuration and spending decision.
+
+The [earlier manual preview](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)
+is currently unavailable. That release supported manual project work with AI
+guidance and Sandbox execution disabled; it did not expose private retained runs.
 
 **Development status:** A real Nemotron Super run produced a release-packet
 checker, repaired a failed Sandbox check, and passed the next check. Its retained

@@ -1,19 +1,72 @@
 # Nebius edition: live demo and observation sheet
 
 The plans below use synthetic work inputs. They do not establish that their
-unexecuted advisory calls succeeded. The retained-checker rehearsal uses an
-actual saved model/Sandbox run and labels it accordingly. Record the actual
-model ID, outputs, failures and usage for any fresh call. Use this edition's
-eventual public source and hosted app for submission; do not modify the earlier
-WebMCP challenge repository or present the private Projects app as the public
-source of this edition.
+unexecuted advisory calls succeeded. The retained-checker rehearsals replay
+actual saved model/Sandbox runs and identify their dates. Record the actual
+model ID, outputs, failures and usage for any fresh call.
 
-## Retained checker rehearsal (target 2:45)
+As of October 3, 2026, the [repository](https://github.com/wornpage/projects-nebius)
+is private and the
+[earlier manual preview](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)
+is disabled. Develop locally using [README](README.md#run-without-credentials).
+That hosted release had AI guidance and Sandbox execution disabled and did not
+provide private workspace or saved-run access. Restoring public judge access is
+a separate release step. Do not modify the earlier WebMCP challenge repository
+or present the private Projects app as this edition's public source.
+
+## Current JSON checker rehearsal — October 2, 2026
+
+Use saved run `2947cffc-84e3-4f71-8325-1e35f29c170a` in the local app. It is
+the qualified task-owned JSON checker: 28 successful assertions, 6/6 observed
+control events, 2/2 declared JSON example loaders and 2/2 post-output edits.
+Its two recorded model calls used 7,815 input and 7,425 output tokens. This
+rehearsal replays those retained results and requests no new generation.
+
+Replaying this exact saved run requires the original private browser workspace,
+its checker task, and access to the original local server's retained run state.
+Those private records and access credentials are not distributed in the public
+repository. Cloning the source or supplying a new provider key does not create
+this saved run. For a new locally owned run, follow the
+[execution setup](NEBIUS_EXECUTION.md) with your own Token Factory and Sandbox
+credentials. Keep a fresh result separate from this dated replay.
+
+Run the same tab-bound helper with these observations, captured from Review:
+
+```js
+const take = await startRetainedToolRecording({
+  tab, surface, cdp, outputBase,
+  expectedRunId: '2947cffc-84e3-4f71-8325-1e35f29c170a',
+  expectedSourceDigest: '7971b1ae17bbcaa02f1a6e8dea9a637b28f6343bd13b01ec8a06b0472bd50ccc',
+  bindings: { input: 'input-json', output: 'output', check: 'check-button',
+    incomplete: 'load-example1', corrected: 'load-example2' },
+  inputAccessibleName: 'input-json',
+  expectedChecks: {
+    failedCheckText: "'Input error: Expected exactly four fields'",
+    successfulAssertions: 28, jsonLoaders: { observed: 2, total: 2 },
+    inputFormatLabel: 'JSON',
+  },
+  onProgress: event => nodeRepl.write(event),
+});
+await take.next(); // Continue through the seven bounded stages.
+```
+
+The helper checks the exact retained failure, successful check counts and
+source digest before showing the tool. Its receipt records the supplied
+observations so a newer recording cannot silently reuse the October 1 counts.
+The actual cue receipt owns the final timing. Keep the raw take and any failed
+take when preparing narration or captions.
+
+Draft narration, in one paragraph with pauses specified in tenths of a second:
+
+Wornpage Projects turns a task into a tool you can try. [0.4s] This is a saved October second run from Nebius Token Factory using Nemotron Super. [0.4s] It used two model calls, with seven thousand eight hundred fifteen input tokens and seven thousand four hundred twenty-five output tokens. [0.6s] The first Sandbox check caught an inconsistent expected error message. [0.4s] One repair passed the next check, with twenty-eight assertions, all six control events and both JSON example loaders observed. [0.6s] Now I can try the actual result. [0.3s] The incomplete packet has three gaps: health, review and rollback. [0.5s] The corrected packet has zero gaps and is ready for human review. [0.6s] Editing replaces the old result, and malformed JSON produces an input error. [0.5s] This input declares JSON, matching the task's requirement. [0.5s] The generated files, original failure and repaired check remain available in Review. [0.4s] Saving evidence and completing the task are separate human decisions. [0.5s] This recording replays a retained local result. The public preview is currently unavailable during private local development. The source includes instructions for running the Nebius integration.
+
+## Historical retained checker rehearsal (target 2:45)
 
 Use saved run `5fddeeaa-cfa6-4a80-a3a2-ceb9709e67d1` in the local app. Label
 the run October 1, 2026; its source and receipts are unchanged. This is a replay
 of an observed result, not a new generation. No new provider call is needed.
-Public judge access and final video publication remain owner release gates.
+This rehearsal predates the public source and manual-preview release. Live AI
+judge access and publication of the updated video remain owner release gates.
 
 | Time | Show | Evidence or action |
 | --- | --- | --- |
@@ -30,7 +83,7 @@ a second. It is a draft to align with actual recorded actions; it does not
 guarantee a 2:45 spoken duration. Keep provider waiting and any edits clear in
 the final recording.
 
-Wornpage Projects brings the next step into the work itself. [0.4s] This task asks for a small release-packet checker, with an incomplete example and a corrected example. [0.6s] I am opening a saved October first run. Nebius Token Factory used Nemotron Super to write the tool and its checks. [0.4s] These are the actual two model calls and their recorded token totals. [0.6s] The first Sandbox check found that the generated tests had missed the input-change event. [0.3s] One repair passed the next check, with fourteen assertions and all six control events covered. [0.7s] Now I can try the result. [0.3s] The incomplete packet shows three gaps: health, review and rollback. [0.5s] I load the corrected packet and check it with the keyboard. [0.4s] It shows zero gaps and is ready for human review. [0.6s] Editing clears that old result. [0.3s] Malformed JSON produces an input error. [0.6s] The generated input still declares plain text, and that mismatch stays visible here. Its original JSON-loader check count remains zero of two. [0.7s] The files, failed check and successful repair remain available in Review. [0.4s] I can save evidence, then make a separate human decision about completion. [0.6s] This rehearsal uses the local Nebius edition. The released source and judge demo must reproduce this same workflow.
+Wornpage Projects brings the next step into the work itself. [0.4s] This task asks for a small release-packet checker, with an incomplete example and a corrected example. [0.6s] I am opening a saved October first run. Nebius Token Factory used Nemotron Super to write the tool and its checks. [0.4s] These are the actual two model calls and their recorded token totals. [0.6s] The first Sandbox check found that the generated tests had missed the input-change event. [0.3s] One repair passed the next check, with fourteen assertions and all six control events covered. [0.7s] Now I can try the result. [0.3s] The incomplete packet shows three gaps: health, review and rollback. [0.5s] I load the corrected packet and check it with the keyboard. [0.4s] It shows zero gaps and is ready for human review. [0.6s] Editing clears that old result. [0.3s] Malformed JSON produces an input error. [0.6s] The generated input still declares plain text, and that mismatch stays visible here. Its original JSON-loader check count remains zero of two. [0.7s] The files, failed check and successful repair remain available in Review. [0.4s] I can save evidence, then make a separate human decision about completion. [0.6s] This rehearsal uses the local Nebius edition. The earlier public manual preview had AI guidance and Sandbox execution disabled and did not expose this private saved run.
 
 ### Repeatable tab-bound recording
 
@@ -41,7 +94,11 @@ local Review tab, native keyboard surface and CDP recording capability. It does
 not launch a test browser or substitute authored output for the saved tool.
 
 Close the volatile preview first. Supply the observed run ID, checked digest and
-five HTML control IDs; they are not run-access or provider keys. With the tab
+five HTML control IDs and the input's accessible name; they are not run-access
+or provider keys. The native accessibility tree names the empty text entry
+without exposing its HTML ID, so the helper requires that name separately for
+the initial preview check. After loading an example, it seeks every control by
+its observed HTML ID. With the tab
 and capability handles already bound, use:
 
 ```js
@@ -50,7 +107,9 @@ const { startRetainedToolRecording } = await import(
 );
 const take = await startRetainedToolRecording({
   tab, surface, cdp, outputBase: 'C:/path/to/new-take',
-  expectedRunId, expectedSourceDigest, bindings,
+  expectedRunId, expectedSourceDigest, bindings, inputAccessibleName,
+  expectedChecks: { failedCheckText: 'Missing change:', successfulAssertions: 14,
+    jsonLoaders: { observed: 0, total: 2 }, inputFormatLabel: 'Plain text' },
   onProgress: event => nodeRepl.write(event),
 });
 await take.next(); // Repeat in bounded tool calls until take.done is true.
@@ -161,16 +220,30 @@ elapsed time; there is no automatic model escalation.
 
 ## Reproduction and submission checks
 
-1. Install and run from [NEBIUS.md](NEBIUS.md) using a reviewer-owned Token
-   Factory key. Confirm the configured model is shown before sending text.
-2. Use Work → Next for the bundled synthetic items. Generation and review must
-   each make an actual Token Factory runtime call in the hosted demo.
-3. Check a fresh browser, narrow viewport, keyboard, offline/reconnect path,
-   import/export and a return visit. Record hosted results separately from the
-   local synthetic browser gate.
-4. Confirm the eventual public repository contains the Worker, static frontend,
-   sample assets, setup instructions and visible MIT license. Its hosted demo,
-   repository URL and video should all describe the same Nebius edition.
-5. Before submission, record the actual working URL, public repository URL,
-   video URL, model ID and judge-access window. These fields are intentionally
-   unset while the fork remains private and no deployment has been approved.
+1. **Local manual workflow:** follow
+   [Run without credentials](README.md#run-without-credentials).
+   Create a project, edit tasks, save evidence and check persistence. This
+   credential-free workflow does not reproduce a model call or a privately
+   retained checker. The previous public preview is currently disabled.
+2. **Optional fresh local execution:** follow [NEBIUS.md](NEBIUS.md) and
+   [NEBIUS_EXECUTION.md](NEBIUS_EXECUTION.md) with reviewer-owned credentials.
+   Confirm the configured model, submitted task, spending limits and execution
+   approval before making a call. Preserve the new input, source, failures,
+   Sandbox results and usage rather than assigning the historical run's claims
+   to that new result.
+3. **Retained recording:** the October 1 and October 2 replays require their
+   original private local task/run state and access. Their source digests and
+   receipts identify observed results; they do not grant public judge access or
+   establish general generation reliability.
+4. Check a fresh browser, narrow viewport, keyboard, offline/reconnect path,
+   import/export and a return visit. Record actual hosted and configured local
+   observations separately from provider-free browser checks.
+5. Before submission review, restore public access to the
+   [repository](https://github.com/wornpage/projects-nebius) and a working demo.
+   Confirm the Worker, static frontend, sample assets, setup instructions and
+   visible MIT license remain available. Check the demo, source and video
+   against the same edition, including their actual capability limits.
+6. [README](README.md) records the earlier source release, manual-preview URL
+   and October 1 video. The newer October 2 narrated draft remains local,
+   pending human review and publication. Any future live judge access needs its
+   own explicit setup and observed evidence; it is not enabled by these instructions.

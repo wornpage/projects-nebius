@@ -24,7 +24,7 @@ function outputSubtree(state, id) {
 }
 
 /** Advance next() in bounded stages; the last stage stops and saves capture. */
-export async function startRetainedToolRecording({ tab, surface, cdp, outputBase, expectedRunId, expectedSourceDigest, bindings, onProgress = () => {} }) {
+export async function startRetainedToolRecording({ tab, surface, cdp, outputBase, expectedRunId, expectedSourceDigest, bindings, inputAccessibleName, expectedChecks, onProgress = () => {} }) {
   const pageUrl = new URL(await tab.url());
   if (pageUrl.protocol !== 'http:' || pageUrl.hostname !== '127.0.0.1' || pageUrl.pathname !== '/review') throw new Error('Open the local Review page before recording.');
   if (!validRunId(expectedRunId) || !/^[0-9a-f]{64}$/u.test(expectedSourceDigest)) throw new Error('Supply the exact retained run ID and checked source digest.');
@@ -32,6 +32,22 @@ export async function startRetainedToolRecording({ tab, surface, cdp, outputBase
     || !Object.values(bindings).every(id => typeof id === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,199}$/u.test(id))
     || new Set(Object.values(bindings)).size !== controlNames.length) throw new Error('Supply five unique observed HTML control IDs.');
   bindings = Object.freeze({ ...bindings });
+  if (typeof inputAccessibleName !== 'string' || !inputAccessibleName.trim() || inputAccessibleName !== inputAccessibleName.trim()
+    || inputAccessibleName.length > 200 || /[\u0000-\u001f\u007f]/u.test(inputAccessibleName)) throw new Error('Supply the observed accessible name of the generated text entry.');
+  const matchesInput = line => line.match(/^(?:\s*\d+|The focused UI element is \d+) text entry area \(settable\) (.+)$/u)?.[1] === inputAccessibleName;
+  if (!expectedChecks || Object.keys(expectedChecks).sort().join() !== ['failedCheckText', 'inputFormatLabel', 'jsonLoaders', 'successfulAssertions'].sort().join()
+    || typeof expectedChecks.failedCheckText !== 'string' || !expectedChecks.failedCheckText.trim() || expectedChecks.failedCheckText.length > 400
+    || /[\u0000-\u001f\u007f]/u.test(expectedChecks.failedCheckText)
+    || !['Plain text', 'JSON'].includes(expectedChecks.inputFormatLabel)
+    || !Number.isSafeInteger(expectedChecks.successfulAssertions) || expectedChecks.successfulAssertions < 1 || expectedChecks.successfulAssertions > 1000
+    || !expectedChecks.jsonLoaders || Object.keys(expectedChecks.jsonLoaders).sort().join() !== 'observed,total'
+    || !Number.isSafeInteger(expectedChecks.jsonLoaders.observed) || !Number.isSafeInteger(expectedChecks.jsonLoaders.total)
+    || expectedChecks.jsonLoaders.total < 1 || expectedChecks.jsonLoaders.total > 100
+    || expectedChecks.jsonLoaders.observed < 0 || expectedChecks.jsonLoaders.observed > expectedChecks.jsonLoaders.total) {
+    throw new Error('Supply the failed-check text, assertion count, JSON-loader counts and input format observed in this saved run.');
+  }
+  expectedChecks = Object.freeze({ ...expectedChecks, jsonLoaders: Object.freeze({ ...expectedChecks.jsonLoaders }) });
+  const jsonLoaderCoverage = `${expectedChecks.jsonLoaders.observed}/${expectedChecks.jsonLoaders.total}`;
   if (!outputBase || !/^[A-Za-z]:[\\/]/u.test(outputBase)) throw new Error('Use an absolute Windows output base.');
   await mkdir(dirname(outputBase), { recursive: true });
   for (const suffix of ['.mp4', '.json', '.start-uncertain.json']) {
@@ -123,12 +139,12 @@ export async function startRetainedToolRecording({ tab, surface, cdp, outputBase
       unexpectedNebiusWrites = requests.filter(request => request.method === 'POST' && request.path.startsWith('/api/nebius/') && request.path !== '/api/nebius/runs/' + expectedRunId + '/preview');
       if (unexpectedNebiusWrites.length) throw new Error('An unexpected Nebius write occurred during the saved-run replay.');
     } catch (error) { captureError = error; }
-    receipt = { kind: 'retained-tool-keyboard-replay', runId: expectedRunId, expectedSourceDigest, observedSourceDigest,
+    receipt = { kind: 'retained-tool-keyboard-replay', runId: expectedRunId, expectedSourceDigest, bindings, inputAccessibleName, expectedChecks, observedSourceDigest,
       url: pageUrl.origin + pageUrl.pathname, continuous: true, audio: false, viewportOverride: false, captureStopped, stopAttempt: attempt, durationSeconds: Number(((captureEnd - startedAt) / 1000).toFixed(1)),
       outcome: !captureStopped ? 'capture-uncertain' : failure || captureError ? 'stopped' : 'recorded', error: failure?.message || captureError?.message || null,
       captureError: captureError?.message || null,
       helperRequestedGeneration: false, requestAuditComplete, unexpectedNebiusWrites, evidenceSaved: false, taskMarkedDone: false,
-      stagesCompleted: stageIndex, plannedStages: stages.length, keyboardCount, typedCharacters, captureBytes, requests, events };
+      stagesCompleted: stageIndex, plannedStages: stages.length, keyboardCount, preflightKeyboardCount, typedCharacters, captureBytes, requests, events };
     await writeFile(outputBase + (attempt === 1 ? '' : '.recovery-' + attempt) + '.json', JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
     if (captureError) throw captureError;
     return receipt;
@@ -138,22 +154,25 @@ export async function startRetainedToolRecording({ tab, surface, cdp, outputBase
     async () => {
       await cue('Saved run introduction and recorded model usage'); await pause(5000);
       await seekName('Model attempt 1 · Sandbox exit 1', false, 12); await key('Return');
-      if (!lastState.includes('Missing change:')) throw new Error('The actual failed Sandbox coverage is not displayed.');
-      await cue('First Sandbox check: missing change-event coverage'); await key('PageDown'); await pause(7000);
+      if (!lastState.includes(expectedChecks.failedCheckText)) throw new Error('The actual failed Sandbox check is not displayed.');
+      await cue('First Sandbox check: retained failure'); await key('PageDown'); await pause(7000);
       await key('Return');
     },
     async () => {
       await seekName('Model attempt 2 · Sandbox exit 0', false, 4); await key('Return');
-      if (!lastState.includes('Observed successful assertions: 14') || !lastState.includes(expectedSourceDigest)) throw new Error('The retained successful Sandbox result or its digest is missing.');
+      if (!lastState.includes(`Observed successful assertions: ${expectedChecks.successfulAssertions};`)
+        || !lastState.includes(`declared JSON example loaders: ${jsonLoaderCoverage};`)
+        || !lastState.includes(expectedSourceDigest)) throw new Error('The retained successful Sandbox result, loader coverage or digest is missing.');
       observedSourceDigest = true;
-      await cue('Repaired Sandbox check: 14 assertions and checked source digest'); await key('PageDown'); await pause(8000);
+      await cue(`Repaired Sandbox check: ${expectedChecks.successfulAssertions} assertions, ${jsonLoaderCoverage} JSON loaders and checked source digest`); await key('PageDown'); await pause(8000);
       await key('Return');
     },
     async () => {
       await seekName('button Try your tool', true, 10); await key('Return');
       await tab.playwright.getByText('Isolated preview · Preview running', { exact: true }).waitFor({ state: 'visible', timeoutMs: 5000 });
       await state();
-      for (const id of Object.values(bindings)) if (!lastState.includes('ID: ' + id)) throw new Error('The observed generated controls do not match the supplied bindings.');
+      for (const name of controlNames.filter(name => name !== 'input')) if (!lastState.includes('ID: ' + bindings[name])) throw new Error('The observed generated controls do not match the supplied bindings.');
+      if (lastState.split(/\r?\n/u).filter(line => /^\s*\d+ /u.test(line) && matchesInput(line)).length !== 1) throw new Error('The observed generated input does not uniquely match the supplied accessible name.');
       await seekControl('incomplete'); await key('Return'); await pause(2000);
       await seekControl('check', true, 4); await key('Return'); expectOutput(THREE_GAPS);
       await seekName('Input formats', false, 5);
@@ -179,8 +198,8 @@ export async function startRetainedToolRecording({ tab, surface, cdp, outputBase
       await seekControl('corrected', true, 5); await key('Return');
       await seekControl('check', true, 5); await key('Return'); expectOutput(READY);
       await seekName('Input formats', false, 6); await key('Return');
-      if (!lastState.includes('text Plain text')) throw new Error('The unchanged input declaration is not displayed.');
-      await cue('Retained declaration: Plain text, original JSON-loader coverage remains 0/2'); await key('PageDown'); await pause(7000);
+      if (!lastState.includes('text ' + expectedChecks.inputFormatLabel)) throw new Error('The unchanged input declaration is not displayed.');
+      await cue(`Retained declaration: ${expectedChecks.inputFormatLabel}, observed JSON-loader coverage ${jsonLoaderCoverage}`); await key('PageDown'); await pause(7000);
       await key('Return');
     },
     async () => {
@@ -217,13 +236,16 @@ export async function startRetainedToolRecording({ tab, surface, cdp, outputBase
       return stop(new Error('Stopped by the operator before choreography completion.'));
     },
   };
+  await seekName('button Try your tool', true, 20);
+  const preflightKeyboardCount = keyboardCount;
+  keyboardCount = 0;
   startedAt = Date.now();
   try {
     await cdp.send('Page.startScreenRecording', { audio: false, maxWidth: 1920, maxHeight: 1080, frameRate: 30 }, { timeoutMs: 10000 });
     recording = true;
   } catch (error) {
     startUncertain = true;
-    receipt = { kind: 'retained-tool-keyboard-replay', runId: expectedRunId, expectedSourceDigest,
+    receipt = { kind: 'retained-tool-keyboard-replay', runId: expectedRunId, expectedSourceDigest, bindings, inputAccessibleName, expectedChecks, preflightKeyboardCount,
       outcome: 'start-uncertain', captureStopped: false, error: String(error?.message || error).slice(0, 500),
       helperRequestedGeneration: false, requestAuditComplete: false, stagesCompleted: 0 };
     const recoveryError = new Error('Recorder start was not confirmed; inspect the bound tab before using recordingRecovery.stop({ confirmOwnedCapture: true }).', { cause: error });
