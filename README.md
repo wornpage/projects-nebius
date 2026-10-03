@@ -54,8 +54,8 @@ npm --prefix svelte-frontend ci --ignore-scripts
 npm run dev:nebius
 ```
 
-Open [http://127.0.0.1:8787/](http://127.0.0.1:8787/) and choose **Start with a
-project**. A normal browser is sufficient; no WebMCP extension, private Projects
+Open [http://127.0.0.1:8787/](http://127.0.0.1:8787/) and choose **Open workspace
+→ New project**. A normal browser is sufficient; no WebMCP extension, private Projects
 service, Cloudflare account or provider key is needed for the manual workflow.
 The checked-in configuration disables inference. “Nebius is unavailable” is
 expected until you configure it; it does not prevent manual work.

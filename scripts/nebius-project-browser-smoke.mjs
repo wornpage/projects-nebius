@@ -97,11 +97,24 @@ async function checkLandingEntry(width) {
   page.on('pageerror', error => errors.push(error.message));
   enabled = false;
   try {
+    await page.goto(`${origin}/webmcp-challenge`);
+    await page.locator('[data-nebius-guide]').waitFor();
+    await page.getByText('AI guidance and Sandbox execution are disabled in that preview.', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('link', { name: 'Source and local setup', exact: true }).getAttribute('href'), 'https://github.com/wornpage/projects-nebius#run-without-credentials');
+    assert.equal(await page.getByRole('link', { name: 'Recorded tool demonstration', exact: true }).getAttribute('href'), 'https://devpost.com/software/wornpage-projects-nebius-edition');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Guide links fit the viewport');
+    await page.screenshot({ path: path.resolve(`dist/nebius-guide-clarity-${width}.png`), fullPage: true });
     await page.goto(`${origin}/work`);
     await page.locator('[data-nebius-project-workspace]').waitFor();
     const before = await readState(page);
     await page.goto(`${origin}/landing.html`);
-    const entry = page.getByRole('link', { name: 'Review the checker example', exact: true });
+    const entry = page.getByRole('link', { name: 'Review checker requirements', exact: true });
+    assert.equal(await page.getByRole('link', { name: 'Source and local setup', exact: true }).getAttribute('href'), 'https://github.com/wornpage/projects-nebius#run-without-credentials');
+    assert.equal(await page.getByRole('link', { name: 'public v0.1.0 preview', exact: true }).getAttribute('href'), 'https://projects-nebius.ayivx-do-lmf-982.workers.dev/');
+    await page.getByText('has AI guidance and Sandbox execution disabled.', { exact: false }).waitFor();
+    await page.getByText('Review checker requirements opens an editable project draft.', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Landing links fit the viewport');
+    await page.screenshot({ path: path.resolve(`dist/nebius-landing-clarity-${width}.png`), fullPage: true });
     assert.equal(await entry.getAttribute('href'), '/work?starter=release-packet-checker');
     for (let count = 0; count < 40 && !await entry.evaluate(element => element === document.activeElement); count += 1) await page.keyboard.press('Tab');
     assert.equal(await entry.evaluate(element => element === document.activeElement), true, 'Landing example is reachable by real Tab navigation');
@@ -324,6 +337,8 @@ try {
       await page.getByLabel('Project title', { exact: true }).waitFor();
       assert.equal(await page.locator('[data-plan-task]').count(), 3);
       assert.match(await page.locator('[data-project-provenance]').innerText(), /Example plan/);
+      // Loading an example moves focus after Svelte's pending render completes.
+      await page.waitForFunction(() => document.activeElement?.id === 'project-title');
       assert.equal(await page.getByLabel('Project title', { exact: true }).evaluate(element => element === document.activeElement), true);
       assert.deepEqual(await readState(page), starterBefore);
       assert.equal(requests.length, starterCalls);

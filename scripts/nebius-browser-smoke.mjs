@@ -324,6 +324,8 @@ try {
     await page.getByText('Offline · you can still record evidence', { exact: false }).waitFor();
     assert.equal(await page.locator('#nebius-task-update').inputValue(), 'Preserve this update while offline.');
     await page.getByRole('link', { name: 'Finish or clear the update', exact: true }).click();
+    // Recovery switches tabs and reveals the update before moving focus.
+    await page.waitForFunction(() => document.activeElement?.id === 'nebius-task-update');
     assert.equal(await page.locator('#nebius-task-update').evaluate(element => element === document.activeElement), true);
     await page.getByRole('button', { name: 'Clear update', exact: true }).click();
     assert.equal(await page.locator('#nebius-task-update').count(), 0, 'empty update input closes while offline');

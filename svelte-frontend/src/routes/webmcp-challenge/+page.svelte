@@ -181,7 +181,10 @@
 	{#if __NEBIUS_EDITION__}
 		<div class="nebius-guide" data-nebius-guide>
 			<p class="nebius-guide-intro">Turn a goal into tasks, work through them, and adapt when something changes. NVIDIA models on Nebius can help at each step; you review every proposed change.</p>
+			<p>The <a href="https://projects-nebius.ayivx-do-lmf-982.workers.dev/">public v0.1.0 preview</a> supports manual project workflows. AI guidance and Sandbox execution are disabled in that preview. Follow local setup to run the Nebius integration with your own credentials.</p>
 			<WornButton href="/work" variant="primary">Open Work</WornButton>
+			<WornButton href="https://github.com/wornpage/projects-nebius#run-without-credentials">Source and local setup</WornButton>
+			<WornButton href="https://devpost.com/software/wornpage-projects-nebius-edition">Recorded tool demonstration</WornButton>
 			<ol class="nebius-guide-steps" aria-label="Project workflow">
 				<li><h2>1. Make a plan</h2><p>In Work, choose New project. Try an example, write your own tasks, or ask Nebius to turn a brief into a plan. Review and approve it to save.</p></li>
 				<li><h2>2. Take the next step</h2><p>Open a task’s Next step for guidance or Run this task to build a small browser tool. A run can build, check and repair once within the limits you approve.</p></li>
