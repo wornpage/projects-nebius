@@ -40,8 +40,10 @@
 	let toolsOpen = $state(false);
 	let toolsTrigger: HTMLButtonElement | null = $state(null);
 	let online = $state(true);
-	let updateAvailable = $state(false);
 	let waitingWorker = $state<ServiceWorker | null>(null);
+	let requestedWorker = $state<ServiceWorker | null>(null);
+	let updateAvailable = $derived(waitingWorker !== null || requestedWorker !== null);
+	let reconcileUpdate: (() => void) | null = null;
 	let quarantined = $derived((($demoState?.recoveryQuarantine ?? []) as Array<{ id: string; reason: string }>));
 
 	onMount(() => {
@@ -52,18 +54,55 @@
 		const setOnline = () => (online = navigator.onLine);
 		window.addEventListener('online', setOnline);
 		window.addEventListener('offline', setOnline);
+		let mounted = true;
+		let registration: ServiceWorkerRegistration | null = null;
+		const workerListeners = new Map<ServiceWorker, () => void>();
+		const watchWorker = (worker: ServiceWorker | null | undefined) => {
+			if (!worker || workerListeners.has(worker)) return;
+			const changed = () => syncUpdate();
+			workerListeners.set(worker, changed);
+			worker.addEventListener('statechange', changed);
+		};
+		const syncUpdate = () => {
+			if (!mounted) return;
+			watchWorker(registration?.installing);
+			watchWorker(registration?.waiting);
+			if (requestedWorker?.state === 'redundant') requestedWorker = null;
+			const waiting = registration?.waiting;
+			waitingWorker = waiting?.state === 'installed' && waiting !== navigator.serviceWorker.controller ? waiting : null;
+			// A different tab may activate the update. Only the tab that requested
+			// this exact worker reloads, after activation and control both settle.
+			if (requestedWorker && navigator.serviceWorker.controller === requestedWorker && requestedWorker.state === 'activated') {
+				requestedWorker = null;
+				waitingWorker = null;
+				location.reload();
+			}
+			for (const [worker, listener] of workerListeners) {
+				if (worker.state === 'activated' || worker.state === 'redundant') {
+					worker.removeEventListener('statechange', listener);
+					workerListeners.delete(worker);
+				}
+			}
+		};
 		if ('serviceWorker' in navigator) {
-			void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((registration) => {
-				if (registration.waiting) { waitingWorker = registration.waiting; updateAvailable = true; }
-				registration.addEventListener('updatefound', () => {
-					const worker = registration.installing;
-					worker?.addEventListener('statechange', () => {
-						if (worker.state === 'installed' && navigator.serviceWorker.controller) { waitingWorker = worker; updateAvailable = true; }
-					});
-				});
+			reconcileUpdate = syncUpdate;
+			navigator.serviceWorker.addEventListener('controllerchange', syncUpdate);
+			void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((registered) => {
+				if (!mounted) return;
+				registration = registered;
+				registration.addEventListener('updatefound', syncUpdate);
+				syncUpdate();
 			}).catch(() => {});
 		}
 		return () => {
+			mounted = false;
+			reconcileUpdate = null;
+			requestedWorker = null;
+			waitingWorker = null;
+			if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('controllerchange', syncUpdate);
+			registration?.removeEventListener('updatefound', syncUpdate);
+			for (const [worker, listener] of workerListeners) worker.removeEventListener('statechange', listener);
+			workerListeners.clear();
 			window.removeEventListener('online', setOnline);
 			window.removeEventListener('offline', setOnline);
 		};
@@ -78,8 +117,11 @@
 	}
 
 	function reloadForUpdate() {
-		if (waitingWorker) waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-		location.reload();
+		const worker = waitingWorker;
+		if (!worker || requestedWorker) return;
+		requestedWorker = worker;
+		reconcileUpdate?.();
+		if (requestedWorker === worker && worker.state === 'installed') worker.postMessage({ type: 'SKIP_WAITING' });
 	}
 
 	async function recoverWorkspace() {
@@ -156,7 +198,7 @@
 		</nav>
 
 		{#if !__NEBIUS_EDITION__}<WebMcpStatus />{/if}
-		{#if updateAvailable}<WornButton class="offline-status" size="sm" type="button" onclick={reloadForUpdate}>Reload to update</WornButton>{:else if !online}<span class="offline-status" role="status" aria-live="polite">Offline mode — local workspace remains available.</span>{/if}
+		{#if updateAvailable}<WornButton class="offline-status" size="sm" type="button" onclick={reloadForUpdate} disabled={requestedWorker !== null}>{requestedWorker ? 'Updating…' : 'Reload to update'}</WornButton>{:else if !online}<span class="offline-status" role="status" aria-live="polite">Offline mode — local workspace remains available.</span>{/if}
 	</header>
 
 	{#if !__NEBIUS_EDITION__}<WebMcpHandoffRail />{/if}
