@@ -18,9 +18,17 @@ const report = {
 let server, browser, parentPosts = 0;
 const record = (name, detail = {}) => report.checks.push({ name, passed: true, ...detail });
 const failure = error => error instanceof Error ? { name: error.name, message: error.message.slice(0, 800) } : { message: String(error).slice(0, 800) };
+const progress = (stage, name, detail = {}, error) => console.log(JSON.stringify({
+  stage, name, width: detail.width, category: detail.category,
+  at: new Date().toISOString(), ...(error ? { errorType: ["AssertionError", "TimeoutError", "TypeError", "SyntaxError", "Error"].includes(error?.name) ? error.name : "Error" } : {}),
+}));
 const observe = async (name, detail, check) => {
-  try { await check(); record(name, detail); }
-  catch (error) { report.checks.push({ name, passed: false, ...detail, error: failure(error) }); }
+  progress("start", name, detail);
+  try { await check(); record(name, detail); progress("pass", name, detail); }
+  catch (error) {
+    report.checks.push({ name, passed: false, ...detail, error: failure(error) });
+    progress("fail", name, detail, error);
+  }
 };
 
 // Reveal mounted sections through the same native buttons used by a person.
@@ -1328,7 +1336,13 @@ addEventListener('message', event => {
               await page.locator(`input[name="appearance-mode"][value="${theme.split('-')[1]}"]`).check();
               assert.equal(await page.locator('html').getAttribute('data-theme-choice'), theme);
               await page.keyboard.press('Escape');
-              await page.evaluate(() => Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))));
+              progress("settle", "stale request palette: " + theme, { width, category: "parent" });
+              // Arbitrary evaluate promises are not bounded by locator timeouts.
+              // Preserve normal motion and fail instead of sampling mid-transition.
+              await page.waitForFunction(() => document.getAnimations()
+                .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+                .every(animation => animation.playState === "finished"), undefined, { timeout: 4000 });
+              progress("settled", "stale request palette: " + theme, { width, category: "parent" });
               const contrasts = await changes.locator('[data-diff-kind="added"], [data-diff-kind="removed"]').evaluateAll(elements => elements.map(element => {
                 const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
                 const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1, 1);
@@ -1350,6 +1364,7 @@ addEventListener('message', event => {
               assert.equal(await page.evaluate(key => localStorage.getItem(key), storageKey), beforeDiff);
               await changes.screenshot({ path: path.join(output, `request-diff-${theme}-${width}.png`) });
               report.diffPaletteChecks.push({ width, theme, passed: true, minimumContrast: Math.min(...contrasts), savedWorkUnchanged: true, keyboardFocus: true });
+              progress("pass", "stale request palette: " + theme, { width, category: "parent" });
             }
             const diffLayout = await changes.evaluate(element => ({ width: element.scrollWidth, available: element.clientWidth }));
             assert.ok(diffLayout.width <= diffLayout.available + 1, 'Long changed text wraps inside the diff.');
@@ -1568,9 +1583,12 @@ addEventListener('message', event => {
   if (!report.passed) process.exitCode = 1;
 } catch (error) {
   report.error = failure(error);
+  progress("error", "preview suite", {}, error);
   process.exitCode = 1;
 } finally {
+  progress("cleanup", "browser");
   await browser?.close();
+  progress("cleanup", "test server");
   if (server?.listening) await new Promise(resolve => server.close(resolve));
   const packets = report.checks.filter(check => check.category === 'packet');
   report.packetSummary = { expected: report.expectedPacketChecks, recorded: packets.length, observed: packets.filter(check => check.observed).length, passed: packets.filter(check => check.passed).length, failed: packets.filter(check => !check.passed).length };

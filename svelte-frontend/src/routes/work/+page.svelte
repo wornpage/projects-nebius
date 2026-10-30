@@ -518,6 +518,15 @@
 
 	onMount(() => {
 		let mounted = true;
+		// A later interaction or focus destination owns focus, even while the
+		// requested card is still rendering. Ignore document/body focus resets.
+		const preserveArrivalFocus = (event: Event) => {
+			if (!event.isTrusted) return;
+			if (event.type === 'focusin' && (event.target === document.body || event.target === document.documentElement)) return;
+			finishArrivalPreparation();
+		};
+		const arrivalEvents = ['keydown', 'pointerdown', 'focusin'] as const;
+		for (const event of arrivalEvents) document.addEventListener(event, preserveArrivalFocus, true);
 		const routeSearch = applyRouteWorkSearch($page.url.searchParams.get('search'));
 		const routeFilter = __NEBIUS_EDITION__ && $page.url.searchParams.get('filter') === 'review' ? 'review' : '';
 		if (routeFilter) void applyFilter(routeFilter);
@@ -535,6 +544,7 @@
 		} catch {}
 		return () => {
 			mounted = false;
+			for (const event of arrivalEvents) document.removeEventListener(event, preserveArrivalFocus, true);
 			if (receiptFocusTimer) clearTimeout(receiptFocusTimer);
 			receiptFocusTimer = null;
 			// Leaving Work drops its route-only batch and focus modes.
