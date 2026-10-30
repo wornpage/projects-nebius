@@ -1336,7 +1336,13 @@ addEventListener('message', event => {
               await page.locator(`input[name="appearance-mode"][value="${theme.split('-')[1]}"]`).check();
               assert.equal(await page.locator('html').getAttribute('data-theme-choice'), theme);
               await page.keyboard.press('Escape');
-              await page.evaluate(() => Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))));
+              progress("settle", "stale request palette: " + theme, { width, category: "parent" });
+              // Arbitrary evaluate promises are not bounded by locator timeouts.
+              // Preserve normal motion and fail instead of sampling mid-transition.
+              await page.waitForFunction(() => document.getAnimations()
+                .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+                .every(animation => animation.playState === "finished"), undefined, { timeout: 4000 });
+              progress("settled", "stale request palette: " + theme, { width, category: "parent" });
               const contrasts = await changes.locator('[data-diff-kind="added"], [data-diff-kind="removed"]').evaluateAll(elements => elements.map(element => {
                 const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
                 const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1, 1);
@@ -1358,6 +1364,7 @@ addEventListener('message', event => {
               assert.equal(await page.evaluate(key => localStorage.getItem(key), storageKey), beforeDiff);
               await changes.screenshot({ path: path.join(output, `request-diff-${theme}-${width}.png`) });
               report.diffPaletteChecks.push({ width, theme, passed: true, minimumContrast: Math.min(...contrasts), savedWorkUnchanged: true, keyboardFocus: true });
+              progress("pass", "stale request palette: " + theme, { width, category: "parent" });
             }
             const diffLayout = await changes.evaluate(element => ({ width: element.scrollWidth, available: element.clientWidth }));
             assert.ok(diffLayout.width <= diffLayout.available + 1, 'Long changed text wraps inside the diff.');
