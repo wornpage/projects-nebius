@@ -6,11 +6,11 @@ Turn a task requirement into a tool you can inspect and keep. Work selects the t
 
 Start in **Work**, then open a **Task** for Brief, Tool and Review.
 
-- [Hosted demo](https://nebius.projectsdemo.org/work) — Cloudflare Access sign-in is required. Judge access instructions belong in the submission, not this repository.
+- [Judge Work and Task demo](https://judge-nebius.projectsdemo.org/work) — use the sign-in credentials in the submission’s private instructions; credentials are not published in this repository.
 - [Watch the 2:56 workflow demo](https://www.youtube.com/watch?v=Vzg4or-2-Xg).
 - Run locally without credentials using the instructions below.
 
-[Demo access](docs/demo-access.md) explains the available paths. The hosted app is configured separately from this source; fresh generation is currently disabled there. Recorded examples remain usable without a new model or Sandbox call.
+[Demo access](docs/demo-access.md) explains the available paths and shared live-call allowance. The judge deployment uses `nvidia/Nemotron-3.5-Super-VL` through Nebius Token Factory’s shared serverless API; see [provider configuration](NEBIUS.md#optional-provider-configuration). The source defaults keep AI disabled. Recorded examples remain usable without a new model or Sandbox call.
 
 ## Run without credentials
 
