@@ -19,6 +19,25 @@ function harness(fetcher) {
   } });
   return { client, calls, views, last: () => views.at(-1) };
 }
+test('replan failure details retain known or unknown usage and clear on new input', async () => {
+  for (const usage of [{ input_tokens: 20, output_tokens: 30 }, null]) {
+    const failure = { providerAttempted: true, usageUnknown: usage === null, usage, diagnostic: 'Invalid project changes.' };
+    const h = harness((_, options) => Response.json(options.method === 'POST' ? { code: 'invalid_model_output', ...failure } : config, { status: options.method === 'POST' ? 502 : 200 }));
+    const before = structuredClone(snapshot); h.client.setInput(snapshot, 'Update'); await h.client.reload(); await h.client.generate(true);
+    assert.equal(h.last().phase, 'error'); assert.equal(h.last().replan, null); assert.deepEqual(h.last().failure, failure);
+    h.client.setInput(snapshot, 'Different update'); assert.equal(h.last().failure, null); assert.deepEqual(snapshot, before);
+    assert.equal(h.calls.filter(call => call.options.method === 'POST').length, 1);
+  }
+});
+
+test('late replan failure cannot publish diagnostics for a replaced update', async () => {
+  const pending = deferred(), h = harness((_, options) => options.method === 'POST' ? pending.promise : Response.json(config));
+  h.client.setInput(snapshot, 'Old update'); await h.client.reload(); const generation = h.client.generate(true);
+  h.client.setInput(snapshot, 'New update');
+  pending.resolve(Response.json({ code: 'invalid_model_output', providerAttempted: true, usageUnknown: true, usage: null, diagnostic: 'Old failure.' }, { status: 502 }));
+  await generation; assert.equal(h.last().phase, 'ready'); assert.equal(h.last().failure, null); assert.equal(h.last().replan, null);
+});
+
 test('replanner requests its operation and refuses a planning config despite same role', async () => {
   const h = harness(() => Response.json({ ...config, operation: 'plan-project' }));
   h.client.setInput(snapshot, 'Changed circumstances'); await h.client.reload();

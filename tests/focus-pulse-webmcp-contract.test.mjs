@@ -11,7 +11,7 @@ const focusPulseSource = fs.readFileSync(path.join(repoRoot, 'svelte-frontend/sr
 const layoutSource = fs.readFileSync(path.join(repoRoot, 'svelte-frontend/src/routes/+layout.svelte'), 'utf8');
 const workGridCardSource = fs.readFileSync(path.join(repoRoot, 'svelte-frontend/src/lib/components/WorkGridCard.svelte'), 'utf8');
 const workListCardSource = fs.readFileSync(path.join(repoRoot, 'svelte-frontend/src/lib/components/WorkListCard.svelte'), 'utf8');
-const reviewSource = fs.readFileSync(path.join(repoRoot, 'svelte-frontend/src/routes/review/+page.svelte'), 'utf8');
+
 const nextSource = fs.readFileSync(path.join(repoRoot, 'svelte-frontend/src/routes/next/+page.svelte'), 'utf8');
 const demoCssSource = fs.readFileSync(path.join(repoRoot, 'assets/demo.css'), 'utf8');
 
@@ -102,10 +102,10 @@ test('card-like arrivals use a complete radius-aware ring inside their real boun
 	assert.doesNotMatch(`${layoutSource}\n${demoCssSource}`, /outline:\s*2px dashed|border:\s*2px dashed/u);
 	assert.match(workGridCardSource, /class="demo-grid-card demo-focus-surface"/u);
 	assert.match(workListCardSource, /demo-work-card demo-focus-surface/u);
-	assert.match(reviewSource, /review-priority demo-focus-surface/u);
-	assert.match(reviewSource, /demo-review-card demo-focus-surface/u);
-	assert.match(reviewSource, /\.review-priority-shell,\s*\.review-priority\s*\{[\s\S]*?border-radius: var\(--worn-radius\);/u);
-	assert.match(reviewSource, /\.review-priority\s*\{[\s\S]*?--demo-focus-ring-inset: -8px;[\s\S]*?--demo-focus-ring-radius: calc\(var\(--worn-radius\) \+ 8px\);/u);
+
+
+
+
 	assert.match(nextSource, /demo-command-lines compact demo-focus-surface/u);
 	assert.match(nextSource, /\.demo-command-lines\.demo-focus-surface\s*\{[\s\S]*?--demo-focus-ring-inset: -6px;[\s\S]*?--demo-focus-ring-radius: calc\(var\(--worn-radius\) \+ 6px\);/u);
 	assert.doesNotMatch(workGridCardSource, /\.demo-grid-card:focus-visible\s*\{[^}]*outline:/u);

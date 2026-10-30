@@ -46,7 +46,9 @@
 	} = $props();
 	let cmd = $derived(primaryCommand(pack));
 	let commandHref = $derived(PACK_ACTIONS.has(cmd.action) ? undefined : primaryCommandNavigation(pack));
-	let titleHref = $derived(canSetNextAction(pack) ? `/next?pack=${encodeURIComponent(pack.id || '')}` : null);
+	let titleHref = $derived(canSetNextAction(pack)
+		? `/next?pack=${encodeURIComponent(pack.id || '')}`
+		: NEBIUS_EDITION ? `/next?pack=${encodeURIComponent(pack.id || '')}&view=review` : null);
 	let statusLabel = $derived(packStatusLabel(pack.status));
 
 </script>
@@ -56,6 +58,7 @@
 	role="listitem"
 	tabindex={focusedIndex === index ? 0 : -1}
 	class="demo-grid-card demo-focus-surface"
+	class:nebius-grid-card={NEBIUS_EDITION}
 	class:selected={pack.id === selectedId}
 	class:is-done={pack.status === 'done'}
 	class:is-blocked={hasBlocker(pack)}
@@ -72,7 +75,7 @@
 		{@render batchCheckbox(pack)}
 	{/if}
 	{#if titleHref}
-		<a class="grid-card-title" href={titleHref} aria-label={`Set the next action for ${workTitle(pack)}`}>{workTitle(pack)}</a>
+		<a class="grid-card-title" href={titleHref} aria-label={canSetNextAction(pack) ? (NEBIUS_EDITION ? `Open task ${workTitle(pack)}` : `Set the next action for ${workTitle(pack)}`) : `View task history for ${workTitle(pack)}`}>{workTitle(pack)}</a>
 	{:else}
 		<span class="grid-card-title" data-work-terminal-title>{workTitle(pack)}</span>
 	{/if}
@@ -81,10 +84,21 @@
 			<span>{pack.owner}</span>
 		{/if}
 		<span class="grid-card-status">{statusLabel}</span>
+		{#if NEBIUS_EDITION && pack.id === selectedId}<span class="demo-work-selected" aria-hidden="true">Selected</span>{/if}
 		{#if pack.due}
 			<span class="due-{dueUrgency(pack)}">{dueDateLabel(pack)}</span>
 		{/if}
 	</div>
+	{#if NEBIUS_EDITION && !canSetNextAction(pack)}
+		<p data-nebius-task-history>{pack.archived ? 'Archived task.' : 'Completed task.'}</p>
+		{#if pack.nextStep || hasBlocker(pack)}
+			<details data-nebius-historical-context>
+				<summary>Previous task context</summary>
+				{#if pack.nextStep}<p><b>Previous next step:</b> {pack.nextStep}</p>{/if}
+				{#if hasBlocker(pack)}<p><b>Previous blocker:</b> {blockerText(pack)}</p>{/if}
+			</details>
+		{/if}
+	{:else}
 	{#if hasBlocker(pack)}
 		<div class="grid-card-facts">
 			<span class="grid-card-fact">
@@ -100,6 +114,7 @@
 				<strong>{pack.nextStep}</strong>
 			</span>
 		</div>
+	{/if}
 	{/if}
 	{#if canSetNextAction(pack) && (!commandHref || commandHref !== titleHref)}
 	<div class="grid-card-quick">
@@ -124,6 +139,9 @@
 </div>
 
 <style>
+	[data-nebius-task-history] { color: var(--worn-text-secondary); line-height: 1.5; margin: 4px 0; }
+	[data-nebius-historical-context] { color: var(--worn-text-secondary); line-height: 1.5; overflow-wrap: anywhere; }
+	[data-nebius-historical-context] summary { cursor: pointer; min-block-size: 44px; align-content: center; }
 	.demo-grid-card{position:relative;min-width:0;padding:8px 10px;background:var(--worn-surface);border:1px solid var(--worn-border);border-radius:var(--worn-radius);display:flex;flex-direction:column;gap:4px;transition:box-shadow .1s ease,background .1s ease,border-color .12s;font-size:12px;min-height:44px;overflow:hidden;cursor:pointer}
 	@media (hover: hover) and (pointer: fine) {
 		.demo-grid-card:hover{border-color:var(--worn-border-strong);box-shadow:var(--worn-shadow-md)}
@@ -131,12 +149,12 @@
 		.demo-grid-card.is-blocked:hover{background:color-mix(in srgb,var(--worn-warning-bg)70%,var(--worn-surface))}
 	}
 	.demo-grid-card .grid-card-title{min-width:0;max-width:100%;font-size:14px;font-weight:560;line-height:1.3;border:0;background:0;padding:0;text-align:left;color:var(--worn-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-family:inherit;min-height:unset}
-	.demo-grid-card .grid-card-meta{display:flex;gap:4px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--worn-text-muted);font-family:var(--font-typewriter)}
+	.demo-grid-card .grid-card-meta{display:flex;gap:4px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--worn-text-muted);font-family:inherit}
 	.demo-grid-card .grid-card-meta > span{padding:0 4px;border-radius:2px;font-size:11px;font-weight:560;background:var(--worn-surface);border:1px solid var(--worn-border);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-	.grid-card-status{background:none;border:1px solid var(--worn-border);border-radius:2px;cursor:default;font-size:11px;font-weight:560;padding:0 4px;min-height:unset;line-height:1.6;color:var(--worn-text-muted);font-family:var(--font-typewriter)}
+	.grid-card-status{background:none;border:1px solid var(--worn-border);border-radius:2px;cursor:default;font-size:11px;font-weight:560;padding:0 4px;min-height:unset;line-height:1.6;color:var(--worn-text-muted);font-family:inherit}
 	.is-done .grid-card-status{background:var(--worn-success-bg);border-color:var(--worn-success-border);color:var(--worn-success-text)}
 	.grid-card-facts{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0}
-	.grid-card-fact{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px;align-items:start;font-size:12px;font-family:var(--font-typewriter);color:var(--worn-text-muted);min-width:0;max-width:100%;width:100%;overflow:visible;white-space:normal}
+	.grid-card-fact{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px;align-items:start;font-size:12px;font-family:inherit;color:var(--worn-text-muted);min-width:0;max-width:100%;width:100%;overflow:visible;white-space:normal}
 	.grid-card-fact-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0;color:var(--worn-text-muted)}
 	.grid-card-fact strong{font-size:12px;font-weight:550;color:var(--worn-text);min-width:0;overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
 	.grid-card-quick{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;padding-top:2px;border-top:1px solid var(--worn-border);min-width:0;max-width:100%}
@@ -161,4 +179,9 @@
 	.is-blocked .grid-card-fact-label{color:var(--worn-warning-text,#a85200)}
 	.demo-grid-card.selected{border-color:var(--worn-accent);box-shadow:0 0 0 1px var(--worn-accent-50);background:color-mix(in srgb,var(--worn-accent)4%,var(--worn-surface))}
 	.demo-grid-card.is-batch-checked{border-color:var(--worn-accent);box-shadow:0 0 0 1px var(--worn-accent);background:color-mix(in srgb,var(--worn-accent)6%,var(--worn-surface))}
+	@media (min-width: 801px) {
+		.nebius-grid-card .grid-card-title{display:block;line-height:1.45;overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
+		.nebius-grid-card .grid-card-meta > span{font-size:12px;line-height:1.6}
+		.nebius-grid-card{gap:8px;padding:12px}
+	}
 </style>

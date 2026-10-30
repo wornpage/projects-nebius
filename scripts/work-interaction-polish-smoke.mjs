@@ -114,7 +114,7 @@ try {
 	await page.locator('[data-pack-id="same-destination"]').waitFor({ state: 'visible' });
 
 	const registrationsBeforeQuickAdd = await page.evaluate(() => structuredClone(window.__workToolRegistrations));
-	assert.deepEqual(registrationsBeforeQuickAdd.map((tool) => tool.name), ['get_current_work_view', 'show_work_search', 'create_work_drafts']);
+	assert.deepEqual(registrationsBeforeQuickAdd, [], 'Work does not register browser-agent tools.');
 	await assertCardCommands(page, 'grid');
 	await page.goto(`${origin}/next?pack=terminal-done`, { waitUntil: 'networkidle' });
 	await page.getByText('Work item not found', { exact: true }).waitFor({ state: 'visible' });
@@ -146,7 +146,7 @@ try {
 	await paletteInput.press('ArrowDown');
 	await waitForActiveCommand(page, 'Open Review');
 	await paletteInput.press('ArrowDown');
-	await waitForActiveCommand(page, 'Open WebMCP guide');
+	await waitForActiveCommand(page, 'Open workspace backup');
 	await paletteInput.press('ArrowDown');
 	await waitForActiveCommand(page, 'Clear all filters');
 	await assertPaletteInputFocus(page);
@@ -202,7 +202,7 @@ try {
 	assert.match((await receipt.textContent()) ?? '', /Created Quick add receipt smoke\./u);
 	await page.waitForFunction(() => document.activeElement?.id === 'work-receipt');
 	assert.equal(await page.evaluate(() => document.activeElement?.id), 'work-receipt', 'Quick Add focuses the shared durable action receipt.');
-	assert.deepEqual(await page.evaluate(() => structuredClone(window.__workToolRegistrations)), registrationsBeforeQuickAdd, 'Quick Add does not change Work WebMCP authority.');
+	assert.deepEqual(await page.evaluate(() => structuredClone(window.__workToolRegistrations)), [], 'Quick Add does not register browser-agent tools.');
 
 	await page.reload({ waitUntil: 'networkidle' });
 	await page.locator('#work-receipt').waitFor({ state: 'visible' });
@@ -409,7 +409,7 @@ try {
 		advancedOptions: { desktop: desktopSpacing, compact: compactSpacing },
 		quickAdd: { receipt: 'visible, focused, and durable after reload' },
 		terminalNext: { cards: 'static', directRoute: 'editor refused' },
-		webMcp: registrationsBeforeQuickAdd.map((tool) => tool.name)
+		registeredPageTools: registrationsBeforeQuickAdd.map((tool) => tool.name)
 	}));
 } finally {
 	await browser?.close();

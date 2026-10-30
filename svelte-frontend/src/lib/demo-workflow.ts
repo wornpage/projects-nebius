@@ -16,7 +16,7 @@ import {
 	normalizeText as normalizeRuleText,
 	rebaseSeedPacks as rebasePacks
 } from './workflow-rules.mjs';
-import type { RunInput, RunRecord, ToolInputRequirement } from './nebius-execution-contract.mjs';
+import type { RunInput, RunRecord, ToolInputRequirement, ToolOutputRequirement } from './nebius-execution-contract.mjs';
 
 export interface DemoExecutionRunReference {
 	id: string;
@@ -50,6 +50,7 @@ export interface DemoPack {
 	executionRun?: DemoExecutionRunReference;
 	retiredExecutionRuns?: DemoRetiredExecutionRun[];
 	executionInputs?: ToolInputRequirement[] | null;
+	executionOutputs?: ToolOutputRequirement[] | null;
 	purpose?: string;
 	pinned?: boolean;
 	archived?: boolean;
@@ -260,8 +261,8 @@ export function primaryCommand(pack: DemoPack): PrimaryCommand {
 export function primaryCommandNavigation(pack: DemoPack): string {
 	const action = primaryCommand(pack).action;
 	const id = encodeURIComponent(pack.id || '');
-	if (action === 'review') return `/review?focus=${id}`;
-	if (action === 'review-work') return isReview(pack) ? `/review?focus=${id}` : '/review';
+	if (action === 'review') return NEBIUS_EDITION ? `/next?pack=${id}&view=review` : `/review?focus=${id}`;
+	if (action === 'review-work') return NEBIUS_EDITION ? (isReview(pack) ? `/next?pack=${id}&view=review` : '/work?filter=review') : (isReview(pack) ? `/review?focus=${id}` : '/review');
 	if (action === 'set-next' || action === 'edit') return `/next?pack=${id}`;
 	return `/work?focus=${id}`;
 }
@@ -506,7 +507,7 @@ export function receiptCells(pack: DemoPack | undefined): Array<{ label: string;
 	return [
 		{ label: 'Where', value: workTitle(pack) },
 		{ label: 'Blocker', value: blockerText(pack) },
-		{ label: 'Next action', value: primaryCommand(pack).label },
+		{ label: 'Next action', value: pack.archived ? 'None — task archived' : pack.status === 'done' ? 'None — task complete' : primaryCommand(pack).label },
 		{ label: 'Proof target', value: normalizeText(pack.doneWhen, 200) || 'Not set' }
 	];
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ENERGY_OPTIONS } from '$lib/demo-workflow';
 	import { WornChip, WornCollapsible, WornInput, WornSelect, WornTabs, WornToolbar } from '$lib/components';
-	import { WORK_SEARCH_MAX_LENGTH } from './work-webmcp.mjs';
+	import { WORK_SEARCH_MAX_LENGTH } from './work-view-helpers.mjs';
 
 	type Density = 'card' | 'grid';
 	type FilterOption = { value: string; label: string };
@@ -211,6 +211,15 @@
 		display: grid;
 		grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
 		width: 100%;
+	}
+	/* Nebius controls keep their own borders; the group adds no second frame. */
+	:global(:root[data-palette]) .work-filter-stack :global(.worn-toolbar[aria-label="Primary work filters"]) {
+		--worn-toolbar-padding: 0;
+		--worn-toolbar-compact-padding: 0;
+		--worn-toolbar-background: transparent;
+		--worn-toolbar-border: transparent;
+		--worn-toolbar-active-border: transparent;
+		--worn-toolbar-active-shadow: none;
 	}
 	.work-filter-stack :global(.worn-toolbar[aria-label="Primary work filters"] .worn-select),
 	.work-filter-stack :global(.worn-toolbar[aria-label="Primary work filters"] .worn-input) {

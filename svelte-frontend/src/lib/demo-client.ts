@@ -4,7 +4,7 @@ import { browser } from '$app/environment';
 import { get, writable } from 'svelte/store';
 import type { DemoExecutionRunReference, DemoPack, DemoProject, DemoReceipt, DemoState } from '$lib/demo-workflow';
 import type { ProjectPlan } from './nebius-plan-contract.mjs';
-import { validateProjectSnapshot, validateProjectReplan, type ProjectSnapshot, type ProjectReplan } from './nebius-replan-contract.mjs';
+import { REPLAN_LIMITS, validateProjectSnapshot, validateProjectReplan, type ProjectSnapshot, type ProjectReplan } from './nebius-replan-contract.mjs';
 import { applyProjectReplanState } from './nebius-replan-state.mjs';
 import { assertProjectRecord, assertProjectState, createProjectPlanState, mergedProjectRecords } from './nebius-project-state.mjs';
 import { normalizeWorkTitle, WORK_TITLE_MAX_LENGTH } from '$lib/canonical-text.mjs';
@@ -33,9 +33,9 @@ import {
 	unblockPacksBlockedBy,
 	unblockedReceiptSentence
 } from './workflow-rules.mjs';
-import { approvePendingDraft, discardPendingDraft, pendingDraftFingerprint as fingerprintPendingDraft, resetPersistedState, restorePendingDraft, revisePendingDraftChoice, upsertPendingDraft } from './pending-next-action.mjs';
+import { approvePendingDraft, discardPendingDraft, pendingDraftCountFor, pendingDraftFingerprint as fingerprintPendingDraft, pendingDraftHasDuplicateEvidence, pendingDraftReferencesAvailable, resetPersistedState, revisePendingDraftChoice, upsertPendingDraft } from './pending-next-action.mjs';
 import { planBatchAction, removePacksAndReferences, repairActiveSelection } from './batch-actions.mjs';
-import { projectTask } from './nebius-contract.mjs';
+import { FIELD_LIMITS, projectTask } from './nebius-contract.mjs';
 import { NebiusRunClientError, readRun } from './nebius-execution-client';
 import {
 	TERMINAL_RUN_STATUSES,
@@ -47,7 +47,7 @@ import {
 	validateRunInput,
 	validateRunIntegrity,
 	validateRunRecord,
-	validateToolInputRequirements,
+	validateToolRequirements,
 	type RunInput,
 	type RunRecord
 } from './nebius-execution-contract.mjs';
@@ -84,7 +84,10 @@ const CREATE_PACK_FIELDS = new Set([
 	'energy',
 	'recurrence',
 	'purpose',
-	'doneWhen'
+	'doneWhen',
+	'notes',
+	'sourceUrl',
+	'projectId'
 ]);
 type NormalizedCreatePackFields = {
 	title: string;
@@ -100,6 +103,15 @@ type NormalizedCreatePackFields = {
 	recurrence?: string;
 	purpose?: string;
 	doneWhen?: string;
+	memory?: string[];
+	sources?: string[];
+	projectId?: string;
+};
+
+export type CreatedPackUndoToken = {
+	packId: string;
+	expectedSignature: string;
+	previousSelectedId: string | null;
 };
 
 export const demoState = writable<DemoState | null>(null);
@@ -205,7 +217,7 @@ function assertDemoState(value: unknown, recordOnly = false): asserts value is D
 		}
 		const optionalTextLimits: Record<string, number> = {
 			type: 120, blocker: 200, blockedBy: 200, next: 200, nextStep: 2000, owner: 120, due: 40,
-			doneWhen: 1000, completionEvidence: 2000, purpose: 1000, area: 120, energy: 40, recurrence: 40,
+			doneWhen: NEBIUS_EDITION ? FIELD_LIMITS.doneWhen : 1000, completionEvidence: 2000, purpose: 1000, area: 120, energy: 40, recurrence: 40,
 			decider: 120, milestone: 200, location: 200
 		};
 		for (const [field, maxLength] of Object.entries(optionalTextLimits)) {
@@ -241,9 +253,9 @@ function assertDemoState(value: unknown, recordOnly = false): asserts value is D
 		if (pack.projectId !== undefined && (typeof pack.projectId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/u.test(pack.projectId))) {
 			throw new ChallengeStateError('Saved workspace data contains an invalid project id.');
 		}
-		if (pack.executionInputs !== undefined) {
-			try { validateToolInputRequirements(pack.executionInputs); }
-			catch { throw new ChallengeStateError('Saved tool input requirements are invalid.'); }
+		if (pack.executionInputs !== undefined || pack.executionOutputs !== undefined) {
+			try { validateToolRequirements(pack.executionInputs ?? null, pack.executionOutputs ?? null); }
+			catch { throw new ChallengeStateError('Saved tool input or output requirements are invalid.'); }
 		}
 		if (pack.executionRun !== undefined) assertExecutionRunReference(pack.executionRun, pack.id);
 		if (pack.retiredExecutionRuns !== undefined) {
@@ -274,12 +286,9 @@ function assertDemoState(value: unknown, recordOnly = false): asserts value is D
 	if (pending !== undefined && (!Array.isArray(pending) || pending.some((draft) => !isPendingNextActionDraft(draft)))) {
 		throw new ChallengeStateError('Saved pending approvals are invalid. Clear this site\'s local data to restart.');
 	}
-	for (const draft of pending || []) {
-		const target = (value as DemoState).packs.find((pack) => pack.id === draft.workId);
-		if (!target || !canSetNextAction(target)) {
-			throw new ChallengeStateError('Saved pending approvals contain a terminal or missing work item.');
-		}
-	}
+	// Preserve well-formed historical drafts even if their target or evidence
+	// disappeared. The approvals center can display and discard them; the
+	// approval path separately requires a current, active target and evidence.
 	const dependencyIds = new Set((value as DemoState).packs.map((pack) => pack.id));
 	for (const pack of (value as DemoState).packs) {
 		if (pack.blockedBy && !dependencyIds.has(pack.blockedBy)) {
@@ -343,11 +352,10 @@ function recoverPersistedState(value: unknown): DemoState {
 	const pendingSource = Array.isArray(source.pendingNextActionDrafts) ? source.pendingNextActionDrafts : [];
 	if (source.pendingNextActionDrafts !== undefined && !Array.isArray(source.pendingNextActionDrafts)) quarantined.push({ id: 'pending-approvals', reason: 'Invalid pending approval list was cleared.' });
 	const pending = pendingSource.filter((draft) => {
+		const id = typeof draft?.workId === 'string' ? draft.workId : 'pending-approval';
 		const validDraft = isPendingNextActionDraft(draft);
-		const target = validDraft ? packs.find((pack) => pack.id === draft.workId) : undefined;
-		const valid = validDraft && Boolean(target && canSetNextAction(target)) && draft.evidence.every((fact) => ids.has(fact.workId));
-		if (!valid) quarantined.push({ id: draft?.workId || 'pending-approval', reason: 'Pending approval referenced an invalid or missing record.' });
-		return valid;
+		if (!validDraft) quarantined.push({ id, reason: 'Pending approval has an invalid record.' });
+		return validDraft;
 	});
 	const selectionInvalid = source.selectedProjectId !== undefined && source.selectedProjectId !== null && !projectIds.has(source.selectedProjectId);
 	if (selectionInvalid) quarantined.push({ id: 'selected-project', reason: 'Invalid selected project was cleared.' });
@@ -387,7 +395,7 @@ function isPendingNextActionDraft(value: unknown): value is PendingNextActionDra
 		typeof draft.evidenceNote === 'string' && Array.isArray(draft.evidence) &&
 		typeof draft.originFingerprint === 'string' && Boolean(draft.originFingerprint) &&
 		(draft.source === 'human' || draft.source === 'webmcp') &&
-		draft.evidence.every((fact) => fact && typeof fact.workId === 'string' && (fact.field === 'workflow' || fact.field === 'blocker') &&
+		draft.evidence.every((fact) => fact && typeof fact.workId === 'string' && Boolean(fact.workId.trim()) && (fact.field === 'workflow' || fact.field === 'blocker') &&
 			((typeof fact.expectedValue === 'string' && Boolean(fact.expectedValue) && fact.expectedValue.length <= 200 && !/\p{Cc}/u.test(fact.expectedValue)) ||
 				(fact.field === 'blocker' && fact.expectedValue === null)));
 }
@@ -415,6 +423,12 @@ export async function savePendingNextActionDraft(draft: PendingNextActionDraft):
 	if (!isPendingNextActionDraft(draft)) throw new ChallengeStateError('Pending approval draft is invalid.');
 	return saveBrowserState((state) => {
 		requireNextActionTarget(state, draft.workId);
+		const current = pendingNextActionDraftFor(state, draft.workId);
+		if (pendingDraftCountFor(state, draft.workId) > 1) throw new ChallengeStateError('Multiple drafts refer to this work. Inspect or discard them before preparing another.');
+		if ((current && pendingDraftHasDuplicateEvidence(current)) || pendingDraftHasDuplicateEvidence(draft)) throw new ChallengeStateError('This draft repeats an evidence reference. Inspect or discard it before preparing another.');
+		if ((current && !pendingDraftReferencesAvailable(state, current)) || !pendingDraftReferencesAvailable(state, draft)) {
+			throw new ChallengeStateError('This draft references missing work. Inspect or discard it before preparing another.');
+		}
 		upsertPendingDraft(state, draft);
 	});
 }
@@ -426,12 +440,14 @@ export async function revisePendingNextActionDraftChoice(
 ): Promise<DemoState | null> {
 	return saveBrowserState((state) => {
 		requireNextActionTarget(state, workId);
+		const current = pendingNextActionDraftFor(state, workId);
+		if (pendingDraftCountFor(state, workId) > 1) throw new ChallengeStateError('Multiple drafts refer to this work. Inspect or discard them before preparing another.');
+		if (current && pendingDraftHasDuplicateEvidence(current)) throw new ChallengeStateError('This draft repeats an evidence reference. Inspect or discard it before preparing another.');
+		if (current && !pendingDraftReferencesAvailable(state, current)) {
+			throw new ChallengeStateError('This draft references missing work. Inspect or discard it before preparing another.');
+		}
 		revisePendingDraftChoice(state, { workId, choice, mode }, pendingPackProjection);
 	});
-}
-
-export async function restorePendingNextActionDraft(workId: string, priorDraft: PendingNextActionDraft | null): Promise<DemoState | null> {
-	return saveBrowserState((state) => restorePendingDraft(state, workId, priorDraft));
 }
 
 export async function discardPendingNextActionDraft(workId: string): Promise<DemoState | null> {
@@ -711,7 +727,7 @@ export function buildExecutionRunInput(pack: DemoPack, requestedModel: string): 
 			currentStatus,
 			context: [],
 			requestedModel,
-			requiredInputFormats: validateToolInputRequirements(pack.executionInputs ?? null),
+			...validateToolRequirements(pack.executionInputs ?? null, pack.executionOutputs ?? null),
 			consent: true
 		});
 	} catch (error) {
@@ -723,13 +739,16 @@ export function executionRunMatchesCurrentTask(pack: DemoPack, reference = pack.
 	if (!reference || reference.input.packId !== pack.id) return false;
 	try {
 		if (pack.status !== 'draft' && pack.status !== 'active') return false;
-		// Old snapshots never authorized a newly specified input contract.
-		if (reference.input.version !== RUN_VERSION && pack.executionInputs != null) return false;
+		// Historical snapshots never authorized fields introduced by a later writer.
+		if (reference.input.version === 'browser-tool.v1' && pack.executionInputs != null) return false;
+		if (reference.input.version !== RUN_VERSION && pack.executionOutputs != null) return false;
+		const requirements = validateToolRequirements(pack.executionInputs ?? null, pack.executionOutputs ?? null);
 		const current = validateRunInput({
 			...reference.input,
 			pack: projectTask(pack),
 			currentStatus: pack.status,
-			...(reference.input.version === RUN_VERSION ? { requiredInputFormats: validateToolInputRequirements(pack.executionInputs ?? null) } : {})
+			...(reference.input.version !== 'browser-tool.v1' ? { requiredInputFormats: requirements.requiredInputFormats } : {}),
+			...(reference.input.version === RUN_VERSION ? { requiredOutputs: requirements.requiredOutputs } : {})
 		});
 		return executionInputMatches(current, reference.input);
 	} catch {
@@ -1018,12 +1037,6 @@ export function previewWorkspaceImport(serialized: string): WorkspaceImportPrevi
 		const current = get(demoState);
 		const existingIds = new Set(current?.packs.map((pack) => pack.id) || []);
 		const imported = result.envelope.state;
-		const importedIds = new Set(imported.packs.map((pack) => pack.id));
-		for (const draft of imported.pendingNextActionDrafts || []) {
-			if (!importedIds.has(draft.workId) || draft.evidence.some((fact) => !importedIds.has(fact.workId))) {
-				throw new ChallengeStateError(`The workspace export contains an orphaned pending approval for "${draft.workId}".`);
-			}
-		}
 		return {
 			packs: imported.packs.length,
 			pendingApprovals: imported.pendingNextActionDrafts?.length || 0,
@@ -1034,6 +1047,30 @@ export function previewWorkspaceImport(serialized: string): WorkspaceImportPrevi
 	} catch (error) {
 		if (error instanceof ChallengeStateError) throw error;
 		throw new ChallengeStateError(error instanceof Error ? error.message : 'The workspace export is invalid.');
+	}
+}
+
+// A work ID is not proof that an item in a different backup is the same work.
+// Refuse an ambiguous merge rather than silently attaching a pending approval
+// to another item or dropping a draft with the same target ID.
+function assertSafePendingApprovalMerge(current: DemoState, imported: DemoState): void {
+	const currentIds = new Set(current.packs.map((pack) => pack.id));
+	const additions = new Set(imported.packs.filter((pack) => !currentIds.has(pack.id)).map((pack) => pack.id));
+	const currentPending = current.pendingNextActionDrafts || [];
+	const importedPending = imported.pendingNextActionDrafts || [];
+	const currentTargets = new Set(currentPending.map((item) => item.workId));
+	for (const item of importedPending) {
+		if (currentTargets.has(item.workId)) {
+			throw new ChallengeStateError('Cannot merge pending approvals with the same work item ID. No workspace data was changed.');
+		}
+		if ([item.workId, ...item.evidence.map((fact) => fact.workId)].some((id) => currentIds.has(id))) {
+			throw new ChallengeStateError('Cannot merge a pending approval that refers to an existing work item ID. No workspace data was changed.');
+		}
+	}
+	for (const item of currentPending) {
+		if ([item.workId, ...item.evidence.map((fact) => fact.workId)].some((id) => !currentIds.has(id) && additions.has(id))) {
+			throw new ChallengeStateError('Cannot merge work that would attach to a missing pending approval reference. No workspace data was changed.');
+		}
 	}
 }
 
@@ -1060,6 +1097,7 @@ export async function importWorkspaceState(
 			draft.manualOrder = imported.manualOrder || imported.packs.map((pack) => pack.id);
 			packs = draft.packs.length;
 		} else {
+			assertSafePendingApprovalMerge(draft, imported);
 			draft.projects = mergedProjectRecords(draft, imported);
 			draft.selectedProjectId = draft.selectedProjectId ?? imported.selectedProjectId ?? null;
 			const ids = new Set(draft.packs.map((pack) => pack.id));
@@ -1071,8 +1109,7 @@ export async function importWorkspaceState(
 				...additions.map((pack) => pack.id)
 			];
 			const pending = draft.pendingNextActionDrafts || [];
-			const pendingIds = new Set(pending.map((item) => item.workId));
-			draft.pendingNextActionDrafts = [...pending, ...(imported.pendingNextActionDrafts || []).filter((item) => !pendingIds.has(item.workId))];
+			draft.pendingNextActionDrafts = [...pending, ...(imported.pendingNextActionDrafts || [])];
 			packs = additions.length;
 		}
 		assertDemoState(draft);
@@ -1227,6 +1264,7 @@ export async function runPackBatchAction(
 export async function createPack(payload: Record<string, unknown>): Promise<{
 	pack: DemoPack;
 	state: DemoState;
+	undoToken: CreatedPackUndoToken;
 }> {
 	const fields = normalizedCreatePackFields(payload);
 	if (!globalThis.crypto?.randomUUID) {
@@ -1240,8 +1278,21 @@ export async function createPack(payload: Record<string, unknown>): Promise<{
 		pinned: false,
 		archived: false
 	};
+	let previousSelectedId: string | null = null;
 	const state = await saveBrowserState((draft) => {
+		previousSelectedId = typeof draft.selectedId === 'string' ? draft.selectedId : null;
+		if (fields.projectId && !draft.projects?.some((project) => project.id === fields.projectId)) {
+			throw new ChallengeStateError('Selected project was not found.');
+		}
+		if (fields.projectId && draft.packs.filter((candidate) => candidate.projectId === fields.projectId).length >= REPLAN_LIMITS.tasks) {
+			throw new ChallengeStateError(`This project already has ${REPLAN_LIMITS.tasks} tasks. Choose another project or No project.`);
+		}
 		draft.packs.push(pack);
+		try {
+			assertProjectState(draft);
+		} catch (error) {
+			throw new ChallengeStateError(errorMessage(error, 'The selected project could not accept this work item.'));
+		}
 		const summary = `Created ${formatWorkTitle(fields.title)}.`;
 		const receipt: DemoReceipt = { summary, pack };
 		draft.selectedId = id;
@@ -1251,53 +1302,63 @@ export async function createPack(payload: Record<string, unknown>): Promise<{
 	if (!state?.actionReceipt?.pack) throw new ChallengeStateError('Created work did not return a receipt.');
 	const created = state.packs.find((item) => item.id === id)!;
 	displayToast(`Created: ${formatWorkTitle(created.title)}`, 'success');
-	return { pack: created, state };
+	return {
+		pack: created,
+		state,
+		undoToken: { packId: created.id, expectedSignature: createdPackSignature(created), previousSelectedId }
+	};
 }
 
-export async function createDraftPacks(
-	payloads: Array<Record<string, unknown>>,
-	expectedWorkspaceCount: number
-): Promise<{ packs: DemoPack[]; state: DemoState }> {
-	if (!Array.isArray(payloads) || payloads.length < 1 || payloads.length > 3) {
-		throw new ChallengeStateError('Draft work creation requires one to three items.');
+function createdPackSignature(pack: DemoPack): string {
+	return JSON.stringify(pack);
+}
+
+function assertCreatedPackUndoToken(token: CreatedPackUndoToken): void {
+	if (!token || typeof token !== 'object' || Array.isArray(token) ||
+		Object.keys(token).sort().join(',') !== 'expectedSignature,packId,previousSelectedId' ||
+		typeof token.packId !== 'string' || !token.packId || typeof token.expectedSignature !== 'string' || !token.expectedSignature ||
+		(token.previousSelectedId !== null && (typeof token.previousSelectedId !== 'string' || !token.previousSelectedId))) {
+		throw new ChallengeStateError('Created work undo token is invalid.');
 	}
-	if (!Number.isSafeInteger(expectedWorkspaceCount) || expectedWorkspaceCount < 0) {
-		throw new ChallengeStateError('Draft work creation requires an exact workspace count.');
-	}
-	if (!globalThis.crypto?.randomUUID) {
-		throw new ChallengeStateError('This browser cannot create collision-safe local work ids.');
-	}
-	const fields = payloads.map(normalizedCreatePackFields);
-	if (fields.some((item) => item.status !== 'draft')) {
-		throw new ChallengeStateError('Worker-created work must remain in Draft status.');
-	}
-	const titleKeys = fields.map((item) => item.title.toLocaleLowerCase('en-US'));
-	if (new Set(titleKeys).size !== titleKeys.length) throw new ChallengeStateError('Draft work titles must be unique.');
-	const packs = fields.map((item) => ({
-		...item,
-		id: `challenge-${globalThis.crypto.randomUUID()}`,
-		activity: [formatActivityEntry('Created as a worker draft.')],
-		pinned: false,
-		archived: false
-	} satisfies DemoPack));
-	const ids = new Set(packs.map((pack) => pack.id));
+}
+
+export async function undoCreatedPack(token: CreatedPackUndoToken): Promise<{ state: DemoState }> {
+	assertCreatedPackUndoToken(token);
+	let removedTitle = '';
 	const state = await saveBrowserState((draft) => {
-		if (draft.packs.length !== expectedWorkspaceCount) {
-			throw new ChallengeStateError('Workspace changed after the worker read it. Refresh Work and try again.');
+		const index = draft.packs.findIndex((pack) => pack.id === token.packId);
+		if (index < 0) throw new ChallengeStateError('Created work is no longer available to undo.');
+		const pack = draft.packs[index];
+		if (createdPackSignature(pack) !== token.expectedSignature) {
+			throw new ChallengeStateError('Created work changed and can no longer be undone.');
 		}
-		const existingTitles = new Set(draft.packs.map((pack) => workTitle(pack).toLocaleLowerCase('en-US')));
-		if (titleKeys.some((title) => existingTitles.has(title))) {
-			throw new ChallengeStateError('A draft work title already exists in the workspace.');
+		if (draft.packs.some((candidate) => candidate.blockedBy === token.packId)) {
+			throw new ChallengeStateError('Created work is now used by a dependency and can no longer be undone.');
 		}
-		draft.packs.push(...packs);
-		draft.selectedId = packs[0].id!;
-		draft.status = `Created ${packs.length} ${packs.length === 1 ? 'draft work item' : 'draft work items'} for human review.`;
+		if (draft.pendingNextActionDrafts?.some((pending) => pending.workId === token.packId ||
+			pending.evidence.some((fact) => fact.workId === token.packId)) ||
+			(Array.isArray(draft.manualOrder) && draft.manualOrder.includes(token.packId))) {
+			throw new ChallengeStateError('Created work has new edits and can no longer be undone.');
+		}
+		removedTitle = formatWorkTitle(pack.title);
+		const createdSummary = `Created ${removedTitle}.`;
+		const undoSummary = `Undid creation of ${removedTitle}.`;
+		const ownsReceipt = draft.actionReceipt?.pack?.id === token.packId &&
+			createdPackSignature(draft.actionReceipt.pack) === token.expectedSignature;
+		draft.packs.splice(index, 1);
+		if (draft.selectedId === token.packId) {
+			if (token.previousSelectedId && draft.packs.some((candidate) => candidate.id === token.previousSelectedId)) {
+				draft.selectedId = token.previousSelectedId;
+			} else {
+				delete draft.selectedId;
+			}
+		}
+		if (draft.status === createdSummary) draft.status = undoSummary;
+		if (ownsReceipt) draft.actionReceipt = { summary: undoSummary };
 	});
 	if (!state) throw new ChallengeStateError('Workspace data is not available.');
-	const created = state.packs.filter((pack) => ids.has(pack.id));
-	if (created.length !== packs.length) throw new ChallengeStateError('Draft work creation did not persist every item.');
-	displayToast(`Created ${created.length} ${created.length === 1 ? 'draft' : 'drafts'} for review.`, 'success');
-	return { packs: created, state };
+	displayToast(`Creation undone: ${removedTitle}`, 'success');
+	return { state };
 }
 
 function normalizedCreatePackFields(payload: Record<string, unknown>): NormalizedCreatePackFields {
@@ -1306,7 +1367,9 @@ function normalizedCreatePackFields(payload: Record<string, unknown>): Normalize
 		throw new ChallengeStateError(`Work creation does not support field "${unsupportedFields[0]}".`);
 	}
 	const title = normalizeWorkTitle(payload.title);
-	if (!title) throw new ChallengeStateError('A work title is required and must be 200 characters or fewer.');
+	if (!title || (typeof payload.title === 'string' && hasLoneSurrogate(payload.title))) {
+		throw new ChallengeStateError('A work title is required and must be 200 characters or fewer.');
+	}
 	const requestedStatus = normalizeText(payload.status, 40) || 'draft';
 	if (!VALID_PACK_STATUSES.has(requestedStatus)) {
 		throw new ChallengeStateError('Work path status is not supported.');
@@ -1322,6 +1385,15 @@ function normalizedCreatePackFields(payload: Record<string, unknown>): Normalize
 	const purpose = normalizeText(payload.purpose, 1000);
 	const nextStep = normalizeText(payload.nextStep, 2000);
 	const doneWhen = normalizeText(payload.doneWhen, 1000);
+	const memory = normalizeIntakeNotes(payload.notes);
+	const sourceUrl = normalizeIntakeSourceUrl(payload.sourceUrl);
+	let projectId: string | undefined;
+	if (payload.projectId !== undefined && payload.projectId !== null) {
+		if (typeof payload.projectId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/u.test(payload.projectId)) {
+			throw new ChallengeStateError('Selected project is invalid.');
+		}
+		projectId = payload.projectId;
+	}
 	return {
 		title,
 		status: requestedStatus,
@@ -1335,14 +1407,57 @@ function normalizedCreatePackFields(payload: Record<string, unknown>): Normalize
 		...(recurrence ? { recurrence } : {}),
 		...(purpose ? { purpose } : {}),
 		...(nextStep ? { nextStep } : {}),
-		...(doneWhen ? { doneWhen } : {})
+		...(doneWhen ? { doneWhen } : {}),
+		...(memory.length ? { memory } : {}),
+		...(sourceUrl ? { sources: [sourceUrl] } : {}),
+		...(projectId ? { projectId } : {})
 	};
+}
+
+function hasLoneSurrogate(value: string): boolean {
+	return [...value].some((character) => {
+		const codePoint = character.codePointAt(0)!;
+		return codePoint >= 0xd800 && codePoint <= 0xdfff;
+	});
+}
+
+function normalizeIntakeNotes(value: unknown): string[] {
+	if (value === undefined || value === '') return [];
+	if (typeof value !== 'string' || hasLoneSurrogate(value) || /[\u0000-\u0009\u000b-\u000c\u000e-\u001f\u007f-\u009f]/u.test(value)) {
+		throw new ChallengeStateError('Work notes contain invalid characters.');
+	}
+	// The intake textarea is one string; each nonempty trimmed line becomes one
+	// existing memory entry, using the same 50-by-2000 bounds as the task editor.
+	const entries = value.split(/\r\n?|\n/u).map((entry) => entry.trim()).filter(Boolean);
+	if (entries.length > 50 || entries.some((entry) => entry.length > 2000)) {
+		throw new ChallengeStateError('Work notes must contain at most 50 nonempty lines of at most 2000 characters each.');
+	}
+	return entries;
+}
+
+function normalizeIntakeSourceUrl(value: unknown): string | undefined {
+	if (value === undefined || value === '') return undefined;
+	if (typeof value !== 'string' || hasLoneSurrogate(value) || value.length > 2000 || /\p{Cc}/u.test(value)) {
+		throw new ChallengeStateError('Source link must be a valid HTTP or HTTPS URL of 2000 characters or fewer.');
+	}
+	const normalized = value.trim();
+	if (!normalized) return undefined;
+	let parsed: URL;
+	try {
+		parsed = new URL(normalized);
+	} catch {
+		throw new ChallengeStateError('Source link must be a valid HTTP or HTTPS URL of 2000 characters or fewer.');
+	}
+	if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password) {
+		throw new ChallengeStateError('Source link must use HTTP or HTTPS and must not contain credentials.');
+	}
+	return normalized;
 }
 
 export function packPathSignature(pack: DemoPack): string {
 	return JSON.stringify({
 		fields: Object.fromEntries(FORWARD_PATH_FIELDS.map((field) => [field, pack[field] ?? ''])),
-		memory: pack.memory ?? [], sources: pack.sources ?? [], executionInputs: pack.executionInputs ?? null
+		memory: pack.memory ?? [], sources: pack.sources ?? [], executionInputs: pack.executionInputs ?? null, executionOutputs: pack.executionOutputs ?? null
 	});
 }
 
@@ -1355,21 +1470,25 @@ export async function savePackPath(
 		const pack = draft.packs.find((item) => item.id === packId);
 		if (!pack) throw new ChallengeStateError('Work item was not found.');
 		const before = packPathSignature(pack);
-		const activityFields = [...FORWARD_PATH_FIELDS, 'memory', 'sources', 'executionInputs'] as const;
-		const beforeValues = new Map(activityFields.map((field) => [field, JSON.stringify(pack[field] ?? (field === 'executionInputs' ? null : field === 'memory' || field === 'sources' ? [] : ''))]));
+		const activityFields = [...FORWARD_PATH_FIELDS, 'memory', 'sources', 'executionInputs', 'executionOutputs'] as const;
+		const beforeValues = new Map(activityFields.map((field) => [field, JSON.stringify(pack[field] ?? (field === 'executionInputs' || field === 'executionOutputs' ? null : field === 'memory' || field === 'sources' ? [] : ''))]));
 		if (expectedPathSignature !== undefined && before !== expectedPathSignature) {
 			throw new ChallengeStateError('Saved work changed while you were editing. Review it before saving.');
 		}
 		const statusBefore = normalizeText(pack.status, 40);
-		const allowed = new Set<string>([...FORWARD_PATH_FIELDS, 'memory', 'sources', 'executionInputs']);
+		const allowed = new Set<string>([...FORWARD_PATH_FIELDS, 'memory', 'sources', 'executionInputs', 'executionOutputs']);
 		for (const field of Object.keys(values)) if (!allowed.has(field)) throw new ChallengeStateError(`Unsupported work detail: ${field}.`);
-		if (Object.hasOwn(values, 'executionInputs')) {
+		if (Object.hasOwn(values, 'executionInputs') || Object.hasOwn(values, 'executionOutputs')) {
 			const reference = pack.executionRun;
-			if (pack.archived || pack.status === 'done') throw new ChallengeStateError('Only open tasks can change tool inputs.');
+			if (pack.archived || pack.status === 'done') throw new ChallengeStateError('Only open tasks can change tool requirements.');
 			if (reference && (!reference.record || !TERMINAL_RUN_STATUSES.includes(reference.record.status))) {
-				throw new ChallengeStateError('Refresh or finish the current run before changing its input requirements.');
+				throw new ChallengeStateError('Refresh or finish the current run before changing its input or output requirements.');
 			}
-			pack.executionInputs = validateToolInputRequirements(values.executionInputs);
+			const requirements = validateToolRequirements(
+				Object.hasOwn(values, 'executionInputs') ? values.executionInputs : pack.executionInputs ?? null,
+				Object.hasOwn(values, 'executionOutputs') ? values.executionOutputs : pack.executionOutputs ?? null);
+			if (Object.hasOwn(values, 'executionInputs')) pack.executionInputs = requirements.requiredInputFormats;
+			if (Object.hasOwn(values, 'executionOutputs')) pack.executionOutputs = requirements.requiredOutputs;
 		}
 
 		for (const field of FORWARD_PATH_FIELDS) {
@@ -1381,6 +1500,21 @@ export async function savePackPath(
 					throw new ChallengeStateError('A work title is required and must be 200 characters or fewer.');
 				}
 				value = title;
+			} else if (NEBIUS_EDITION && field === 'completionEvidence') {
+				const raw = values[field];
+				if (typeof raw !== 'string') throw new ChallengeStateError('Completion evidence must be text.');
+				const lines = raw.replace(/\r\n?/gu, '\n');
+				if (/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\ud800-\udfff]/u.test(lines)) {
+					throw new ChallengeStateError('Completion evidence contains invalid text.');
+				}
+				value = lines.trim();
+				if (value.length > 2000) throw new ChallengeStateError('Completion evidence must be 2000 characters or fewer.');
+			} else if (NEBIUS_EDITION && field === 'doneWhen') {
+				const raw = values[field];
+				if (typeof raw !== 'string' || raw.length > FIELD_LIMITS.doneWhen) {
+					throw new ChallengeStateError(`Completion criteria must be text of at most ${FIELD_LIMITS.doneWhen} characters.`);
+				}
+				value = normalizeText(raw, FIELD_LIMITS.doneWhen);
 			} else {
 				value = normalizeText(values[field], field === 'nextStep' || field === 'completionEvidence' ? 2000 : field === 'purpose' || field === 'doneWhen' ? 1000 : 200);
 			}
@@ -1419,7 +1553,7 @@ export async function savePackPath(
 			unblockedWorkIds = unblockPacksBlockedBy(draft.packs, pack, { onActivity: appendActivity, workTitle }).map((item) => item.id);
 		}
 		if (NEBIUS_EDITION) {
-			const changedCount = activityFields.filter((field) => beforeValues.get(field) !== JSON.stringify(pack[field] ?? (field === 'executionInputs' ? null : field === 'memory' || field === 'sources' ? [] : ''))).length;
+			const changedCount = activityFields.filter((field) => beforeValues.get(field) !== JSON.stringify(pack[field] ?? (field === 'executionInputs' || field === 'executionOutputs' ? null : field === 'memory' || field === 'sources' ? [] : ''))).length;
 			if (changedCount) appendActivity(pack, `Saved changes to ${changedCount} task ${changedCount === 1 ? 'field' : 'fields'}.`);
 		}
 		const summary = [

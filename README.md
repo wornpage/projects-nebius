@@ -1,188 +1,92 @@
 # Wornpage Projects — Nebius edition
 
-This standalone edition retains its original [MIT License](LICENSE).
-See [LICENSING.md](LICENSING.md) for source, hosting and provider-access
-boundaries and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependencies.
+Turn a task requirement into a tool you can inspect and keep. Work selects the task; Task keeps its **Brief**, **Tool**, **Review**, evidence and human completion decision together.
 
-A project copilot for turning a goal into tasks, choosing the next step,
-recording evidence and adapting a plan when circumstances change.
-NVIDIA models through Nebius Token Factory propose plans, task changes and
-evidence assessments. The task execution milestone adds a bounded browser-tool
-build, sandbox checks and result review. You authorize a run's selected task
-and limits; accepting the result remains a separate action.
+## Try the app
 
-**Manual preview:** [Open the workspace](https://projects-nebius.ayivx-do-lmf-982.workers.dev/)
-to create projects, edit tasks, inspect blockers and record evidence in your
-browser. AI guidance and Sandbox execution are disabled in this preview.
-The Build tool view explains the workflow and disables Run this task; it does
-not simulate a model response or expose a private retained run.
+Start in **Work**, then open a **Task** for Brief, Tool and Review.
 
-You can also run the app locally at [http://127.0.0.1:8787/](http://127.0.0.1:8787/).
-The setup below needs no provider credentials. Enabling real Nebius features
-is a separate configuration and spending decision.
+- [Hosted demo](https://nebius.projectsdemo.org/work) — Cloudflare Access sign-in is required. Judge access instructions belong in the submission, not this repository.
+- [Watch the 2:56 workflow demo](https://www.youtube.com/watch?v=Vzg4or-2-Xg).
+- Run locally without credentials using the instructions below.
 
-**Development status:** A real Nemotron Super run produced a release-packet
-checker, repaired a failed Sandbox check, and passed the next check. Its retained
-tool passed 24 independent packet cases at two screen widths and was exercised
-in the local app. This establishes one working result; broader model quality
-and live AI access for judges remain open. See
-[current evidence](NEBIUS_READINESS.md#current-runtime-status--october-2-2026).
-The [published captioned demonstration](https://www.youtube.com/watch?v=ssBXmrdvHdE)
-records the earlier October 1 checker. The October 2 JSON-checker result and its
-2/2 declared JSON loaders are separate, newer evidence; the video does not
-demonstrate that newer run.
-The private Projects application is not needed to run it.
-[wornpage/projects-nebius](https://github.com/wornpage/projects-nebius) is the
-MIT-licensed continuation; the earlier WebMCP entry remains separate.
-Private workspace backups and server-run credentials are excluded from the
-source release. Local storage is separate: use Guide's backup and restore
-controls to move browser work. Local AI actions still call Nebius online and
-use its normal account credits; starting the app does not initiate a model run.
+[Demo access](docs/demo-access.md) explains the available paths. The hosted app is configured separately from this source; fresh generation is currently disabled there. Recorded examples remain usable without a new model or Sandbox call.
 
 ## Run without credentials
 
-Use the exact **Node.js version in `.node-version` (24.18.0)** with its bundled
-npm. The package's `engines.node` range permits newer Node versions; the pin is
-the reproducible setup target. Locked installs require public npm and GitHub
-codeload access. From the repository root, confirm the versions before installing:
+Use **Node.js 24.18.0** (the `.node-version` pin) and its bundled npm. From this source directory:
 
 ```sh
 node --version
 npm --version
 npm ci --ignore-scripts
 npm --prefix svelte-frontend ci --ignore-scripts
-npm run dev:nebius
+npm run build
+npm run preview
 ```
 
-Open [http://127.0.0.1:8787/](http://127.0.0.1:8787/) and choose **Open workspace
-→ New project**. A normal browser is sufficient; no WebMCP extension, private Projects
-service, Cloudflare account or provider key is needed for the manual workflow.
-The checked-in configuration disables inference. “Nebius is unavailable” is
-expected until you configure it; it does not prevent manual work.
+Open the loopback address printed by the preview server. Installation requires public npm/GitHub package access. The preview binds only to loopback, loads no provider credentials, disables its provider API routes and rejects server-side fetch. It is not an operating-system network sandbox. Default AI and execution remain disabled. No provider or paid call is needed to use the bundled examples; no Cloudflare account, private Projects service or saved workspace is required. Stop the preview before rebuilding on Windows.
 
-The two installs are both required. `dev:nebius` builds and serves the Nebius
-edition; `npm run build` builds the preserved WebMCP edition. Stop a running
-preview before rebuilding on Windows.
+## Prepare social metadata for release
 
-## Try the project journey
-
-1. In **Work**, choose **New project → Workshop example**. The example is
-   human-written, editable and unsaved.
-2. Edit the plan, then choose **Review plan → Approve and create project**.
-3. Open a task’s **Next step**. Edit its next step or blocker and review the
-   changes before applying them.
-4. Open the **Evidence** tab to see the saved criteria and record what
-   happened. **Save evidence** and **Mark done** are separate actions.
-5. Return to **Work → Update project** when plans change. Review revisions
-   before saving; the approved explanation is retained in task activity.
-
-Work stays in this browser. Use **Guide → Backup and restore** to keep a copy
-or move it to another browser. Completing a prerequisite releases its dependency;
-an independent blocker remains until a person resolves it.
-
-## Enable real Nebius inference
-
-Follow [NEBIUS.md](NEBIUS.md#setup-and-verification) to set an ignored local
-`.dev.vars` file with a Token Factory key, allowed origin and exact NVIDIA model
-IDs. Routine next-step guidance and planning/review use separately configured
-model roles. The UI shows the configured model and request limits before sending.
-
-The four advisory operations are project planning, next-step suggestions,
-evidence review and project replanning. They never save task changes automatically.
-The [live evaluation plan](NEBIUS_DEMO_SCRIPT.md) records what still needs real
-model observations; synthetic test responses are not model-quality evidence.
-
-## Run a task and review its tool
-
-For a concrete starting point, choose **Work → New project → Release-packet
-checker example**. Review and create its two-task plan, then open **Build the
-release-packet checker**. Its saved requirements include two synthetic inputs:
-an incomplete packet should show three gaps; the corrected packet should show
-**0 gaps: Ready for human review**. The example is a human-written specification;
-the generated files and observed results appear only after a real run.
-
-Open an active, unblocked task's **Next step → Build tool → Run this task**. The
-first execution milestone produces a small browser tool, runs agent-authored
-checks in a Token Factory Sandbox, and allows one repair. Open **Review** to
-inspect the tool, its source and observed check output, then explicitly save
-run evidence. A successful run does not mark the task done.
-
-Execution has a separate Sandbox credential binding and limits. The source
-`demo` environment describes a live setup with public routing disabled. The
-manual-preview deployment explicitly overrides both AI switches to false;
-local defaults also keep them off. A Token Factory key with Sandbox
-access can supply both credential bindings. [Execution setup and boundaries](NEBIUS_EXECUTION.md) describes the
-contract, image requirements, cancellation and seven-day server retention.
-The retained checker has successful Sandbox and local browser observations.
-The configured demo allowance is 20 model calls and 3 task runs per UTC day;
-failed attempts count. Workspace backups include run
-access keys and any saved results; treat them as private workspace data.
-
-## Verify locally
-
-Without a browser or provider credentials:
-
-```sh
-npm run verify:nebius
-```
-
-This checks source paths, tests, Svelte types, the frontend build, a Worker
-bundle dry run and local runtime routing with inference disabled. It does not
-deploy. [NEBIUS_READINESS.md](NEBIUS_READINESS.md) records the evidence and limits.
-
-The optional browser suites need a Chromium-based browser. `playwright-core`
-does not install one. Set `CHROME_EXECUTABLE_PATH` to an existing compatible
-executable; for example, in PowerShell 7:
+Once a public host is chosen, set `NEBIUS_PUBLIC_ORIGIN` to its HTTPS origin
+and run `npm run build:release`. For example, in PowerShell 7:
 
 ```powershell
-$env:CHROME_EXECUTABLE_PATH = "C:/path/to/chrome.exe"
-npm run test:nebius:tool-preview
-npm run test:nebius:projects
-npm run test:nebius:browser
-npm run test:nebius:offline
-npm run test:nebius:portability
+$env:NEBIUS_PUBLIC_ORIGIN = "https://your-public-host.example"
+npm run build:release
+npm run test:static
+Remove-Item Env:NEBIUS_PUBLIC_ORIGIN
 ```
 
-These suites use isolated test workspaces and synthetic responses. Run them
-after `verify:nebius`, which creates the required Nebius build.
-The tool-preview suite exercises the production renderer with an authored
-checker and a synthetic parent run. Passing it does not establish the quality
-of a Nebius-generated tool.
+Replace the example with the real host before a release. The release build
+requires an origin without credentials, a path, query or fragment, and writes
+an absolute image URL into the generated Open Graph and Twitter metadata. A
+normal `npm run build` without the setting keeps the local relative image path.
+Keep the setting present while running `npm run test:static` against the release
+artifact; a later normal build without it restores the local relative path.
+Building does not publish the app or enable paid services. After an authorized
+release, check that both the page metadata and the image are reachable by social
+crawlers without a sign-in; a private host cannot provide a public preview.
 
-Local Windows qualification has used Node 24.18.0, its bundled npm 11.16.0 and
-Chromium 153.0.8010.12. Those observations do not qualify other environments.
-The GitHub workflow preserves the WebMCP `verify` and `test:browser` job and
-defines a separate Nebius job on Ubuntu 24.04. That job uses `.node-version`,
-both locked installs and its own hosted Chrome lookup, then runs
-`verify:nebius` and all five browser suites above in order. It supplies no
-provider credentials or deployment step. Local qualification, a prepared
-workflow and an observed passing GitHub run remain separate results. Check
-the [workflow history](https://github.com/wornpage/projects-nebius/actions)
-for the exact revision being evaluated.
+## Try Recovery Simulator
 
-## Source and prior work
+Choose **Work → Try recovery simulator**, or open `/recovery-rehearsal`. Compare a fixed five-task plan against a target finish using no action, expedited delivery, assembly help, or both.
 
-- [MIT license](LICENSE), [access and publication policy](LICENSING.md), and
-  [third-party licenses](THIRD_PARTY_LICENSES.txt).
-- [Nebius contribution and prior-work boundary](NEBIUS_PROVENANCE.md).
-- [Track direction and model strategy](NEBIUS_TRACK_DESIGN.md).
-- [Setup, architecture and limits](NEBIUS.md).
-- [Demo script and live evaluation cases](NEBIUS_DEMO_SCRIPT.md).
-- [Preserved WebMCP documentation](WEBMCP_BASELINE.md), including its historical
-  public URL and baseline verification commands.
+| Default example | Modeled finish | Days saved against delayed plan |
+| --- | ---: | ---: |
+| Original plan | Day 7 | — |
+| Two-day delay; no action | Day 9 | 0 |
+| Expedite delivery | Day 7 | 2 |
+| Assembly help | Day 8 | 1 |
+| Both changes | Day 6 | 3 |
 
-The earlier public WebMCP repository and deployment remain frozen. This edition
-uses its own frontend and narrow inference Worker; it does not include or
-require the private Projects backend, authentication or billing services.
+A calculated suggestion appears before you choose it. In the preparation example, faster delivery saves nothing; assembly help reaches Day 9 against a Day 8 target, leaving one day late visible. All durations are planning assumptions; cost, calendars and shared resources are outside this model.
 
-## Licensing and source inventory
+The canonical bundled source is [examples/nebius-recovery-simulator.json](examples/nebius-recovery-simulator.json). Preview and download use `/api/nebius/examples/recovery-simulator` and its `/download` path. See [the simulator guide](docs/recovery-simulator.md).
 
-The original MIT license remains in force. Earlier public or private MIT grants
-remain effective; dependencies retain their own licenses and notices.
-Source publication does not grant access to provider credentials, private
-workspace backups or saved-run keys.
+## Work and evidence
 
-The current source inventory contains 210/210 paths. The historical filename
-`PUBLIC_SOURCE_MANIFEST.txt` describes an inventory, not permission to publish
-private source. [WEBMCP_BASELINE.md](WEBMCP_BASELINE.md) records the corresponding
-verification denominators and the earlier demo's documentation.
+The **Appearance** menu offers Neutral and Original green palettes, each with System, Light and Dark appearance. The choice is saved in this browser and shared between the landing page and app; it does not change workspace data. App selections use labels and underlines as well as color. Embedded tools retain their own design.
+
+For a single task, choose **Work → Add work**. Enter a title; optionally add notes, a source link and a project. **Save draft** saves the fields together without calling AI. The confirmation offers **Open task** and **Undo**. Undo removes only the unchanged new task; if it has been edited or referenced, the app keeps it. Undo is available while that creation confirmation remains open.
+
+The form uses visible labels and linked errors, keeps entered values when saving fails, and is also available from the command palette. Paste relevant text into Notes; a source link records the reference without fetching its contents. A bookmarklet is not included in this version.
+
+Choose **Work → New project → Workshop example**, edit the authored draft, then **Review plan → Create project**. Work shows one primary task action above its filters; project totals stay available under **Details**. Open a task to inspect its brief, try a tool and retain evidence. Saving evidence and marking the task done are separate decisions. Use **Work menu → Workspace backup → Prepare backup / Import backup** to transfer browser work; backups may contain private saved results and run access keys.
+
+The credential-free preview serves bundled examples; it does not include interactive replay of saved execution runs. See the [review checklist](docs/private-review-checklist.md) for verification and evidence boundaries.
+
+## How Nebius fits the Wornpage UI
+
+| Step | Responsibility |
+| --- | --- |
+| Describe and approve | Wornpage owns Work, Task, the editable brief, input/output requirements and build approval. |
+| Generate | After approval, Wornpage's server sends selected task fields and declared requirements to NVIDIA Nemotron through Nebius Token Factory. The current build request sends no additional workspace context. |
+| Check | Nemotron returns `index.html`, DOM-free `app.js` and `checks.cjs`. Wornpage validates the source, supplies its runtime bridge and can request a bounded repair. Nebius Sandbox runs the Node checks. |
+| Try and keep | Wornpage renders the result in an isolated preview using its base palette and supported controls. Subsequent tool inputs execute locally in the browser. Source, usage and evidence remain available for review. |
+| Decide | A person saves evidence and decides whether the task is complete. The surrounding Wornpage Svelte interface remains app-owned. |
+
+The retained Nemotron checker and bundled Recovery Simulator have separate provenance. The bundled simulator includes assistant-authored changes after its earlier model attempt failed before Sandbox. In a later, separate recovery run, model-authored Sandbox checks passed, but independent testing found an incorrect recommendation and a missing availability caveat. That result does not qualify the bundled simulator. The saved checker has its own successful historical Sandbox result. Earlier recordings and checks are evidence for the specific artifacts they show; they do not automatically qualify changed source. See [evidence and review](docs/current-private-review.md), [recovery provenance](docs/repaired-recovery-provenance.md) and [readiness](NEBIUS_READINESS.md) for the remaining checks.
+
+Source retains the [MIT License](LICENSE); see [LICENSING.md](LICENSING.md). A deployment owner must separately review source and dependency ownership, sensitive information, judge access and provider configuration before release.

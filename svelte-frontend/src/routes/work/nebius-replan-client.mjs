@@ -1,11 +1,12 @@
 import { REPLAN_VERSION, validateReplanInput, validateProjectSnapshot, validateProjectReplan } from '../../lib/nebius-replan-contract.mjs';
 import { isOperationConfig } from '../../lib/nebius-routing-contract.mjs';
+import { providerFailureDetails } from '../../lib/nebius-contract.mjs';
 
-export const emptyReplanView = () => ({ phase: 'idle', config: null, replan: null, usage: null, error: '' });
+export const emptyReplanView = () => ({ phase: 'idle', config: null, replan: null, usage: null, error: '', failure: null });
 async function read(response) {
   if (response.status === 404) throw Object.assign(new Error('Unavailable'), { code: 'nebius_disabled' });
   const body = await response.json();
-  if (!response.ok) throw Object.assign(new Error('Request failed'), { code: body?.code });
+  if (!response.ok) throw Object.assign(new Error('Request failed'), { code: body?.code, failure: providerFailureDetails(body) });
   return body;
 }
 export function createReplanClient({ fetcher = globalThis.fetch, onChange }) {
@@ -13,12 +14,13 @@ export function createReplanClient({ fetcher = globalThis.fetch, onChange }) {
   const publish = next => { view = next; if (!disposed) onChange(next); };
   const cancel = () => { serial++; active?.abort(); active = null; };
   const current = token => !disposed && token === serial;
-  const fail = error => publish({ ...emptyReplanView(), config: error?.code === 'model_changed' ? null : view.config,
+  const fail = error => publish({ ...emptyReplanView(), config: error?.code === 'model_changed' ? null : view.config, failure: error?.failure ?? null,
     phase: error?.code === 'nebius_disabled' ? 'unavailable' : 'error',
     error: error?.code === 'nebius_disabled' ? 'Nebius is unavailable here. You can edit the plan manually.'
       : error?.code === 'daily_limit' ? 'The daily generation limit has been reached.'
       : error?.code === 'rate_limited' ? 'Wait before requesting another proposal.'
-      : 'A proposal is unavailable. Reload settings to try again or edit manually.' });
+      : error?.code === 'invalid_model_output' ? 'Nebius did not return usable changes. Nothing was saved.'
+      : 'A proposal is unavailable. Check model settings or edit tasks yourself.' });
   return {
     setInput(snapshot, update) {
       if (disposed) return;
@@ -40,9 +42,9 @@ export function createReplanClient({ fetcher = globalThis.fetch, onChange }) {
       if (disposed || consent !== true || !view.config || !['ready', 'error', 'complete'].includes(view.phase)) return;
       let submitted;
       try { submitted = validateReplanInput(input); }
-      catch (error) { publish({ ...view, phase: 'error', replan: null, error: error.message }); return; }
+      catch (error) { publish({ ...view, phase: 'error', replan: null, failure: null, error: error.message }); return; }
       cancel(); const token = serial, config = view.config;
-      active = new AbortController(); publish({ ...view, phase: 'generating', replan: null, usage: null, error: '' });
+      active = new AbortController(); publish({ ...view, phase: 'generating', replan: null, usage: null, failure: null, error: '' });
       try {
         const body = await read(await fetcher('/api/nebius/replan-project', {
           method: 'POST', cache: 'no-store', credentials: 'same-origin', signal: active.signal,

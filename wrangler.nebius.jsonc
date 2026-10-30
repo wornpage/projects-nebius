@@ -1,55 +1,124 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "projects-nebius-private",
+  "name": "wornpage-nebius-example",
   "main": "worker/index.mjs",
+  "keep_names": false,
   "compatibility_date": "2026-09-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "enable_request_signal"
+  ],
   "workers_dev": false,
   "preview_urls": false,
-  "assets": { "directory": "./dist/static-publish", "binding": "ASSETS", "run_worker_first": ["/api/nebius/*"] },
-  "durable_objects": { "bindings": [
-    { "name": "NEBIUS_BUDGET", "class_name": "NebiusBudget" },
-    { "name": "NEBIUS_RUN_BUDGET", "class_name": "NebiusRunBudget" },
-    { "name": "NEBIUS_RUNS", "class_name": "NebiusRun" }
-  ] },
+  "assets": {
+    "directory": "./dist/static-publish",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/nebius/*",
+      "/_app/*",
+      "/_app-r191/*"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NEBIUS_BUDGET",
+        "class_name": "NebiusBudget"
+      },
+      {
+        "name": "NEBIUS_RUN_BUDGET",
+        "class_name": "NebiusRunBudget"
+      },
+      {
+        "name": "NEBIUS_RUNS",
+        "class_name": "NebiusRun"
+      }
+    ]
+  },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["NebiusBudget"] },
-    { "tag": "v2", "new_sqlite_classes": ["NebiusRunBudget", "NebiusRun"] }
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "NebiusBudget"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "NebiusRunBudget",
+        "NebiusRun"
+      ]
+    }
   ],
-  "ratelimits": [{ "name": "NEBIUS_IP_RATE_LIMITER", "namespace_id": "3101", "simple": { "limit": 3, "period": 60 } }],
+  "ratelimits": [
+    {
+      "name": "NEBIUS_IP_RATE_LIMITER",
+      "namespace_id": "3101",
+      "simple": {
+        "limit": 3,
+        "period": 60
+      }
+    }
+  ],
   "vars": {
     "NEBIUS_ENABLED": "false",
     "NEBIUS_EXECUTION_ENABLED": "false",
     "NEBIUS_ALLOWED_ORIGIN": "",
     "NEBIUS_MODEL_ROUTINE": "",
     "NEBIUS_MODEL_REASONING": "",
-    "NEBIUS_DAILY_CALL_LIMIT": "50",
-    "NEBIUS_DAILY_RUN_LIMIT": "10",
+    "NEBIUS_DAILY_CALL_LIMIT": "20",
+    "NEBIUS_DAILY_RUN_LIMIT": "3",
     "NEBIUS_SANDBOX_PROJECT_ID": "",
     "NEBIUS_SANDBOX_NODE_IMAGE_UUID": ""
   },
   "env": {
     "demo": {
-      "name": "projects-nebius",
+      "name": "wornpage-nebius-demo-example",
       "workers_dev": false,
       "preview_urls": false,
-      "durable_objects": { "bindings": [
-        { "name": "NEBIUS_BUDGET", "class_name": "NebiusBudget" },
-        { "name": "NEBIUS_RUN_BUDGET", "class_name": "NebiusRunBudget" },
-        { "name": "NEBIUS_RUNS", "class_name": "NebiusRun" }
-      ] },
-      "ratelimits": [{ "name": "NEBIUS_IP_RATE_LIMITER", "namespace_id": "3101", "simple": { "limit": 3, "period": 60 } }],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "NEBIUS_BUDGET",
+            "class_name": "NebiusBudget"
+          },
+          {
+            "name": "NEBIUS_RUN_BUDGET",
+            "class_name": "NebiusRunBudget"
+          },
+          {
+            "name": "NEBIUS_RUNS",
+            "class_name": "NebiusRun"
+          }
+        ]
+      },
+      "ratelimits": [
+        {
+          "name": "NEBIUS_IP_RATE_LIMITER",
+          "namespace_id": "3101",
+          "simple": {
+            "limit": 3,
+            "period": 60
+          }
+        }
+      ],
       "vars": {
-        "NEBIUS_ENABLED": "true",
-        "NEBIUS_EXECUTION_ENABLED": "true",
-        "NEBIUS_ALLOWED_ORIGIN": "https://projects-nebius.ayivx-do-lmf-982.workers.dev",
+        "NEBIUS_ENABLED": "false",
+        "NEBIUS_EXECUTION_ENABLED": "false",
+        "NEBIUS_ALLOWED_ORIGIN": "",
         "NEBIUS_MODEL_ROUTINE": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
         "NEBIUS_MODEL_REASONING": "nvidia/nemotron-3-super-120b-a12b",
         "NEBIUS_DAILY_CALL_LIMIT": "20",
         "NEBIUS_DAILY_RUN_LIMIT": "3",
-        "NEBIUS_SANDBOX_PROJECT_ID": "aiproject-e00mcyad4azy8zxv74",
-        "NEBIUS_SANDBOX_NODE_IMAGE_UUID": "f9ac0575-e7bd-3a81-bfa4-7d7f7a92b89c"
+        "NEBIUS_SANDBOX_PROJECT_ID": "",
+        "NEBIUS_SANDBOX_NODE_IMAGE_UUID": ""
+      },
+      "version_metadata": {
+        "binding": "NEBIUS_VERSION"
       }
     }
+  },
+  "version_metadata": {
+    "binding": "NEBIUS_VERSION"
   }
 }

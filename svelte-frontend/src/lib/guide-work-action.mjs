@@ -1,4 +1,4 @@
-import { normalizeWorkSearch } from '../routes/work/work-webmcp.mjs';
+import { normalizeWorkSearch } from '../routes/work/work-view-helpers.mjs';
 
 /**
  * Build the visible Guide-to-Work action from the same normalized query and

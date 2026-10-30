@@ -1,10 +1,10 @@
-import { isRecord } from './nebius-contract.mjs';
+import { FIELD_LIMITS, isRecord } from './nebius-contract.mjs';
 import { PLAN_LIMITS } from './nebius-plan-contract.mjs';
 
 export const REPLAN_VERSION = 'project-replan.v1';
 export const REPLAN_LIMITS = Object.freeze({ projectId: 120, id: 200, title: PLAN_LIMITS.title, summary: 600,
-  tasks: 8, taskTitle: PLAN_LIMITS.taskTitle, purpose: PLAN_LIMITS.purpose, nextStep: PLAN_LIMITS.nextStep,
-  doneWhen: PLAN_LIMITS.doneWhen, blocker: 200, update: 2000, reason: 400, missingInformation: 5, missingInformationText: 200 });
+  tasks: 8, taskTitle: PLAN_LIMITS.taskTitle, purpose: PLAN_LIMITS.purpose, nextStep: FIELD_LIMITS.nextStep,
+  doneWhen: FIELD_LIMITS.doneWhen, blocker: 200, update: 2000, reason: 400, missingInformation: 5, missingInformationText: 200 });
 const exactKeys = (value, keys) => isRecord(value) && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
 const badControl = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/u;
 const taskFields = ['title', 'purpose', 'nextStep', 'doneWhen', 'status', 'blocker', 'blockedBy'];

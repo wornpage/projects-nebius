@@ -1,10 +1,14 @@
 import { isRecord, validModelId } from './nebius-contract.mjs';
+import { PLAN_PIPELINE_LIMITS, PLAN_GROUNDING_VERSION } from './nebius-plan-contract.mjs';
 
 // One source for the public allowance and the actual provider max_tokens.
 export const OPERATION_PROFILES = Object.freeze({
   'suggest-next-step': Object.freeze({ modelRole: 'routine', maxOutputTokens: 1200 }),
   'review-evidence': Object.freeze({ modelRole: 'reasoning', maxOutputTokens: 1200 }),
-  'plan-project': Object.freeze({ modelRole: 'reasoning', maxOutputTokens: 4000 }),
+  'plan-project': Object.freeze({ modelRole: 'reasoning', maxOutputTokens: PLAN_PIPELINE_LIMITS.planOutputTokens,
+    maxModelCalls: PLAN_PIPELINE_LIMITS.maxModelCalls, groundingMaxOutputTokens: PLAN_PIPELINE_LIMITS.groundingOutputTokens,
+    maxOutputTokensTotal: PLAN_PIPELINE_LIMITS.maxOutputTokensTotal, maxPipelineMs: PLAN_PIPELINE_LIMITS.pipelineMs,
+    groundingVersion: PLAN_GROUNDING_VERSION }),
   'replan-project': Object.freeze({ modelRole: 'reasoning', maxOutputTokens: 4000 }),
 });
 
@@ -13,5 +17,9 @@ export function isOperationConfig(value, operation) {
   const profile = OPERATION_PROFILES[operation];
   return isRecord(value) && value.available === true && value.operation === operation
     && value.modelRole === profile.modelRole && value.maxOutputTokens === profile.maxOutputTokens
-    && validModelId(value.requestedModel);
+    && validModelId(value.requestedModel)
+    && (operation !== 'plan-project' || (value.maxModelCalls === profile.maxModelCalls
+      && value.groundingMaxOutputTokens === profile.groundingMaxOutputTokens && value.maxOutputTokensTotal === profile.maxOutputTokensTotal
+      && value.maxPipelineMs === profile.maxPipelineMs && value.groundingVersion === profile.groundingVersion
+      && value.groundingModel === value.requestedModel));
 }

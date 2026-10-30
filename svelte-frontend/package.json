@@ -34,7 +34,8 @@
     "@wornpage/receipt": "https://codeload.github.com/wornpage/receipt/tar.gz/6710499b30a410a5e4b12aef2cbde4e3883e249f",
     "@wornpage/segmented-control": "https://codeload.github.com/wornpage/segmented-control/tar.gz/359969974995e87259a6ac8c06224836ab49e062",
     "@wornpage/tabs": "https://codeload.github.com/wornpage/tabs/tar.gz/3bf4c7b95edd2375a3e287e66dd9b94887c850c4",
-    "@wornpage/toast": "https://codeload.github.com/wornpage/toast/tar.gz/f8b12dbab5b5072e7a2f009ef52a9417a3cbde64"
+    "@wornpage/toast": "https://codeload.github.com/wornpage/toast/tar.gz/f8b12dbab5b5072e7a2f009ef52a9417a3cbde64",
+    "diff": "9.0.0"
   },
   "overrides": {
     "cookie": "^0.7.2"

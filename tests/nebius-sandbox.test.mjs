@@ -5,9 +5,12 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Script } from 'node:vm';
-import { CHECK_RUNNER, spawnSandbox } from '../worker/nebius-sandbox.mjs';
+import { CHECK_RUNNER, SandboxError, spawnSandbox } from '../worker/nebius-sandbox.mjs';
 import { runPageContract, renderRunPreview } from '../worker/nebius-run-preview.mjs';
 import { authoredCheckerFiles, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
+import { generateRunFiles } from '../worker/nebius-run-provider.mjs';
+import { validateGeneratedSource } from '../worker/nebius-run-admission.mjs';
+import { streamEnvelope } from './helpers/nebius-stream-fixture.mjs';
 
 // Exercise the actual trusted runner with authored fixtures only. Never execute
 // model-generated files on the host: Nebius container isolation is still required.
@@ -83,6 +86,64 @@ const checkerFiles = await materializeAuthoredChecker();
 const checkerApp = checkerFiles.find(file => file.path === 'app.js').content;
 const checkerChecks = checkerFiles.find(file => file.path === 'checks.cjs').content;
 const checkerHtml = checkerFiles.find(file => file.path === 'index.html').content;
+
+test('the authored API example in the model contract passes the actual local check runner', async t => {
+  const model = 'nvidia/authored-contract-example';
+  const generated = await generateRunFiles({apiKey:'authored-fixture-key',model},{},null,{fetcher:async(_url,options)=>{
+    const request=JSON.parse(options.body);
+    const marker='no require/import or redeclaration belongs in checks.cjs.\n';
+    const source=request.messages[0].content.split(marker)[1]?.split('\n\nCurrent operation:')[0];
+    assert.ok(source, 'The prompt must include its complete authored example.');
+    return streamEnvelope({model,usage:{prompt_tokens:1,completion_tokens:1},choices:[{
+      finish_reason:'stop',message:{role:'assistant',content:source}
+    }]});
+  }});
+  const requirements={requiredInputFormats:[{id:'quantity',format:'text'},{id:'addons',format:'text'}],requiredOutputs:[{id:'result',format:'text'},{id:'error',format:'text'}]};
+  await validateGeneratedSource(generated.files,requirements);
+  const get=path=>generated.files.find(file=>file.path===path).content;
+  // This is the server-authored illustrative example, never model output.
+  const result=runAuthoredChecks(t,get('app.js'),get('checks.cjs'),get('index.html'));
+  assert.equal(result.status,0,result.stderr);
+  // Retain broad semantic checking and the full exercised call matrix without
+  // coupling this contract to the exact number of internal helper assertions.
+  const counts=/Observed successful assertions: (\d+); validate calls: (\d+); handleMessage calls: (\d+)/u.exec(result.stdout);
+  assert.ok(counts);
+  assert.ok(Number(counts[1]) >= 100, 'Example must exercise substantial assertions');
+  assert.equal(Number(counts[2]), 23);
+  assert.equal(Number(counts[3]), 39);
+  // Initialization plus input/change for each editable control and Reset.
+  assert.match(result.stdout,/Control events observed: 6\/6/u);
+});
+
+for (const [status, uncertain] of [
+  ...[200, 202, 302, 408, 500, 502, 503, 504, 524, 599].map(status => [status, true]),
+  ...[400, 401, 403, 404, 409, 422, 429].map(status => [status, false]),
+]) test(`Sandbox submission HTTP ${status} is ${uncertain ? 'uncertain' : 'refused'} without retry`, async () => {
+  let submissions = 0, cancelled = 0, bodyReads = 0;
+  const body = new ReadableStream({
+    pull() { bodyReads++; },
+    cancel() { cancelled++; },
+  }, { highWaterMark: 0 });
+  await assert.rejects(spawnSandbox({ iamToken: 'synthetic', projectId: 'synthetic',
+    imageId: '00000000-0000-4000-8000-000000000003' }, checkerFiles, {
+    fetcher: async (url, options) => {
+      submissions++;
+      assert.equal(url, 'https://api.tokenfactory.nebius.com/sandboxes/v1/instances');
+      assert.equal(options.method, 'POST');
+      assert.equal(options.redirect, 'manual');
+      return new Response(body, { status });
+    },
+  }), error => {
+    assert.ok(error instanceof SandboxError);
+    assert.equal(error.code, uncertain ? 'sandbox_submission_uncertain' : 'sandbox_submission_failed');
+    assert.equal(error.uncertain, uncertain);
+    assert.match(error.message, uncertain ? /outcome is unknown/u : /refused/u);
+    return true;
+  });
+  assert.equal(submissions, 1);
+  assert.equal(cancelled, 1);
+  assert.equal(bodyReads, 0, 'The untrusted error body must not be parsed or retained.');
+});
 
 test('trusted runner exercises the authored checker event and validation assertions', t => {
   const result = runAuthoredChecks(t, checkerApp, checkerChecks, checkerHtml);
@@ -317,14 +378,14 @@ for (const [name, html, expected] of [
 
 test('task-owned format comparison is shared by preview and Sandbox before submission', async () => {
   const required = [{ id: 'packet', format: 'json' }];
-  assert.equal(runPageContract(checkerFiles, required).elements.find(element => element.id === 'packet').format, 'json');
+  assert.equal(runPageContract(checkerFiles, { requiredInputFormats: required }).elements.find(element => element.id === 'packet').format, 'json');
   const wrong = checkerFiles.map(file => file.path === 'index.html' ? { ...file,
     content: file.content.replace('data-input-format="json"', 'data-input-format="text"') } : file);
-  assert.throws(() => runPageContract(wrong, required), /must declare data-input-format="json"/u);
-  await assert.rejects(renderRunPreview(wrong, required), /must declare data-input-format="json"/u);
-  assert.throws(() => runPageContract(checkerFiles, []), /exactly match/u);
-  assert.throws(() => runPageContract(checkerFiles, [{ id: 'other', format: 'json' }]), /exactly match/u);
-  assert.doesNotThrow(() => runPageContract(wrong, null));
+  assert.throws(() => runPageContract(wrong, { requiredInputFormats: required }), /must declare data-input-format="json"/u);
+  await assert.rejects(renderRunPreview(wrong, { requiredInputFormats: required }), /must declare data-input-format="json"/u);
+  assert.throws(() => runPageContract(checkerFiles, { requiredInputFormats: [] }), /exactly match/u);
+  assert.throws(() => runPageContract(checkerFiles, { requiredInputFormats: [{ id: 'other', format: 'json' }] }), /exactly match/u);
+  assert.doesNotThrow(() => runPageContract(wrong, { requiredInputFormats: null }));
   let submissions = 0;
   await assert.rejects(spawnSandbox({ iamToken: 'synthetic', projectId: 'synthetic', imageId: 'synthetic' }, wrong, {
     requiredInputFormats: required, fetcher: async () => { submissions++; assert.fail('No mismatched source may reach Sandbox.'); },
@@ -340,7 +401,7 @@ test('task-owned text inputs preserve editable selects and disabled-fieldset leg
     '<input id="status" type="text" data-input-format="text">',
   ]) {
     const files = checkerFiles.map(file => file.path === 'index.html' ? { ...file, content: '<!doctype html>\n' + html } : file);
-    const contract = runPageContract(files, [{ id: 'status', format: 'text' }]);
+    const contract = runPageContract(files, { requiredInputFormats: [{ id: 'status', format: 'text' }] });
     assert.deepEqual(contract.elements.find(element => element.id === 'status').events, ['input', 'change']);
   }
 });
@@ -357,8 +418,8 @@ for (const control of [
 ]) test(`task-owned JSON input refuses unusable control: ${control}`, async () => {
   const required = [{ id: 'packet', format: 'json' }];
   const files = checkerFiles.map(file => file.path === 'index.html' ? { ...file, content: '<!doctype html>\n' + control } : file);
-  assert.throws(() => runPageContract(files, required), /editable text control/u);
-  await assert.rejects(renderRunPreview(files, required), /editable text control/u);
+  assert.throws(() => runPageContract(files, { requiredInputFormats: required }), /editable text control/u);
+  await assert.rejects(renderRunPreview(files, { requiredInputFormats: required }), /editable text control/u);
   let submissions = 0;
   await assert.rejects(spawnSandbox({ iamToken: 'synthetic', projectId: 'synthetic', imageId: 'synthetic' }, files, {
     requiredInputFormats: required, fetcher: async () => { submissions++; assert.fail('An unusable required input must not reach Sandbox.'); },

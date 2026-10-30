@@ -13,6 +13,7 @@
   --worn-selected-fg: #082f2b;
   --worn-border: #d4d8d5;
   --worn-border-strong: #b8bfba;
+  --worn-field-border: #758176;
   --worn-text: #1f2522;
   --worn-focus: var(--worn-text);
   --worn-text-secondary: #4f5853;
@@ -81,6 +82,7 @@
     --worn-selected-fg: #f7fffc;
     --worn-border: #3a4d45;
     --worn-border-strong: #4d5c52;
+    --worn-field-border: #80978a;
     --worn-text: #f7fffc;
     --worn-text-secondary: #d9e8e2;
     --worn-text-muted: #b0bcb4;
@@ -1498,3 +1500,22 @@ h3,
   }
 
 }
+
+/* Selection has a visible shape/text cue; reserve green fills for primary actions. */
+:root[data-palette="neutral"] .challenge-shell .worn-chip[aria-pressed="true"],
+:root[data-palette="neutral"] .challenge-shell .worn-chip[data-pressed],
+:root[data-palette="neutral"] .challenge-shell .worn-segment input:checked + span {
+  background: var(--worn-selected-bg);
+  color: var(--worn-selected-fg);
+}
+:root[data-palette="neutral"] .challenge-shell .worn-chip[aria-pressed="true"],
+:root[data-palette="neutral"] .challenge-shell .worn-chip[data-pressed] { border-color: var(--worn-field-border); }
+.challenge-shell .worn-chip[aria-pressed="true"] .worn-chip-label,
+.challenge-shell .worn-chip[data-pressed] .worn-chip-label,
+.challenge-shell .worn-segment input:checked + span {
+  text-decoration-line: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: .22em;
+}
+.challenge-shell .worn-tab[aria-selected="true"] { border-block-end-color: var(--worn-link); }
+.demo-work-selected { font-weight: 750; text-decoration: underline; text-underline-offset: .2em; }

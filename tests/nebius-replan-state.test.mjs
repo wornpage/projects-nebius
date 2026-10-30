@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { createProjectPlanState } from '../svelte-frontend/src/lib/nebius-project-state.mjs';
 import { projectSnapshot, applyProjectReplanState } from '../svelte-frontend/src/lib/nebius-replan-state.mjs';
+import { authoredPreviewReference, materializeAuthoredChecker } from './fixtures/nebius-release-checker.mjs';
 
 const lib = new URL('../svelte-frontend/src/lib/', import.meta.url);
 const require = createRequire(new URL('../svelte-frontend/package.json', import.meta.url));
@@ -31,8 +32,40 @@ const proposal = (snapshot, overrides = {}) => ({ summary: 'Revise research.', m
 ].map(({ archived, ...change }) => change) });
 const apply = (state, replan = proposal(projectSnapshot(state, projectId)), snapshot = projectSnapshot(state, projectId), source = 'manual') =>
 	applyProjectReplanState(state, { snapshot, replan, source });
+
+test('replanning preserves long saved requirements without truncation', () => {
+	const state = seed();
+	const target = state.packs.find(item => item.id === researchId);
+	target.nextStep = 'n'.repeat(593);
+	target.doneWhen = 'd'.repeat(1332);
+	const snapshot = projectSnapshot(state, projectId);
+	const before = JSON.stringify(state);
+	const update = proposal(snapshot, { purpose: 'Revised purpose', nextStep: target.nextStep, doneWhen: target.doneWhen });
+	const result = apply(state, update, snapshot);
+	const saved = result.state.packs.find(item => item.id === researchId);
+	assert.equal(saved.nextStep, target.nextStep);
+	assert.equal(saved.doneWhen, target.doneWhen);
+	assert.equal(saved.purpose, 'Revised purpose');
+	assert.equal(JSON.stringify(state), before);
+});
 const envelope = (state, revision = 'revision-1') => JSON.stringify({ schemaVersion: 1, revision, state });
 const json = (value) => JSON.parse(JSON.stringify(value));
+
+let authoredReference;
+async function savedReferenceFor(pack, status, id) {
+	// The existing fixture substitutes transport and supplies synthetic receipts;
+	// no provider, Sandbox or generated handler execution occurs in this test.
+	authoredReference ??= authoredPreviewReference(await materializeAuthoredChecker());
+	const reference = structuredClone(await authoredReference);
+	const contract = dependencies['nebius-execution-contract.mjs'];
+	const input = contract.validateRunInput({ ...reference.input, packId: pack.id,
+		pack: dependencies['nebius-contract.mjs'].projectTask(pack) });
+	const { consent, ...snapshot } = input;
+	const record = await contract.validateRunIntegrity({ ...reference.record, ...snapshot, id, status,
+		...(status === 'queued' ? { attempt: 0, files: [], checks: [], generationAttempts: [],
+			usage: { modelCalls: 0, inputTokens: null, outputTokens: null, totalsComplete: false } } : {}) });
+	return { id, key: reference.key, input, record };
+}
 
 function writable(value) {
 	const subscribers = new Set();
@@ -104,7 +137,7 @@ test('snapshot copies all project tasks in stable id order including terminal co
 
 test('snapshot refuses oversized stored context and project cardinality without truncation', () => {
 	const state = seed();
-	state.packs[1].nextStep = 'x'.repeat(201);
+	state.packs[1].nextStep = 'x'.repeat(2001);
 	assert.throws(() => projectSnapshot(state, projectId));
 	const large = seed();
 	for (let i = 0; i < 7; i += 1) large.packs.push({ ...large.packs[1], id: `${projectId}:extra-${i}` });
@@ -119,7 +152,7 @@ test('snapshot refuses oversized stored context and project cardinality without 
 
 test('pure apply preserves unrelated fields, project metadata, history and unchanged tasks', () => {
 	const state = seed();
-	Object.assign(state.packs[1], { owner: 'Jared', activity: ['Created'], memory: ['Remember'], completionEvidence: 'Prior evidence', progress: 30, custom: { retained: true } });
+	Object.assign(state.packs[1], { owner: 'Example owner', activity: ['Created'], memory: ['Remember'], completionEvidence: 'Prior evidence', progress: 30, custom: { retained: true } });
 	const before = structuredClone(state);
 	const result = apply(state);
 	assert.deepEqual(state, before);
@@ -322,3 +355,41 @@ test('owner copies reviewed values before refresh and lock waits', async () => {
 	assert.equal(result.state.packs[1].nextStep, 'Read the updated source');
 	assert.equal(browser.writes, 1);
 });
+
+for (const source of ['manual', 'nebius']) {
+	for (const runStatus of ['queued', 'ready']) {
+		test(`${source} replan preserves output/input requirements, ${runStatus} run and retired history byte-for-byte`, async () => {
+			const state = seed();
+			const pack = state.packs.find(item => item.id === researchId);
+			pack.executionInputs = [{ id: 'packet', format: 'json' }];
+			pack.executionOutputs = [{ id: 'result', format: 'text' }, { id: 'schedule', format: 'timeline' }];
+			pack.executionRun = await savedReferenceFor(pack, runStatus, '00000000-0000-4000-8000-000000000081');
+			pack.retiredExecutionRuns = [{
+				reference: { ...await savedReferenceFor(pack, 'ready', '00000000-0000-4000-8000-000000000082'), record: null },
+				retiredAt: '2026-10-21T00:00:00.000Z', reason: 'server_not_found'
+			}];
+			const preserved = item => JSON.stringify({ executionInputs: item.executionInputs,
+				executionOutputs: item.executionOutputs, executionRun: item.executionRun,
+				retiredExecutionRuns: item.retiredExecutionRuns });
+			const bytes = preserved(pack), stateBytes = JSON.stringify(state);
+			const snapshot = projectSnapshot(state, projectId);
+			const reviewed = proposal(snapshot, { purpose: 'Review newly supplied facts.', doneWhen: 'Updated facts documented.' });
+			const pure = apply(state, reviewed, snapshot, source).state.packs.find(item => item.id === researchId);
+			assert.equal(preserved(pure), bytes);
+			assert.equal(JSON.stringify(state), stateBytes, 'Pure approval must not mutate its input.');
+			assert.equal(pure.nextStep, 'Read the updated source');
+			assert.equal(pure.purpose, 'Review newly supplied facts.');
+			assert.equal(pure.doneWhen, 'Updated facts documented.');
+			assert.notEqual(pure.executionRun, pack.executionRun);
+			const browser = browserClient(envelope(state));
+			await browser.client.refreshDemoState();
+			await browser.client.approveProjectReplan(snapshot, reviewed, source);
+			const persisted = JSON.parse(browser.saved).state.packs.find(item => item.id === researchId);
+			assert.equal(preserved(persisted), bytes, 'Browser approval preserves the serialized contracts and saved receipts.');
+			assert.equal(persisted.nextStep, 'Read the updated source');
+			const reloaded = browserClient(browser.saved);
+			await reloaded.client.refreshDemoState();
+			assert.equal(preserved(get(reloaded.client.demoState).packs.find(item => item.id === researchId)), bytes);
+		});
+	}
+}

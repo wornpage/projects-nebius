@@ -4,15 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Turn project tasks into small browser tools with NVIDIA Nemotron and Nebius Token Factory Sandboxes. Generate code, run checks, repair once, and review the result in Wornpage Projects.">
-  <meta property="og:title" content="Wornpage Projects — From next step to working tool">
+  <meta name="description" content="Turn project tasks into small browser tools with NVIDIA Nemotron and Nebius Token Factory Sandboxes. Generate code, run checks, attempt a repair if needed, and review the result in Wornpage Projects.">
+  <meta property="og:title" content="Wornpage Projects — Describe the task. Keep the tool.">
   <meta property="og:description" content="Plan with Nemotron. Build and check tools in Token Factory Sandboxes. Review the source, try the result, and decide what to keep.">
   <meta property="og:type" content="website">
+  <meta property="og:image" content="/assets/og-image-511ed6d2.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:alt" content="Illustration of Wornpage Projects turning a task into a tool with Nemotron on Nebius, followed by a human review.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Wornpage Projects — Describe the task. Keep the tool.">
+  <meta name="twitter:description" content="Plan with Nemotron. Build and check tools in Token Factory Sandboxes. Review the source, try the result, and decide what to keep.">
+  <meta name="twitter:image" content="/assets/og-image-511ed6d2.png">
+  <meta name="twitter:image:alt" content="Illustration of Wornpage Projects turning a task into a tool with Nemotron on Nebius, followed by a human review.">
   <meta name="theme-color" content="#f5f3ef" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0d1512" media="(prefers-color-scheme: dark)">
-  <title>Wornpage Projects — From next step to working tool</title>
+  <title>Wornpage Projects — Turn tasks into tools</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/landing.css">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <script src="/assets/theme.js"></script>
 </head>
 <body class="lp lp-nebius">
   <a class="lp-skip" href="#main-content">Skip to main content</a>
@@ -21,9 +33,16 @@
       <span class="lp-brand-mark" aria-hidden="true">W</span>
       <span><strong>Wornpage Projects</strong><small>Nebius edition</small></span>
     </a>
+    <label class="lp-theme-picker">Theme
+      <select data-wornpage-theme aria-label="Theme">
+        <option value="neutral-system">Neutral · system</option><option value="neutral-light">Neutral · light</option><option value="neutral-dark">Neutral · dark</option>
+        <option value="original-system">Original green · system</option><option value="original-light">Original green · light</option><option value="original-dark">Original green · dark</option>
+      </select>
+      <span data-wornpage-theme-status role="status"></span>
+    </label>
     <nav class="lp-nav-links" aria-label="Landing page navigation">
-      <a href="#sandbox">Sandbox workflow</a>
-      <a href="/webmcp-challenge">Guide</a>
+      <a href="/work">Work</a>
+      <a href="/next">Task</a>
     </nav>
     <a class="lp-btn lp-btn-sm" href="/work">Open workspace <span aria-hidden="true">↗</span></a>
   </header>
@@ -32,40 +51,40 @@
     <section class="lp-hero" aria-labelledby="nebius-title">
       <div class="lp-hero-copy">
         <p class="lp-kicker">NVIDIA Nemotron + Token Factory Sandboxes</p>
-        <h1 id="nebius-title">From next step<br>to working tool.</h1>
-        <p class="lp-lede">Give your project an agent that can build. Turn a task into a small browser tool, run its checks in a Nebius Sandbox, and review the result in the same workspace.</p>
+        <h1 id="nebius-title">Describe the task.<br>Keep the tool.</h1>
+        <p class="lp-lede">Nemotron writes a small browser tool from your task. Nebius Sandbox checks it. Try the result, then keep it with your project.</p>
         <div class="lp-cta-row">
-          <a class="lp-btn lp-btn-primary" href="/work?starter=release-packet-checker">Review checker requirements <span class="lp-arrow" aria-hidden="true">→</span></a>
-          <a class="lp-btn" href="#sandbox">See the workflow</a>
-          <a class="lp-btn" href="https://github.com/wornpage/projects-nebius#run-without-credentials">Source and local setup</a>
+          <a class="lp-btn lp-btn-primary" href="#recorded-example">Try the example <span class="lp-arrow" aria-hidden="true">→</span></a>
+          <a class="lp-btn" href="/work?starter=release-packet-checker">Build your own tool</a>
         </div>
-        <p class="lp-fine"><span>The <a href="https://projects-nebius.ayivx-do-lmf-982.workers.dev/">public v0.1.0 preview</a> has AI guidance and Sandbox execution disabled. Try its manual workspace, or follow local setup for Nebius builds.</span></p>
-        <p class="lp-fine">Review checker requirements opens an editable project draft.</p>
+        <p class="lp-fine">Try the recorded example without credentials.</p>
       </div>
 
       <figure class="neb-preview" aria-labelledby="example-title">
-        <figcaption class="neb-preview-label"><span>Example workflow</span><span class="lp-pill lp-pill-muted">Task → tool</span></figcaption>
+        <figcaption class="neb-preview-label"><span>Recorded Nemotron example · October 19</span><span class="lp-pill lp-pill-muted">Task → tool</span></figcaption>
         <div class="neb-example-task">
-          <span class="lp-eyebrow">From your project</span>
+          <span class="lp-eyebrow">The task</span>
           <h2 id="example-title">Release packet checker</h2>
-          <p>Find missing health evidence, rollback notes and reviewer approval before the human release decision.</p>
+          <p>Check a supplied release packet for missing health, review and rollback requirements.</p>
         </div>
-        <ol class="neb-run-path" aria-label="Example tool-building workflow">
-          <li>
-            <span class="neb-stage-number" aria-hidden="true">01</span>
-            <div><h3>Build with Nemotron</h3><p>Generate the interface, logic and checks.</p><div class="neb-files" aria-label="Generated source files"><code>index.html</code><code>app.js</code><code>checks.cjs</code></div></div>
-          </li>
-          <li>
-            <span class="neb-stage-number" aria-hidden="true">02</span>
-            <div><h3>Run in a Sandbox</h3><p>Execute checks in Nebius Token Factory. Use the output for one repair if needed.</p></div>
-          </li>
-          <li>
-            <span class="neb-stage-number" aria-hidden="true">03</span>
-            <div><h3>Bring the result back</h3><p>Try the tool, inspect the source and review the check output.</p></div>
-          </li>
-        </ol>
-        <div class="neb-review-strip"><span>Preview · source · check output</span><strong>You decide what to keep</strong></div>
+        <div class="neb-recorded-results" aria-label="Two observed results from the recorded tool">
+          <div class="neb-recorded-result"><h3>Incomplete packet</h3><p class="neb-gap-count">3 <span>gaps</span></p><p>Health missing. Review pending. Rollback absent.</p></div>
+          <div class="neb-recorded-result neb-recorded-result-complete"><h3>Corrected packet</h3><p class="neb-gap-count">0 <span>gaps</span></p><p>Ready for human review.</p></div>
+        </div>
+        <div class="neb-review-strip"><span>Observed output from a saved run</span><strong>The tool checks supplied values. You make the decision.</strong></div>
       </figure>
+    </section>
+
+    <section id="recorded-example" class="lp-wrap lp-section neb-interactive-example" tabindex="-1" aria-labelledby="recorded-example-title">
+      <div class="lp-section-head">
+        <span class="lp-eyebrow">Use the actual result</span>
+        <h2 id="recorded-example-title">Try the tool from that run.</h2>
+        <p>Load the incomplete example, then the complete one. Edit the JSON to see how the result changes.</p>
+      </div>
+      <div class="neb-example-toolbar"><p>Recorded October 19 · NVIDIA Nemotron Super through Nebius Token Factory</p><a class="lp-btn lp-btn-sm" href="/api/nebius/examples/release-packet-checker" download="release-packet-checker.html">Download the example tool</a></div>
+      <iframe class="neb-example-frame" src="/api/nebius/examples/release-packet-checker" title="Recorded Nemotron release-packet checker" sandbox="allow-scripts" loading="lazy" referrerpolicy="no-referrer"></iframe>
+      <p class="lp-fine">This recorded example runs in your browser. Playing it does not request new generation or rerun Sandbox checks. Building your own tool uses your configured Nebius account.</p>
+      <p class="lp-fine">Try the recorded example without a new AI call. For fresh generation, configure Nebius with your own credentials and enable builds in your deployment. <a href="https://github.com/wornpage/projects-nebius#run-without-credentials">Source and local setup</a></p>
     </section>
 
     <section id="sandbox" class="lp-how" aria-labelledby="sandbox-title">
@@ -73,12 +92,12 @@
         <div class="lp-section-head">
           <span class="lp-eyebrow">One task. A complete build loop.</span>
           <h2 id="sandbox-title">The next step can be something you can use.</h2>
-          <p>Start with a saved task and clear completion criteria. Open <strong>Next step → Build tool</strong>, review the input and limits, then let the agent work through the run.</p>
+          <p>Start with a saved task and clear completion criteria. Open <strong>Task → Tool</strong>, review the input and limits, then let the agent work through the run.</p>
         </div>
         <div class="neb-workflow-grid">
           <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">1</span><h3>Define the task</h3><p>Give the agent a purpose, a next step and a clear description of done. Preview exactly what you send.</p></article>
           <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">2</span><h3>Generate the tool</h3><p>Nemotron writes a small browser tool from the task you chose, together with checks for its behavior.</p></article>
-          <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">3</span><h3>Run and repair</h3><p>Token Factory Sandboxes execute the checks. If they fail, the agent gets one repair and another check.</p></article>
+          <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">3</span><h3>Run and repair</h3><p>Token Factory Sandboxes execute the checks. If a check fails, the agent may try one repair. If that repair passes validation, the checks can run again.</p></article>
           <article class="neb-workflow-card"><span class="lp-feat-num" aria-hidden="true">4</span><h3>Review the result</h3><p>Open the preview, read the code and check output, and save useful evidence back to the task.</p></article>
         </div>
         <div class="neb-run-limits" aria-label="Per-task execution limits">
@@ -110,12 +129,13 @@
     </section>
   </main>
 
-  <footer class="lp-footer">
+  <footer id="help" class="lp-footer">
     <div class="lp-wrap">
       <small>Wornpage Projects · Powered by NVIDIA Nemotron and Nebius Token Factory</small>
-      <a href="/webmcp-challenge">Guide and workspace backups →</a>
-      <a href="https://devpost.com/software/wornpage-projects-nebius-edition">Recorded tool demonstration →</a>
-      <details class="neb-about"><summary>About this edition</summary><p>Built on our earlier WebMCP workspace and approval controls. The Nebius edition adds project planning, task guidance, evidence review, replanning and a Sandbox execution workflow. Your project stays in this browser; authorized runs also retain their selected task and results on the server for seven days. Download a workspace backup from the Guide to keep saved work.</p></details>
+      <a href="/work?menu=backup">Workspace backup and import →</a>
+      <a href="https://github.com/wornpage/projects-nebius#run-without-credentials">Help and local setup →</a>
+      <a href="https://devpost.com/software/wornpage-projects-nebius-edition">Earlier public demonstration →</a>
+      <details class="neb-about"><summary>About this edition</summary><p>Built on our earlier browser-local workspace and approval controls. The Nebius edition adds project planning, task guidance, evidence review, replanning and a Sandbox execution workflow. Your project stays in this browser; authorized runs also retain their selected task and results on the server for seven days. Download a workspace backup from the Work menu to keep saved work.</p></details>
     </div>
   </footer>
 </body>

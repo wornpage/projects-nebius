@@ -12,6 +12,7 @@
 		ChallengeStateError,
 		type PendingNextActionDraft
 	} from '$lib/demo-client';
+	import { pendingDraftCountFor, pendingDraftHasDuplicateEvidence, pendingDraftReferencesAvailable } from '$lib/pending-next-action.mjs';
 	import {
 		NEXT_ACTION_CHOICES,
 		dueDateLabel,
@@ -22,7 +23,6 @@
 		type DemoPack,
 		type DemoState
 	} from '$lib/demo-workflow';
-	import { recordWebMcpDraftDecision } from '$lib/webmcp-handoff-store';
 	import {
 		WornAlert,
 		WornBadge,
@@ -61,6 +61,10 @@
 	let sourceCount = $derived(recommendation.pack.sources?.length || 0);
 	let currentEvidence = $derived(evidenceFacts(recommendation.pack));
 	let pendingDraft = $derived(pendingNextActionDraftFor($demoState, recommendation.pack.id));
+	let missingDraftReferences = $derived(Boolean(pendingDraft && $demoState && !pendingDraftReferencesAvailable($demoState, pendingDraft)));
+	let duplicateDraftEvidence = $derived(Boolean(pendingDraft && pendingDraftHasDuplicateEvidence(pendingDraft)));
+	let duplicateDraftCount = $derived($demoState ? pendingDraftCountFor($demoState, recommendation.pack.id) : 0);
+	let draftUnavailable = $derived(missingDraftReferences || duplicateDraftEvidence || duplicateDraftCount > 1);
 	let pendingDraftStale = $derived(Boolean(
 		pendingDraft &&
 		$demoState &&
@@ -81,6 +85,7 @@
 	);
 	let editorMatchesDraft = $derived(Boolean(
 		pendingDraft &&
+		!draftUnavailable &&
 		!pendingDraftStale &&
 		pendingDraft.choice === editorChoice &&
 		pendingDraft.mode === editorMode
@@ -98,7 +103,13 @@
 						: 'Prepare for approval'
 	);
 	let draftStatus = $derived(
-		pendingDraftStale
+		duplicateDraftCount > 1
+			? 'Multiple drafts need inspection or group discard'
+			: missingDraftReferences
+			? 'Draft references missing work · inspect or discard it'
+			: duplicateDraftEvidence
+			? 'Draft repeats an evidence reference · inspect or discard it'
+			: pendingDraftStale
 			? 'Stale draft · refresh evidence before approval'
 			: pendingDraft && !editorMatchesDraft
 				? 'Editor changed · update the draft before approval'
@@ -109,7 +120,13 @@
 						: 'No draft yet · workspace unchanged'
 	);
 	let summaryStatus = $derived(
-		pendingDraftStale
+		duplicateDraftCount > 1
+			? 'Multiple drafts for this task'
+			: missingDraftReferences
+			? 'Draft references missing work'
+			: duplicateDraftEvidence
+			? 'Draft repeats an evidence reference'
+			: pendingDraftStale
 			? 'Draft evidence changed'
 			: pendingDraft
 				? editorMatchesDraft ? 'Draft ready for human approval' : 'Draft needs an update'
@@ -192,7 +209,7 @@
 	}
 
 	async function prepareDraft() {
-		if (busy || !recommendation.pack.id) return;
+		if (busy || !recommendation.pack.id || draftUnavailable) return;
 		if (!editorChoice) {
 			errorText = 'Choose or enter a next action before preparing the draft.';
 			return;
@@ -215,9 +232,6 @@
 			if (!savedDraft || savedDraft.choice !== editorChoice || savedDraft.mode !== editorMode) {
 				throw new ChallengeStateError('The prepared draft did not settle.');
 			}
-			if (wasStale && priorDraft?.source === 'webmcp') {
-				recordWebMcpDraftDecision(priorDraft, 'proposal-discarded');
-			}
 			outcomeText = wasStale
 				? 'Fresh draft prepared from current evidence. Workspace unchanged.'
 				: 'Draft prepared. Workspace unchanged until you approve Save.';
@@ -231,8 +245,14 @@
 
 	async function approveDraft() {
 		const consumedDraft = pendingDraft ? structuredClone(pendingDraft) : null;
-		if (busy || !consumedDraft || !editorMatchesDraft || pendingDraftStale) {
-			errorText = pendingDraftStale
+		if (busy || !consumedDraft || !editorMatchesDraft || pendingDraftStale || draftUnavailable) {
+			errorText = duplicateDraftCount > 1
+				? 'Inspect or discard all drafts for this task before approval.'
+				: missingDraftReferences
+				? 'This draft references missing work. Inspect or discard it before approval.'
+				: duplicateDraftEvidence
+				? 'This draft repeats an evidence reference. Inspect or discard it before approval.'
+				: pendingDraftStale
 				? 'Draft is stale. Refresh it from the current evidence before approval.'
 				: 'Prepare the visible action before approving it.';
 			return;
@@ -241,7 +261,6 @@
 		errorText = '';
 		try {
 			const result = await setPackNextAction(recommendation.pack.id);
-			recordWebMcpDraftDecision(consumedDraft, 'proposal-approved');
 			outcomeText = `${result.receipt.summary || 'Next action saved.'} Approved by you.`;
 			displayToast(result.receipt.summary || 'Next action saved.', 'success');
 			await focusOutcome();
@@ -262,7 +281,6 @@
 			if (pendingNextActionDraftFor(state, recommendation.pack.id)) {
 				throw new ChallengeStateError('The pending draft was not discarded.');
 			}
-			recordWebMcpDraftDecision(consumedDraft, 'proposal-discarded');
 			outcomeText = 'Draft discarded. Workspace unchanged.';
 			displayToast('Draft discarded. Workspace unchanged.', 'info');
 			await focusOutcome();
@@ -356,7 +374,7 @@
 					<div class="decision-draft-evidence" data-decision-draft-evidence>
 						<p>{pendingDraft.source === 'webmcp' ? 'Agent-prepared' : 'Human-prepared'} draft cites:</p>
 						<ul>
-							{#each pendingDraft.evidence as reference (`${reference.workId}:${reference.field}`)}
+							{#each pendingDraft.evidence as reference, index (index)}
 								<li>
 									<strong>{evidenceWorkTitle(reference.workId)}</strong>
 									<span>{evidenceFieldLabel(reference.field)}: {reference.expectedValue || 'None'}</span>
@@ -373,7 +391,13 @@
 					<strong>{editorChoice || pendingDraft?.choice || recommendation.pack.next || 'Not set'}</strong>
 				</div>
 				<p id="decision-draft-status" class="decision-draft-status" data-decision-draft-status aria-live="polite">{draftStatus}</p>
-				{#if pendingDraftStale}
+				{#if duplicateDraftCount > 1}
+					<WornAlert tone="warning">Multiple drafts refer to this task. Use Pending approvals to inspect each; discard removes all {duplicateDraftCount} drafts for this task.</WornAlert>
+				{:else if missingDraftReferences}
+					<WornAlert tone="warning">This draft references missing work. Inspect its evidence or discard it before preparing a new action.</WornAlert>
+				{:else if duplicateDraftEvidence}
+					<WornAlert tone="warning">This draft repeats an evidence reference. Inspect its evidence or discard it before preparing a new action.</WornAlert>
+				{:else if pendingDraftStale}
 					<WornAlert tone="warning">The work evidence changed after this draft was prepared. Refresh the draft before approval.</WornAlert>
 				{/if}
 
@@ -384,7 +408,7 @@
 						aria-label="Choose next action"
 						options={ACTION_OPTIONS}
 						bind:value={selectedOption}
-						disabled={busy}
+						disabled={busy || draftUnavailable}
 					/>
 				</div>
 				{#if editorMode === 'custom'}
@@ -396,7 +420,7 @@
 							placeholder="Describe the next action…"
 							maxlength={NEXT_ACTION_MAX_LENGTH}
 							bind:value={customChoice}
-							disabled={busy}
+							disabled={busy || draftUnavailable}
 						/>
 					</div>
 				{/if}
@@ -410,14 +434,14 @@
 							type="submit"
 							data-decision-intent="discard"
 							disabled={busy}
-						>Discard draft</WornButton>
+						>{duplicateDraftCount > 1 ? `Discard all ${duplicateDraftCount} drafts for this task` : 'Discard draft'}</WornButton>
 					{/if}
 					<WornButton
 						type="submit"
 						variant="primary"
 						data-decision-intent={primaryIntent}
 						aria-describedby="decision-draft-status"
-						disabled={busy || !editorChoice}
+						disabled={busy || !editorChoice || draftUnavailable}
 					>{primaryLabel}</WornButton>
 				</div>
 				<p
@@ -513,7 +537,7 @@
 		justify-content: space-between;
 	}
 	.decision-workspace-kicker {
-		color: var(--worn-accent);
+		color: var(--worn-link);
 		font-size: var(--worn-text-sm);
 		font-weight: 800;
 		letter-spacing: .08em;
@@ -582,7 +606,7 @@
 	}
 	.decision-workspace-path li.is-complete strong,
 	.decision-workspace-path li.is-current strong { color: var(--worn-text); }
-	.decision-workspace-path li.is-current span { color: var(--worn-accent); }
+	.decision-workspace-path li.is-current span { color: var(--worn-link); }
 	.decision-editor { margin-block-start: var(--worn-space-5); }
 	.decision-editor-grid {
 		display: grid;

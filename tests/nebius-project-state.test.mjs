@@ -34,7 +34,7 @@ function get(store) { let value; store.subscribe((next) => { value = next; })();
 
 // Execute the actual TypeScript state owner with browser facilities replaced by
 // deterministic storage and locks. No copied persistence/recovery implementation.
-function browserClient(serialized = null, { failWrite = false, failSeed = false, runFetch, runStartFetch } = {}) {
+function browserClient(serialized = null, { failWrite = false, failSeed = false, runFetch, runStartFetch, nebiusEdition = false } = {}) {
 	let saved = serialized;
 	let writes = 0;
 	let removes = 0;
@@ -42,7 +42,7 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false,
 	let runStarts = 0;
 	let tail = Promise.resolve();
 	let pauseNext = null;
-	const context = vm.createContext({ structuredClone, crypto: webcrypto, Date, Error, TypeError, SyntaxError, console,
+	const context = vm.createContext({ structuredClone, crypto: webcrypto, Date, Error, TypeError, SyntaxError, console, __NEBIUS_EDITION__: nebiusEdition,
 		AbortController, DOMException, Headers, TextDecoder, Uint8Array, setTimeout, clearTimeout,
 		localStorage: { getItem() { return saved; }, setItem(key, value) { if (failWrite) throw new Error('Full'); saved = value; writes += 1; }, removeItem() { saved = null; removes += 1; } },
 		navigator: { locks: { request(name, options, operation) {
@@ -93,12 +93,16 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false,
 			const source = readFileSync(new URL('../svelte-frontend/src/routes/next/NebiusTaskRun.svelte', import.meta.url), 'utf8');
 			const script = source.slice(source.indexOf('>') + 1, source.indexOf('</script>'));
 			const parsed = ts.createSourceFile('NebiusTaskRun.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-			const declaration = parsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'resumeSavedRequest');
-			assert.ok(declaration, 'Exercise the actual component function, not a copied retry implementation.');
+			const declarations = ['requireRunSession', 'resumeSavedRequest'].map(name => {
+				const declaration = parsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
+				assert.ok(declaration, `Exercise the actual component ${name} function, not a copied implementation.`);
+				return declaration;
+			});
 			const scheduled = [];
 			const pack = get(client.demoState).packs.find(item => item.id === packId);
 			Object.assign(context, { pack, reference: pack.executionRun, resumeDisabled: false, disposed: false,
 				actionRevision: 0, requestBusy: false, requestLabel: '', error: '', notice: '',
+				configSessionRequired: false, runSessionGates: {},
 				startRun: execution.startRun, NebiusRunClientError: execution.NebiusRunClientError,
 				clearUnsentExecutionRunReference: client.clearUnsentExecutionRunReference,
 				applyRecord: (id, key, record) => client.saveExecutionRunRecord(packId, id, key, record),
@@ -107,9 +111,23 @@ function browserClient(serialized = null, { failWrite = false, failSeed = false,
 					return current?.id === packId && current.executionRun?.id === id && current.executionRun.key === key;
 				},
 				scheduleRefresh: (...args) => scheduled.push(args) });
-			const code = ts.transpileModule(declaration.getText(parsed), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+			// Evaluate the actual derived session expressions against this context;
+			// a constant false stub would hide a gate set by requireRunSession.
+			for (const name of ['currentSessionKey', 'runSessionRequired', 'sessionRequired']) {
+				const declaration = parsed.statements.filter(ts.isVariableStatement)
+					.flatMap(node => [...node.declarationList.declarations]).find(node => node.name.getText(parsed) === name);
+				const initializer = declaration?.initializer;
+				assert.ok(initializer && ts.isCallExpression(initializer)
+					&& initializer.expression.getText(parsed) === '$derived' && initializer.arguments.length === 1,
+				`Bind the actual ${name} derived expression.`);
+				new vm.Script(`Object.defineProperty(globalThis, ${JSON.stringify(name)}, { configurable: true,
+					get() { return ${initializer.arguments[0].getText(parsed)}; } });`,
+					{ filename: `NebiusTaskRun.${name}.ts` }).runInContext(context);
+			}
+			const code = ts.transpileModule(declarations.map(node => node.getText(parsed)).join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 			await new vm.Script(`(async () => { ${code}\n await resumeSavedRequest(); })()`, { filename: 'NebiusTaskRun.resumeSavedRequest.ts' }).runInContext(context);
-			return { scheduled, error: context.error, notice: context.notice, requestBusy: context.requestBusy };
+			return { scheduled, error: context.error, notice: context.notice, requestBusy: context.requestBusy,
+				configSessionRequired: context.configSessionRequired, runSessionGates: { ...context.runSessionGates }, sessionRequired: context.sessionRequired };
 		},
 		pauseWrite(promise) { pauseNext = promise; }, overwrite(value) { saved = value; } };
 }
@@ -168,7 +186,8 @@ test('approved tool input requirements survive consent, task saving, export and 
 	await browser.client.refreshDemoState();
 	let pack = get(browser.client.demoState).packs.find(item => item.id === 'approval-1:research');
 	const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
-	assert.equal(input.version, 'browser-tool.v2');
+	assert.equal(input.version, 'browser-tool.v3');
+	assert.equal(input.requiredOutputs, null);
 	assert.deepEqual(json(input.requiredInputFormats), [{ id: 'packet', format: 'json' }]);
 	const signature = browser.client.packPathSignature(pack);
 	await browser.client.savePackPath(pack.id, { executionInputs: [{ id: 'notes', format: 'text' }] }, signature);
@@ -184,6 +203,30 @@ test('approved tool input requirements survive consent, task saving, export and 
 	const reloaded = browserClient(destination.saved);
 	await reloaded.client.refreshDemoState();
 	assert.deepEqual(json(get(reloaded.client.demoState).packs.find(item => item.id === pack.id).executionInputs), [{ id: 'notes', format: 'text' }]);
+});
+
+test('long completion criteria survive saving and reload without changing the old request', async () => {
+	const browser = browserClient(envelope(approve().state), { nebiusEdition: true });
+	await browser.client.refreshDemoState();
+	let pack = get(browser.client.demoState).packs.find(item => item.id === 'approval-1:research');
+	const oldInput = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+	const reference = { id: '00000000-0000-4000-8000-000000000001', key: 'a'.repeat(64), input: oldInput, record: null };
+	const criteria = `${'A'.repeat(1320)} done safely.`;
+	assert.ok(criteria.length > 1000);
+	await browser.client.savePackPath(pack.id, { doneWhen: criteria }, browser.client.packPathSignature(pack));
+	pack = get(browser.client.demoState).packs.find(item => item.id === pack.id);
+	assert.equal(pack.doneWhen, criteria);
+	assert.equal(oldInput.pack.doneWhen, 'Facts\tare documented.');
+	assert.equal(browser.client.executionRunMatchesCurrentTask(pack, reference), false);
+	const reloaded = browserClient(browser.saved, { nebiusEdition: true });
+	await reloaded.client.refreshDemoState();
+	const reloadedPack = get(reloaded.client.demoState).packs.find(item => item.id === pack.id);
+	assert.equal(reloadedPack.doneWhen, criteria);
+	assert.equal(reloaded.client.buildExecutionRunInput(reloadedPack, 'nvidia/synthetic-checker-fixture').pack.doneWhen, criteria);
+	const before = reloaded.saved;
+	await assert.rejects(reloaded.client.savePackPath(pack.id, { doneWhen: 'x'.repeat(4001) }, reloaded.client.packPathSignature(reloadedPack)), /at most 4000/u);
+	assert.equal(reloaded.saved, before);
+	assert.throws(() => reloaded.client.previewWorkspaceImport(envelope({ packs: [{ id: 'bad', title: 'Bad', status: 'active', doneWhen: 'x'.repeat(4001) }] })), /invalid doneWhen/u);
 });
 
 test('input requirement changes are atomic, stale guarded and refused during a run', async () => {
@@ -212,7 +255,7 @@ test('specifying current inputs does not add inferred requirements to a legacy s
 	await browser.client.refreshDemoState();
 	const pack = get(browser.client.demoState).packs[1];
 	const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
-	input.version = 'browser-tool.v1'; delete input.requiredInputFormats;
+	input.version = 'browser-tool.v1'; delete input.requiredInputFormats; delete input.requiredOutputs;
 	const reference = { id: '00000000-0000-4000-8000-000000000003', key: 'c'.repeat(64), input, record: null };
 	assert.equal(browser.client.executionRunMatchesCurrentTask(pack, reference), true);
 	assert.equal(browser.client.executionRunMatchesCurrentTask({ ...pack, executionInputs: [{ id: 'packet', format: 'json' }] }, reference), false);
@@ -224,7 +267,8 @@ function savedReservation(number = 1, version = 'browser-tool.v1') {
 	const state = approve().state;
 	const pack = state.packs[1];
 	const input = dependencies['nebius-execution-contract.mjs'].validateRunInput({
-		version, ...(version === 'browser-tool.v2' ? { requiredInputFormats: null } : {}),
+		version, ...(version !== 'browser-tool.v1' ? { requiredInputFormats: null } : {}),
+		...(version === 'browser-tool.v3' ? { requiredOutputs: null } : {}),
 		packId: pack.id, pack: dependencies['nebius-contract.mjs'].projectTask(pack),
 		currentStatus: pack.status, context: [], requestedModel: 'nvidia/synthetic-checker-fixture', consent: true
 	});
@@ -272,6 +316,9 @@ for (const [name, status, code] of [
 	assert.equal(browser.runStarts, 2, 'Both POSTs are authored transport fixtures, not model or Sandbox calls.');
 	assert.equal(browser.runReads, 0);
 	assert.equal(resumed.requestBusy, false);
+	assert.equal(resumed.configSessionRequired, false);
+	assert.deepEqual(resumed.runSessionGates, {}, 'An ordinary retry rejection must not create a session gate.');
+	assert.equal(resumed.sessionRequired, false);
 	assert.match(resumed.notice, /saved request is preserved/u);
 	assert.equal(resumed.scheduled.length, 1);
 	assert.deepEqual(resumed.scheduled[0].slice(0,3), [pack.id, reference.id, reference.key]);
@@ -300,7 +347,7 @@ test('format change keeps the reload diagnostic and an uncertain current-client 
 });
 
 test('an unresolved current request can be retired after task drift without starting replacement work', async () => {
-	const { state, packId, reference } = savedReservation(41, 'browser-tool.v2');
+	const { state, packId, reference } = savedReservation(41, 'browser-tool.v3');
 	const browser = browserClient(envelope(state), { runFetch: notFoundResponse,
 		runStartFetch: () => { throw new Error('Authored lost start response'); } });
 	await browser.client.refreshDemoState();
@@ -373,7 +420,7 @@ test(`confirmed ${version} retirement rereads the server, preserves unknown hist
 	await browser.client.savePackPath(packId, { executionInputs: [{ id: 'packet', format: 'json' }] }, browser.client.packPathSignature(saved));
 	const pack = get(browser.client.demoState).packs.find(item => item.id === packId);
 	const input = browser.client.buildExecutionRunInput(pack, reference.input.requestedModel);
-	assert.equal(input.version, 'browser-tool.v2');
+	assert.equal(input.version, 'browser-tool.v3');
 	assert.deepEqual(json(input.requiredInputFormats), [{ id: 'packet', format: 'json' }]);
 	assert.equal(pack.executionRun, undefined, 'retirement must not reserve or start a replacement');
 	await assert.rejects(browser.client.reserveExecutionRunReference(packId, { ...reference, input }), /retired task execution id/u);
@@ -711,4 +758,60 @@ test('selection validates explicit project ids; full reset clears projects and t
 	assert.equal(reset.packs[0].projectId, undefined);
 	assert.equal(browser.saved, null);
 	assert.equal(browser.removes, 1);
+});
+
+test('authored outputs survive project creation, v3 consent, export/import and reload', async () => {
+  const plan = makePlan();
+  plan.tasks[0].executionInputs = [{ id: 'plan', format: 'json' }];
+  plan.tasks[0].executionOutputs = [{ id: 'schedule', format: 'timeline' }];
+  const approved = approve(seed(), { plan });
+  assert.deepEqual(approved.tasks[0].executionOutputs, plan.tasks[0].executionOutputs);
+  assert.notEqual(approved.tasks[0].executionOutputs, plan.tasks[0].executionOutputs);
+  assert.throws(() => approve(seed(), { plan, source: 'nebius' }));
+  const browser = browserClient(envelope(approved.state));
+  await browser.client.refreshDemoState();
+  const pack = get(browser.client.demoState).packs[1];
+  const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+  assert.equal(input.version, 'browser-tool.v3');
+  assert.deepEqual(json(input.requiredOutputs), plan.tasks[0].executionOutputs);
+  const destination = browserClient();
+  await destination.client.refreshDemoState();
+  await destination.client.importWorkspaceState(browser.client.exportWorkspaceState(), 'replace');
+  const reloaded = browserClient(destination.saved);
+  await reloaded.client.refreshDemoState();
+  assert.deepEqual(json(get(reloaded.client.demoState).packs.find(item => item.id === pack.id).executionOutputs), plan.tasks[0].executionOutputs);
+});
+
+test('output transactions reject collisions, stale edits and in-flight changes atomically', async () => {
+  const browser = browserClient(envelope(approve().state));
+  await browser.client.refreshDemoState();
+  let pack = get(browser.client.demoState).packs[1];
+  const original = browser.client.packPathSignature(pack);
+  await browser.client.savePackPath(pack.id, { executionOutputs: [{ id: 'summary', format: 'text' }] }, original);
+  pack = get(browser.client.demoState).packs[1];
+  assert.notEqual(browser.client.packPathSignature(pack), original);
+  const saved = browser.saved;
+  await assert.rejects(browser.client.savePackPath(pack.id, { executionOutputs: [] }, original), /Saved work changed/);
+  await assert.rejects(browser.client.savePackPath(pack.id, { executionInputs: [{ id: 'summary', format: 'text' }] }));
+  await assert.rejects(browser.client.savePackPath(pack.id, { executionInputs: [{ id: 'data', format: 'json' }], executionOutputs: [{ id: 'data', format: 'text' }] }));
+  assert.equal(browser.saved, saved);
+  const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+  await browser.client.reserveExecutionRunReference(pack.id, { id: '00000000-0000-4000-8000-000000000099', key: 'a'.repeat(64), input, record: null });
+  const reserved = browser.saved;
+  await assert.rejects(browser.client.savePackPath(pack.id, { executionOutputs: null }), /finish the current run/);
+  assert.equal(browser.saved, reserved);
+});
+
+test('v2 matching retains input semantics and never gains a v3 output declaration', async () => {
+  const browser = browserClient(envelope(approve().state));
+  await browser.client.refreshDemoState();
+  const pack = { ...get(browser.client.demoState).packs[1], executionInputs: [{ id: 'data', format: 'json' }] };
+  const input = browser.client.buildExecutionRunInput(pack, 'nvidia/synthetic-checker-fixture');
+  input.version = 'browser-tool.v2'; delete input.requiredOutputs;
+  const reference = { id: '00000000-0000-4000-8000-000000000098', key: 'b'.repeat(64), input, record: null };
+  const original = JSON.stringify(reference);
+  assert.equal(browser.client.executionRunMatchesCurrentTask(pack, reference), true);
+  assert.equal(browser.client.executionRunMatchesCurrentTask({ ...pack, executionOutputs: [] }, reference), false);
+  assert.equal(browser.client.executionRunMatchesCurrentTask({ ...pack, executionInputs: [] }, reference), false);
+  assert.equal(JSON.stringify(reference), original);
 });

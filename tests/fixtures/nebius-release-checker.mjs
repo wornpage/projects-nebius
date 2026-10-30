@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { generateRunFiles } from '../../worker/nebius-run-provider.mjs';
-import { runFilesDigest, validateRunInput, validateRunIntegrity } from '../../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { streamEnvelope } from '../helpers/nebius-stream-fixture.mjs';
+import { RUN_VERSION, runFilesDigest, validateRunInput, validateRunIntegrity } from '../../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 // Authored test input, never a retained model response or an app starter result.
 // Do not load provider credentials, emit run records, or persist this fixture in a workspace.
 export const FIXTURE_MODEL = 'nvidia/synthetic-checker-fixture';
 export const FIXTURE_INPUT = validateRunInput({
-  version: 'browser-tool.v2', packId: 'authored-release-checker', currentStatus: 'active', requiredInputFormats: null,
+  version: RUN_VERSION, packId: 'authored-release-checker', currentStatus: 'active', requiredInputFormats: null, requiredOutputs: null,
   pack: {
     title: 'Authored release-packet checker fixture', blocker: 'None',
     purpose: 'Check supplied packet text only; never approve or deploy a release.',
@@ -144,8 +145,7 @@ for (const packet of [{ ...corrected, health: 'green' }, { ...corrected, review:
 }
 
 export function nativeFileBlocks(files) {
-  return files.map(file => '```' + (file.path === 'index.html' ? 'html' : 'javascript')
-    + ' ' + file.path + '\n' + file.content + '\n```').join('\n\n');
+  return JSON.stringify(Object.fromEntries(files.map(file => [file.path, file.content])));
 }
 
 // Only the transport is substituted. The real response parser, validators and
@@ -161,9 +161,14 @@ export async function materializeAuthoredChecker(files = authoredCheckerFiles(),
         assert.equal(options.redirect, 'manual');
         const request = JSON.parse(options.body);
         assert.equal(request.model, FIXTURE_MODEL);
-        assert.equal(request.max_tokens, 8000);
-        assert.equal(Object.hasOwn(request, 'response_format'), false);
-        return Response.json({ model: FIXTURE_MODEL,
+        assert.equal(request.max_tokens, 32000);
+        assert.deepEqual(request.chat_template_kwargs, repair === null
+          ? {enable_thinking: true, low_effort: true, force_nonempty_content: true}
+          : {enable_thinking: true, low_effort: true, force_nonempty_content: true});
+        assert.equal(request.response_format.type, 'json_schema');
+        assert.equal(request.stream, true);
+        assert.deepEqual(request.stream_options, { include_usage: true });
+        return streamEnvelope({ model: FIXTURE_MODEL,
           usage: { prompt_tokens: 0, completion_tokens: 0 },
           choices: [{ finish_reason: 'stop', message: {
             role: 'assistant', content: nativeFileBlocks(files),
@@ -188,4 +193,29 @@ export async function authoredPreviewReference(files) {
     usage: { modelCalls: 1, inputTokens: 0, outputTokens: 0, totalsComplete: true }, error: null, failure: null,
   });
   return { id: record.id, key: '0'.repeat(64), input: structuredClone(FIXTURE_INPUT), record };
+}
+
+
+// Restored historical v3 record fixture only. Do not schedule a three-call run
+// through the current engine or mistake authored history for provider evidence.
+export async function authoredThreeAttemptReference(status='ready') {
+  assert(['ready','failed','cancelled','uncertain'].includes(status));
+  const sources=[1,2,3].map(attempt=>{
+    const files=authoredCheckerFiles();files[1].content+='\n// Authored historical response '+attempt+'.';return files;
+  });
+  const reference=await authoredPreviewReference(await materializeAuthoredChecker(sources[2]));
+  const checks=[];
+  for(const attempt of [1,2,3]){
+    const files=structuredClone(reference.record.files);
+    files[1].content=files[1].content.replace('Authored historical response 3.','Authored historical response '+attempt+'.');
+    checks.push({...reference.record.checks[0],attempt,operationId:'00000000-0000-4000-8000-'+String(20+attempt).padStart(12,'0'),
+      exitCode:status==='ready'&&attempt===3?0:1,sourceDigest:await runFilesDigest(files)});
+  }
+  reference.record=await validateRunIntegrity({...reference.record,status,attempt:3,
+    checks:['cancelled','uncertain'].includes(status)?checks.slice(0,2):checks,
+    generationAttempts:sources.map((files,index)=>({attempt:index+1,outcome:'accepted',responseText:nativeFileBlocks(files),retention:'retained',diagnostic:null})),
+    usage:{modelCalls:3,inputTokens:30,outputTokens:60,totalsComplete:true},
+    error:['ready','cancelled'].includes(status)?null:'Authored historical '+status+' record.',
+    failure:status==='failed'?{code:'sandbox_checks_failed',stage:'sandbox'}:status==='uncertain'?{code:'generation_uncertain',stage:'generation'}:null});
+  return reference;
 }

@@ -4,6 +4,23 @@
 /** @typedef {{ pendingNextActionDrafts?: PendingDraft[] }} PendingDraftContainer */
 /** @typedef {{ title?: string, workflow?: string, blocker?: string | null, next?: string, [key: string]: unknown }} PendingProjection */
 
+/** @param {{ packs: { id: string }[] }} state @param {PendingDraft} draft @returns {boolean} */
+export function pendingDraftReferencesAvailable(state, draft) {
+	return Boolean(state.packs.some((item) => item.id === draft.workId) &&
+		draft.evidence.every((reference) => state.packs.some((item) => item.id === reference.workId)));
+}
+
+/** @param {PendingDraft} draft @returns {boolean} */
+export function pendingDraftHasDuplicateEvidence(draft) {
+	const pairs = draft.evidence.map((reference) => JSON.stringify([reference.workId, reference.field]));
+	return new Set(pairs).size !== pairs.length;
+}
+
+/** @param {{ pendingNextActionDrafts?: PendingDraft[] }} state @param {string} workId @returns {number} */
+export function pendingDraftCountFor(state, workId) {
+	return (state.pendingNextActionDrafts || []).filter((draft) => draft.workId === workId).length;
+}
+
 /** @template {{ id: string }} TPack @param {{ packs: TPack[], pendingNextActionDrafts?: PendingDraft[] }} state @param {PendingDraft} draft @param {(pack: TPack) => PendingProjection} projectPack @returns {string} */
 export function pendingDraftFingerprint(state, draft, projectPack) {
 	const origin = state.packs.find((pack) => pack.id === draft.workId);
@@ -54,12 +71,6 @@ export function revisePendingDraftChoice(state, { workId, choice, mode }, projec
 	return draft;
 }
 
-/** @param {PendingDraftContainer} state @param {string} workId @param {PendingDraft | null} priorDraft @returns {void} */
-export function restorePendingDraft(state, workId, priorDraft) {
-	if (priorDraft) upsertPendingDraft(state, priorDraft);
-	else discardPendingDraft(state, workId);
-}
-
 /** @param {PendingDraftContainer} state @returns {{ count: number, resumeHref: string }} */
 export function pendingDraftNavigation(state) {
 	const drafts = state.pendingNextActionDrafts || [];
@@ -101,11 +112,15 @@ export async function resetPersistedState({ remove, loadSeed, install }) {
 export function approvePendingDraft(state, workId, { projectPack, nextPath }) {
 	const draft = (state.pendingNextActionDrafts || []).find((candidate) => candidate.workId === workId) || null;
 	if (!draft) throw new Error('Pending approval draft was not found.');
+	if (pendingDraftCountFor(state, workId) > 1) throw new Error('Multiple drafts refer to this work. Inspect or discard them before approval.');
+	if (pendingDraftHasDuplicateEvidence(draft)) throw new Error('This draft repeats an evidence reference. Inspect or discard it before approval.');
+	const pack = state.packs.find((item) => item.id === workId);
+	if (!pack || !pendingDraftReferencesAvailable(state, draft)) {
+		throw new Error('Pending approval refers to missing work. Discard it or restore the missing work first.');
+	}
 	if (pendingDraftFingerprint(state, draft, projectPack) !== draft.originFingerprint) {
 		throw new Error('Draft is stale. Refresh the evidence and prepare it again before approval.');
 	}
-	const pack = state.packs.find((item) => item.id === workId);
-	if (!pack) throw new Error('Pending approval work item was not found.');
 	Object.assign(pack, nextPath(pack, draft.choice));
 	discardPendingDraft(state, workId);
 	return { pack, draft };

@@ -15,7 +15,38 @@ export function decisionWorkspaceNextHref(workId) {
 export function decisionWorkspaceReviewHref(workId) {
 	const normalizedId = exactWorkId(workId);
 	if (!normalizedId) throw new TypeError('Decision Workspace navigation requires an exact work item id.');
-	return `/review?focus=${encodeURIComponent(normalizedId)}`;
+	return `/next?pack=${encodeURIComponent(normalizedId)}&view=review`;
+}
+
+/**
+ * Preserve saved URLs while Work and Task own the current screens.
+ * @param {'priority' | 'review' | 'help'} route
+ * @param {{search: string, hash: string}} url
+ * @returns {{href: string, document: boolean}}
+ */
+export function savedNebiusLinkDestination(route, url) {
+	const params = new URLSearchParams(url.search);
+	if (route === 'priority') {
+		params.set('filter', 'review');
+		return {href: `/work?${params.toString()}${url.hash}`, document: false};
+	}
+	if (route === 'review') {
+		const focus = params.getAll('focus');
+		params.delete('focus');
+		if (focus.length === 1 && focus[0]) {
+			params.set('pack', focus[0]); params.set('view', 'review');
+			return {href: `/next?${params.toString()}${url.hash}`, document: false};
+		}
+		params.set('filter', 'review');
+		return {href: `/work?${params.toString()}${url.hash}`, document: false};
+	}
+	if (route !== 'help') throw new TypeError('Unknown saved route.');
+	if (params.get('menu') === 'backup' || /backup|restore|portability/i.test(url.hash)) {
+		params.set('menu', 'backup');
+		return {href: `/work?${params.toString()}${url.hash}`, document: false};
+	}
+	const search = params.toString();
+	return {href: `/landing.html${search ? `?${search}` : ''}${url.hash || '#help'}`, document: true};
 }
 
 export const PENDING_DECISION_CONTEXT = 'pending-decision';
@@ -52,26 +83,6 @@ export function decisionWorkspaceWorkFocusRequest(searchParams) {
 	const workIds = params.getAll('focus');
 	if (contexts.length !== 1 || workIds.length !== 1) return { present: true, workId: '' };
 	return { present: true, workId: boundedPendingDecisionId(workIds[0]) || '' };
-}
-
-/**
- * Accept one exact focus request only. The Review route still has to prove the
- * requested id is in its currently rendered review queue before focusing it.
- *
- * @param {unknown} searchParams
- * @returns {{ present: boolean, workId: string }}
- */
-export function decisionWorkspaceReviewFocusRequest(searchParams) {
-	if (!searchParams || typeof /** @type {{ getAll?: unknown }} */ (searchParams).getAll !== 'function') {
-		return { present: false, workId: '' };
-	}
-	const params = /** @type {{ getAll: (name: string) => string[] }} */ (searchParams);
-	const workIds = params.getAll('focus');
-	if (workIds.length === 0) return { present: false, workId: '' };
-	return {
-		present: true,
-		workId: workIds.length === 1 ? exactWorkId(workIds[0]) || '' : ''
-	};
 }
 
 /**

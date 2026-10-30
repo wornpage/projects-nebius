@@ -2,6 +2,11 @@ import { DurableObject } from 'cloudflare:workers';
 import { handleNebiusApi } from './nebius-api.mjs';
 import { reserveDailyCall } from './nebius-budget.mjs';
 import { handleNebiusRuns, NebiusRun } from './nebius-runs.mjs';
+import { handleRecordedExample, RECORDED_EXAMPLE_PATH } from './nebius-recorded-example.mjs';
+import { handleRecoveryExample, isRecoveryExamplePath } from './nebius-recovery-example.mjs';
+import { handleBuildInfo } from './nebius-build-info.mjs';
+import { preventFailedAssetCaching } from './asset-cache-guard.mjs';
+import { RUN_LIMITS } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -20,7 +25,7 @@ export class NebiusBudget extends DurableObject {
   reserve(limit) { return reserveDailyCall(this.ctx.storage, limit); }
 
   async reserveExecution(id, admissionId, attempt, limit, now = new Date()) {
-    if (!validBudgetId(id) || !validBudgetId(admissionId) || ![1, 2].includes(attempt) || !Number.isSafeInteger(limit) || limit < 1 || limit > 10000) {
+    if (!validBudgetId(id) || !validBudgetId(admissionId) || !Number.isSafeInteger(attempt) || attempt < 1 || attempt > RUN_LIMITS.maxModelCalls || !Number.isSafeInteger(limit) || limit < 1 || limit > 10000) {
       throw new Error('Invalid execution budget request.');
     }
     const day = now.toISOString().slice(0, 10);
@@ -79,6 +84,13 @@ export { NebiusRun };
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
+    if (/^\/_app(?:-r191)?\/immutable\//u.test(path)) {
+      const response = await env.ASSETS.fetch(request);
+      return preventFailedAssetCaching(response);
+    }
+    if (path === '/api/nebius/build-info') return handleBuildInfo(request, env);
+    if (path === RECORDED_EXAMPLE_PATH) return handleRecordedExample(request);
+    if (isRecoveryExamplePath(path)) return handleRecoveryExample(request);
     if (path.startsWith('/api/nebius/runs/')) return handleNebiusRuns(request, env);
     if (path.startsWith('/api/nebius/')) return handleNebiusApi(request, env);
     return env.ASSETS.fetch(request);

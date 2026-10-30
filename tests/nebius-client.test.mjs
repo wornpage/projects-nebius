@@ -12,6 +12,25 @@ function harness(fetcher) {
   } });
   return { client, calls, views, last: () => views.at(-1) };
 }
+test('routine failure details retain known or unknown usage without creating changes', async () => {
+  for (const usage of [{ input_tokens: 30, output_tokens: 20 }, null]) {
+    const failure = { providerAttempted: true, usageUnknown: usage === null, usage, diagnostic: 'Invalid task-change fields.' };
+    const h = harness((_, options) => Response.json(options.method === 'POST' ? { code: 'invalid_model_output', ...failure } : config, { status: options.method === 'POST' ? 502 : 200 }));
+    await h.client.setTask('one', pack); await h.client.generate();
+    assert.equal(h.last().phase, 'error'); assert.equal(h.last().result, null); assert.deepEqual(h.last().failure, failure);
+    await h.client.setTask('two', { ...pack, title: 'Another task' }); assert.equal(h.last().failure, null);
+    assert.equal(h.calls.filter(call => call.options.method === 'POST').length, 1);
+  }
+});
+
+test('routine late failure cannot restore old diagnostics after a task change', async () => {
+  const pending = deferred(), h = harness((_, options) => options.method === 'POST' ? pending.promise : Response.json(config));
+  await h.client.setTask('one', pack); const generation = h.client.generate();
+  await h.client.setTask('two', { ...pack, title: 'New task' });
+  pending.resolve(Response.json({ code: 'invalid_model_output', providerAttempted: true, usageUnknown: true, usage: null, diagnostic: 'Old failure.' }, { status: 502 }));
+  await generation; assert.equal(h.last().phase, 'ready'); assert.equal(h.last().failure, null); assert.equal(h.last().result, null);
+});
+
 test('routine client asks for its operation and refuses another role or token cap', async () => {
   for (const override of [{ operation: 'review-evidence' }, { modelRole: 'reasoning' }, { maxOutputTokens: 4000 }]) {
     const h = harness(() => Response.json({ ...config, ...override })); await h.client.setTask('one', pack);

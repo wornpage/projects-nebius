@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pendingDraftFingerprint, discardPendingNextActionDraft, displayToast, type PendingNextActionDraft } from '$lib/demo-client';
-	import { evidenceFacts, isOpenDecision, workTitle, type DemoPack } from '$lib/demo-workflow';
+	import { pendingDraftCountFor, pendingDraftHasDuplicateEvidence, pendingDraftReferencesAvailable } from '$lib/pending-next-action.mjs';
+	import { canSetNextAction, evidenceFacts, isOpenDecision, workTitle, type DemoPack } from '$lib/demo-workflow';
 	import { pendingDecisionWorkHref } from '$lib/decision-workspace-navigation.mjs';
 	import { WornAlert, WornButton, WornDialog } from '$lib/components';
 
@@ -17,9 +18,11 @@
 		return packs.find((pack) => pack.id === workId) || null;
 	}
 
-	function draftStatus(draft: PendingNextActionDraft): 'fresh' | 'stale' | 'orphaned' {
+	function draftStatus(draft: PendingNextActionDraft): 'fresh' | 'stale' | 'orphaned' | 'ambiguous' {
+		if (pendingDraftCountFor({ pendingNextActionDrafts: drafts }, draft.workId) > 1) return 'ambiguous';
 		const origin = packFor(draft.workId);
-		if (!origin || draft.evidence.some((fact) => !packFor(fact.workId))) return 'orphaned';
+		if (!origin || !canSetNextAction(origin) || !pendingDraftReferencesAvailable({ packs }, draft)) return 'orphaned';
+		if (pendingDraftHasDuplicateEvidence(draft)) return 'ambiguous';
 		const state = { packs, pendingNextActionDrafts: drafts };
 		return pendingDraftFingerprint(state, draft) === draft.originFingerprint ? 'fresh' : 'stale';
 	}
@@ -44,22 +47,29 @@
 		<p class="pending-center-empty">No pending approvals.</p>
 	{:else}
 		<div class="pending-center-list" role="list" aria-label="Pending approval proposals">
-			{#each drafts as draft (draft.workId)}
+			{#each drafts as draft, index (index)}
 				{@const pack = packFor(draft.workId)}
 				{@const status = draftStatus(draft)}
-				{@const workResumeHref = pack && isOpenDecision(pack) ? pendingDecisionWorkHref(draft.workId) : null}
+				{@const sameWorkCount = pendingDraftCountFor({ pendingNextActionDrafts: drafts }, draft.workId)}
+				{@const workResumeHref = status !== 'orphaned' && status !== 'ambiguous' && pack && isOpenDecision(pack) ? pendingDecisionWorkHref(draft.workId) : null}
 				<article class="pending-center-item" role="listitem">
 					<div class="pending-center-head">
 						<div><h3>{pack ? workTitle(pack) : `Missing work item ${draft.workId}`}</h3><span>{draft.source === 'webmcp' ? 'Prepared by browser agent' : 'Prepared by you'} · {draft.mode === 'custom' ? 'Custom action' : 'Preset action'}</span></div>
 						<strong class:status-fresh={status === 'fresh'} class:status-stale={status !== 'fresh'}>{status}</strong>
 					</div>
 					<div class="pending-center-action"><span>Proposed action</span><b>{draft.choice}</b></div>
-					{#if status === 'orphaned'}
-						<WornAlert tone="warning">This proposal references work that no longer exists. Discard it to clear the orphan.</WornAlert>
+					{#if status === 'ambiguous'}
+						<WornAlert tone="warning">{sameWorkCount > 1 ? `Multiple drafts refer to this work. Inspect each one; discarding removes all ${sameWorkCount} drafts for this work item.` : 'This draft repeats an evidence reference. Inspect or discard it before preparing another.'}</WornAlert>
+					{:else if status === 'orphaned'}
+						<WornAlert tone="warning">This proposal references missing work or a completed task. Review its details here, then discard it if no longer needed.</WornAlert>
 					{:else if status === 'stale'}
 						<WornAlert tone="warning">Workspace facts changed. Re-prepare this proposal before saving.</WornAlert>
-					{:else}
-						<div class="pending-center-evidence"><span>Verified evidence</span><p>{draft.evidenceNote || `${evidenceFacts(pack!).workflow} is still current.`}</p></div>
+					{/if}
+					{#if draft.evidenceNote || status === 'fresh'}
+						<div class="pending-center-evidence"><span>Recorded evidence</span><p>{draft.evidenceNote || `${evidenceFacts(pack!).workflow} is still current.`}</p></div>
+					{/if}
+					{#if (status === 'orphaned' || status === 'ambiguous') && draft.evidence.length}
+						<div class="pending-center-evidence"><span>Saved references</span><ul>{#each draft.evidence as fact}<li>{fact.workId} · {fact.field}: {fact.expectedValue ?? 'None'}</li>{/each}</ul></div>
 					{/if}
 					<div class="pending-center-actions">
 						{#if workResumeHref}
@@ -72,8 +82,8 @@
 								onclick={() => (open = false)}
 							>Open in Work</WornButton>
 						{/if}
-						<WornButton size="sm" href={`/next?pack=${encodeURIComponent(draft.workId)}`} onclick={() => (open = false)}>Review on Next</WornButton>
-						<WornButton size="sm" variant="danger" type="button" disabled={busyId === draft.workId} onclick={() => discard(draft.workId)}>{busyId === draft.workId ? 'Discarding…' : 'Discard'}</WornButton>
+						{#if status !== 'orphaned' && status !== 'ambiguous'}<WornButton size="sm" href={`/next?pack=${encodeURIComponent(draft.workId)}`} onclick={() => (open = false)}>Review on Next</WornButton>{/if}
+						<WornButton size="sm" variant="danger" type="button" disabled={busyId === draft.workId} onclick={() => discard(draft.workId)}>{busyId === draft.workId ? 'Discarding…' : sameWorkCount > 1 ? `Discard all ${sameWorkCount} drafts for this task` : 'Discard'}</WornButton>
 					</div>
 				</article>
 			{/each}

@@ -216,11 +216,17 @@ for (const entrypoint of ['action', 'batch']) {
     assert.deepEqual(json(browser.workflow.receiptReadyPacks(current.actionReceipt, current.packs, projectId)), []); assert.equal(get(browser.undo.receiptUndo), null);
   });
 }
-test('Work ready links are Nebius-only, live-filtered, encoded and nested inside the dismissible receipt block', () => {
+test('Work ready links stay Nebius-only, scoped, encoded and gated by receipt visibility', () => {
   const source = readFileSync(new URL('../svelte-frontend/src/routes/work/+page.svelte', import.meta.url), 'utf8');
   assert.match(source, /readyNextPacks = \$derived\(__NEBIUS_EDITION__ \? receiptReadyPacks\(receipt, packs, selectedProjectId\)/u);
-  const start = source.indexOf('{#if receiptVisible && receipt}'), end = source.indexOf('{#if errorText}', start), block = source.slice(start, end);
-  assert(block.includes('data-ready-next')); assert(block.includes('aria-label="Ready next"')); assert(block.includes('{#if __NEBIUS_EDITION__ && readyNextPacks.length}'));
-  assert(block.includes('encodeURIComponent(pack.id)')); assert(block.includes('{workTitle(pack)}')); assert(block.includes('ondone={() => (dismissedReceiptSummary = receipt?.summary || \'\')}'));
+  const start = /\{#if __NEBIUS_EDITION__\}\r?\n\s*<NebiusProjectWorkspace/u.exec(source)?.index ?? -1;
+  const end = source.indexOf('<WorkQuickAdd', start), block = source.slice(start, end);
+  assert(start >= 0 && end > start);
+  assert(block.includes('data-ready-next')); assert(block.includes('aria-labelledby="ready-next-heading"')); assert(block.includes('{#if receiptVisible && additionalReadyPacks.length}'));
+  assert.match(source, /additionalReadyPacks = \$derived\(nebiusContinuePack\s*\? readyNextPacks\.filter\(\(pack\) => pack\.id !== nebiusContinuePack\?\.id\)\s*: readyNextPacks\)/u);
+  assert.match(source, /\.demo-ready-next a, \.demo-ready-next a:visited \{[^}]*color: var\(--worn-text\)/u, 'visited links do not fall back to browser purple');
+  assert.match(source, /\.demo-ready-next a:focus-visible \{[^}]*outline: 2px solid var\(--worn-focus\)/u);
+  assert(block.includes('encodeURIComponent(pack.id)')); assert(block.includes('{workTitle(pack)}'));
+  assert(source.includes('ondone={() => (dismissedReceiptSummary = receipt?.summary || \'\')}'));
   assert.equal(source.indexOf('data-ready-next'), start + block.indexOf('data-ready-next'));
 });

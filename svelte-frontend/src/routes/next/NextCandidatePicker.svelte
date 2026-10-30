@@ -9,10 +9,12 @@
 	let {
 		packs,
 		currentPackId,
+		disabled = false,
 		onedit
 	}: {
 		packs: DemoPack[];
 		currentPackId: string;
+		disabled?: boolean;
 		onedit: (candidate: DemoPack) => void;
 	} = $props();
 
@@ -24,7 +26,7 @@
 	let hasMoreCandidates = $derived(renderedCandidates.length < candidates.length);
 
 	async function focusCandidate(candidate: DemoPack) {
-		if (!candidate.id) return;
+		if (!candidate.id || disabled) return;
 		try {
 			await setSelectedWork(candidate.id);
 		} catch {
@@ -70,6 +72,7 @@
 							variant="primary"
 							size="sm"
 							aria-label={`Set next action for ${workTitle(candidate)}`}
+							disabled={disabled}
 							onclick={() => onedit(candidate)}
 						>
 							Set next action
@@ -78,6 +81,7 @@
 							type="button"
 							size="sm"
 							aria-label={`Focus ${workTitle(candidate)} in Work`}
+							disabled={disabled}
 							onclick={() => focusCandidate(candidate)}
 						>
 							Focus in Work

@@ -1,8 +1,8 @@
 // @ts-nocheck -- runtime validation for the browser owner; public types are in .d.mts.
-import { validatePlanInput, validateProjectPlan, PLAN_LIMITS } from './nebius-plan-contract.mjs';
+import { validatePlanInput, validateProjectPlan, validateAuthoredProjectPlan, PLAN_LIMITS } from './nebius-plan-contract.mjs';
 import { normalizeWorkTitle } from './canonical-text.mjs';
 import { DEMO_BLOCKER_NONE } from './workflow-rules.mjs';
-import { validateToolInputRequirements } from './nebius-execution-contract.mjs';
+import { validateToolRequirements } from './nebius-execution-contract.mjs';
 
 // The task limit belongs to approved projects, not the pre-existing ungrouped workspace.
 export const PROJECT_STATE_LIMITS = Object.freeze({ projects: 100, tasks: 1000 });
@@ -48,7 +48,7 @@ export function assertProjectState(state) {
 	if (state.selectedProjectId !== undefined && state.selectedProjectId !== null && !ids.has(state.selectedProjectId)) throw new TypeError('Selected project does not exist.');
 	const tasks = new Map(state.packs.map((pack) => [pack.id, pack]));
 	for (const pack of state.packs) {
-		if (Object.hasOwn(pack, 'executionInputs')) validateToolInputRequirements(pack.executionInputs);
+		validateToolRequirements(pack.executionInputs ?? null, pack.executionOutputs ?? null);
 		if (pack.projectId !== undefined && (typeof pack.projectId !== 'string' || !ids.has(pack.projectId))) throw new TypeError(`Work item "${pack.id}" references a missing project.`);
 		if (pack.projectId && pack.blockedBy && tasks.get(pack.blockedBy)?.projectId !== pack.projectId) throw new TypeError(`Project task "${pack.id}" has a dependency outside its project.`);
 		if (pack.projectId) {
@@ -67,7 +67,7 @@ export function assertProjectState(state) {
 export function createProjectPlanState(state, { brief, plan, approvalId, source, createdAt }) {
 	assertProjectState(state);
 	const input = validatePlanInput({ brief });
-	const approvedPlan = validateProjectPlan(plan);
+	const approvedPlan = source === 'manual' ? validateAuthoredProjectPlan(plan) : validateProjectPlan(plan);
 	const project = { id: approvalId, title: approvedPlan.title, summary: approvedPlan.summary, brief: input.brief, createdAt, source };
 	assertProjectRecord(project);
 	if ((state.projects || []).some((item) => item.id === approvalId) || state.packs.some((pack) => pack.id === approvalId || pack.id.startsWith(`${approvalId}:`))) {
@@ -82,6 +82,7 @@ export function createProjectPlanState(state, { brief, plan, approvalId, source,
 		id: `${approvalId}:${task.id}`, projectId: approvalId, title: titles.get(task.id),
 		purpose: task.purpose, nextStep: task.nextStep, doneWhen: task.doneWhen,
 		...(Object.hasOwn(task, 'executionInputs') ? { executionInputs: structuredClone(task.executionInputs) } : {}),
+		...(Object.hasOwn(task, 'executionOutputs') ? { executionOutputs: structuredClone(task.executionOutputs) } : {}),
 		next: 'Open', status: task.dependsOn ? 'blocked' : 'active',
 		blocker: task.dependsOn ? `Waiting for ${titles.get(task.dependsOn)}`.slice(0, 200).replace(/[\uD800-\uDBFF]$/u, '') : DEMO_BLOCKER_NONE,
 		...(task.dependsOn ? { blockedBy: `${approvalId}:${task.dependsOn}` } : {})

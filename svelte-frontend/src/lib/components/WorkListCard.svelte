@@ -114,12 +114,14 @@
 
 	let command = $derived(primaryCommand(pack));
 	let commandHref = $derived(PACK_ACTIONS.has(command.action) ? undefined : primaryCommandNavigation(pack));
-	let titleHref = $derived(canSetNextAction(pack) ? `/next?pack=${encodeURIComponent(pack.id || '')}` : null);
+	let titleHref = $derived(NEBIUS_EDITION ? `/next?pack=${encodeURIComponent(pack.id || '')}${canSetNextAction(pack) ? '' : '&view=review'}` : canSetNextAction(pack) ? `/next?pack=${encodeURIComponent(pack.id || '')}` : null);
+	let titleLabel = $derived(NEBIUS_EDITION ? `${canSetNextAction(pack) ? 'Open task' : 'View task history for'} ${workTitle(pack)}` : `Set the next action for ${workTitle(pack)}`);
 	let workflow = $derived(workflowLabel(pack));
 	let cardCls = $derived(workflowCardClass(pack, false, false));
 	let packKey = $derived(pack.id || '');
 	let executionLabel = $derived.by(() => {
 		if (!NEBIUS_EDITION || !pack.executionRun) return '';
+		if (!canSetNextAction(pack)) return 'View saved run';
 		const status = pack.executionRun.record?.status;
 		if (status === 'ready') return 'Tool ready for review';
 		if (status === 'queued') return 'Run queued';
@@ -160,7 +162,7 @@
 	{/if}
 	<div class="demo-card-head">
 		{#if titleHref}
-		<a class="demo-card-title" data-action="select" data-pack={pack.id} title="Set the next action for {workTitle(pack)}" aria-label="Set the next action for {workTitle(pack)}" href={titleHref} onclick={() => onTrackRecent(pack.id!)}>
+		<a class="demo-card-title" data-action="select" data-pack={pack.id} title={titleLabel} aria-label={titleLabel} href={titleHref} onclick={() => onTrackRecent(pack.id!)}>
 			{#if pack.pinned}<span class="demo-pin-flag" role="img" title="Pinned to the top of the list" aria-label="Pinned"></span>{/if}
 			{workTitle(pack)}
 		</a>
@@ -175,6 +177,7 @@
 			<span class="demo-age">{packAge(pack)}</span>
 		{/if}
 		<WornBadge label={workflow} />
+		{#if NEBIUS_EDITION && pack.id === selectedId}<span class="demo-work-selected" aria-hidden="true">Selected</span>{/if}
 		{#if pack.decision && pack.status !== 'done'}
 			<WornBadge variant="warn" label="Needs decision" title={pack.decider ? `Decision needed from ${pack.decider}` : 'Decision needed'} />
 		{/if}
@@ -190,6 +193,16 @@
 			onclick={focusCardForKeyboardMove}
 		>Move</button>
 	</div>
+	{#if NEBIUS_EDITION && !canSetNextAction(pack)}
+		<p data-nebius-task-history>{pack.archived ? 'Archived task.' : 'Completed task.'}</p>
+		{#if pack.nextStep || hasBlocker(pack)}
+			<details data-nebius-historical-context>
+				<summary>Previous task context</summary>
+				{#if pack.nextStep}<p><b>Previous next step:</b> {pack.nextStep}</p>{/if}
+				{#if hasBlocker(pack)}<p><b>Previous blocker:</b> {blockerText(pack)}</p>{/if}
+			</details>
+		{/if}
+	{:else}
 	{#if hasBlocker(pack)}
 		<div class="demo-card-facts" role="group" aria-label="Blocker: {blockerText(pack)}.">
 			<div class="demo-card-fact"><span>Blocker</span><strong>{blockerText(pack)}</strong></div>
@@ -200,9 +213,10 @@
 			<div class="demo-card-fact"><span>Next step</span><strong>{pack.nextStep}</strong></div>
 		</div>
 	{/if}
+	{/if}
 	{#if executionLabel}
 		<div class="demo-card-facts" data-nebius-run-status>
-			<div class="demo-card-fact"><span>Last run update</span><a href={pack.executionRun?.record?.status === 'ready' ? `/review?focus=${encodeURIComponent(packKey)}` : `/next?pack=${encodeURIComponent(packKey)}#nebius-task-run`}>{executionLabel}</a></div>
+			<div class="demo-card-fact"><span>Last run update</span><a href={pack.executionRun?.record?.status === 'ready' || (NEBIUS_EDITION && !canSetNextAction(pack)) ? (NEBIUS_EDITION ? `/next?pack=${encodeURIComponent(packKey)}&view=review` : `/review?focus=${encodeURIComponent(packKey)}`) : (NEBIUS_EDITION ? `/next?pack=${encodeURIComponent(packKey)}&view=tool#nebius-task-run` : `/next?pack=${encodeURIComponent(packKey)}#nebius-task-run`)}>{executionLabel}</a></div>
 		</div>
 	{/if}
 	{#if canSetNextAction(pack) && (!commandHref || commandHref !== titleHref)}
@@ -309,6 +323,9 @@
 </WornFoldedSurface>
 
 <style>
+	[data-nebius-task-history] { color: var(--worn-text-secondary); line-height: 1.5; margin: 4px 0; }
+	[data-nebius-historical-context] { color: var(--worn-text-secondary); line-height: 1.5; overflow-wrap: anywhere; }
+	[data-nebius-historical-context] summary { cursor: pointer; min-block-size: 44px; align-content: center; }
 	.demo-card-extra { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0 0 8px; font-size: 12px; }
 	.demo-card-extra > div { display: contents; }
 	.demo-card-extra dt { color: var(--worn-text-muted); font-family: var(--font-typewriter); }
@@ -322,16 +339,17 @@
 		border-radius: var(--worn-radius-sm);
 		color: var(--worn-text-muted);
 		cursor: grab;
-		font: 700 11px/1.2 var(--font-typewriter);
-		min-height: 32px;
+		font: inherit;
+		font-size: 12px;
+		min-height: 44px;
 		padding: 5px 8px;
 		user-select: none;
 	}
 	.work-card-move-handle:active { cursor: grabbing; }
 	.work-card-move-handle:focus-visible { outline: 2px dashed var(--worn-focus); outline-offset: 2px; }
 	.work-card-energy-control { align-items: center; display: flex; gap: 8px; margin-block-start: 8px; max-width: 100%; min-width: 0; }
-	.work-card-energy-control label { color: var(--worn-text-muted); font: 700 12px/1.2 var(--font-typewriter); }
-	.work-card-energy-control :global(.worn-select) { min-height: 36px; width: min(100%, 220px); }
+	.work-card-energy-control label { color: var(--worn-text-muted); font-size: 12px; font-weight: 600; }
+	.work-card-energy-control :global(.worn-select) { min-height: 44px; width: min(100%, 220px); }
 	.demo-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; margin-block-start: 8px; }
 	.work-command-row :global(.worn-btn), .work-card-actions :global(.worn-btn) { box-sizing: border-box; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 	.work-card-actions :global(.worn-select) { box-sizing: border-box; min-width: 0; max-width: 100%; }

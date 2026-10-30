@@ -3,10 +3,10 @@
   import { beforeNavigate } from '$app/navigation';
   import { demoState, approveProjectReplan } from '$lib/demo-client';
   import { projectSnapshot } from '$lib/nebius-replan-state.mjs';
-  import { validateProjectReplan, validateReplanInput, type ProjectSnapshot, type ProjectReplan } from '$lib/nebius-replan-contract.mjs';
-  import { PLAN_LIMITS } from '$lib/nebius-plan-contract.mjs';
+  import { REPLAN_LIMITS, validateProjectReplan, validateReplanInput, type ProjectSnapshot, type ProjectReplan } from '$lib/nebius-replan-contract.mjs';
   import { normalizeWorkTitle } from '$lib/canonical-text.mjs';
   import { WornButton } from '$lib/components';
+  import NebiusInferenceFailure from '$lib/NebiusInferenceFailure.svelte';
   import { createReplanClient, emptyReplanView } from './nebius-replan-client.mjs';
 
   let { projectId, onApproved }: { projectId: string; onApproved: () => Promise<void> } = $props();
@@ -72,10 +72,10 @@
     try {
       const input = validateReplanInput({ snapshot, update });
       const changes = input.snapshot.tasks.filter(task => !task.archived && task.status !== 'done').map(({ archived, ...task }) => ({
-        ...task, status: task.status === 'blocked' ? 'blocked' as const : 'active' as const, reason: 'Manual revision.',
+        ...task, status: task.status === 'blocked' ? 'blocked' as const : 'active' as const, reason: input.update.slice(0, REPLAN_LIMITS.reason),
       }));
       if (!changes.length) throw new Error('This project has no open tasks to revise.');
-      proposal = { summary: update.slice(0, 600), changes, missingInformation: [] }; source = 'manual'; reviewed = null; error = '';
+      proposal = { summary: input.update.slice(0, REPLAN_LIMITS.summary), changes, missingInformation: [] }; source = 'manual'; reviewed = null; error = '';
       updateContextOpen = false;
       await tick(); document.getElementById('replan-summary')?.focus();
     } catch (cause) { await showError(cause, 'Describe what changed first.'); }
@@ -127,15 +127,19 @@
     task.blockedBy = id || null;
     if (id) { task.status = 'blocked'; task.blocker = `Waiting for ${snapshot?.tasks.find(item => item.id === id)?.title ?? id}`.slice(0, 200); }
   }
+  function clearBlockers(task: ProjectReplan['changes'][number]) {
+    if (busy || stale) return;
+    task.blockedBy = null; task.blocker = 'None'; task.status = 'active';
+  }
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} />
 <section class="project-update" data-project-update aria-label="Project updates" bind:this={updateElement}>
-  {#if !opened}<WornButton data-update-project onclick={begin}>Update project</WornButton>{/if}
+  {#if !opened}<WornButton data-update-project onclick={begin}>Revise tasks</WornButton>{/if}
   {#if receipt}<p role="status" data-project-updated>{receipt}</p>{/if}
   {#if error}<p role="alert" class="error" tabindex="-1" bind:this={errorElement} data-project-replan-error>{error}</p>{/if}
   {#if opened && snapshot}
-    <h3 tabindex="-1" bind:this={heading} data-project-update-heading>{reviewed ? 'Review task changes' : proposal ? 'Edit task changes' : 'Update project'}</h3>
+    <h3 tabindex="-1" bind:this={heading} data-project-update-heading>{reviewed ? 'Review task changes' : proposal ? 'Edit task changes' : 'Revise tasks'}</h3>
     <p class="update-scope"><strong>{snapshot.project.title}</strong> · {snapshot.tasks.filter(task => !task.archived && task.status !== 'done').length} open of {snapshot.tasks.length} tasks</p>
     {#if stale}<p role="alert">This project changed after the draft started. Discard it and start again.</p>{/if}
     {#if !reviewed}
@@ -143,17 +147,18 @@
         <summary>{proposal ? 'Update text and draft options' : 'What changed?'}</summary>
       <label for="project-update-text">Project update</label>
       <textarea id="project-update-text" value={update} oninput={editUpdate} maxlength="2000" rows="3" placeholder="Describe new priorities, requirements or constraints." disabled={!!proposal || busy || stale}></textarea>
-      {#if proposal}<WornButton onclick={reviseInput} disabled={busy || stale}>Change update</WornButton>{/if}
+      {#if proposal}<div class="actions"><WornButton onclick={reviseInput} disabled={busy || stale}>Change update</WornButton></div>{/if}
       {#if !proposal}
-        <div class="actions"><WornButton onclick={outline} disabled={busy || stale}>Edit tasks myself</WornButton></div>
+        <div class="actions"><WornButton onclick={outline} disabled={busy || stale || !update.trim()}>Edit tasks myself</WornButton></div>
         <details class="replan-generation" data-replan-nebius-options><summary>{view.phase === 'unavailable' || (view.phase === 'error' && !view.config) ? 'Suggest changes with Nebius · unavailable' : 'Suggest changes with Nebius'}</summary>
           <p class="muted">Nebius uses this update and all {snapshot.tasks.length} project tasks, including done and archived tasks as context.</p>
           <details data-replan-send-preview><summary>Preview information sent</summary><pre>{JSON.stringify({ snapshot, update }, null, 2)}</pre></details>
           {#if view.error}<p role="status">{view.error}</p>{/if}
+          <NebiusInferenceFailure failure={view.failure} />
           {#if view.config}<p class="model-info">Model: {view.config.requestedModel}<br />Up to {view.config.maxOutputTokens.toLocaleString()} output tokens per request · no automatic retry.</p>{/if}
           <label class="consent"><input type="checkbox" bind:checked={consent} disabled={busy || stale} /> I agree to send this update and project context to Nebius.</label>
-          <div class="actions"><WornButton onclick={() => client.generate(consent)} disabled={!consent || !view.config || busy || stale}>{view.phase === 'generating' ? 'Drafting changes…' : 'Draft changes with Nebius'}</WornButton>
-            <WornButton onclick={() => client.reload()} disabled={busy}>Reload settings</WornButton></div>
+          <div class="actions"><WornButton onclick={() => client.generate(consent)} disabled={!consent || !view.config || busy || stale || !update.trim()}>{view.phase === 'generating' ? 'Drafting changes…' : 'Draft changes with Nebius'}</WornButton>
+            <WornButton onclick={() => client.reload()} disabled={busy}>Check model settings</WornButton></div>
         </details>
       {/if}
       </details>
@@ -168,22 +173,22 @@
           <fieldset data-replan-task disabled={busy || stale}><legend>{snapshot.tasks.find(item => item.id === task.id)?.title}</legend>
             {#each fields.slice(0, 4) as [key, label]}
               <label for={`replan-${key}-${task.id}`}>{label}</label>
-              <textarea id={`replan-${key}-${task.id}`} bind:value={task[key]} maxlength={key === 'title' ? PLAN_LIMITS.taskTitle : key === 'purpose' ? PLAN_LIMITS.purpose : key === 'doneWhen' ? PLAN_LIMITS.doneWhen : PLAN_LIMITS.nextStep} rows={key === 'purpose' || key === 'doneWhen' ? 2 : 1}></textarea>
+              <textarea id={`replan-${key}-${task.id}`} bind:value={task[key]} maxlength={key === 'title' ? REPLAN_LIMITS.taskTitle : key === 'purpose' ? REPLAN_LIMITS.purpose : key === 'doneWhen' ? REPLAN_LIMITS.doneWhen : REPLAN_LIMITS.nextStep} rows={key === 'purpose' || key === 'doneWhen' ? 2 : 1}></textarea>
             {/each}
             <label for={`replan-status-${task.id}`}>Status</label><select id={`replan-status-${task.id}`} bind:value={task.status}><option value="active">Active</option><option value="blocked">Blocked</option></select>
             <label for={`replan-blocker-${task.id}`}>Blocker</label><input id={`replan-blocker-${task.id}`} bind:value={task.blocker} maxlength="200" />
             <label for={`replan-dependency-${task.id}`}>Predecessor</label><select id={`replan-dependency-${task.id}`} value={task.blockedBy ?? ''} onchange={event => predecessor(task, event.currentTarget.value)}><option value="">None</option>{#each snapshot.tasks.filter(item => item.id !== task.id) as item}<option value={item.id}>{item.title} ({item.id})</option>{/each}</select>
-            <label for={`replan-reason-${task.id}`}>Reason</label><input id={`replan-reason-${task.id}`} bind:value={task.reason} maxlength="400" />
-            {#if task.blockedBy || task.status === 'blocked'}<p class="field-help">To make this task ready, choose Active, set Blocker to None, and remove its predecessor.</p>{/if}
+            <label for={`replan-reason-${task.id}`}>Reason</label><textarea id={`replan-reason-${task.id}`} bind:value={task.reason} maxlength={REPLAN_LIMITS.reason} rows="2"></textarea>
+            {#if task.blockedBy || task.status === 'blocked'}<div class="actions"><WornButton onclick={() => clearBlockers(task)} disabled={busy || stale}>Clear blockers</WornButton></div><p class="field-help">Clears the predecessor and blocker, and sets Active in this draft. Review before saving.</p>{/if}
           </fieldset>
           </details>
         {/each}
         {/key}
-        <p class="muted">Review shows only changed tasks.</p>
-        <WornButton variant="primary" onclick={review} disabled={busy || stale}>Review changes</WornButton>
+        <p class="muted">Only changed tasks will be saved.</p>
+        <div class="actions"><WornButton variant="primary" onclick={review} disabled={busy || stale}>Review changes</WornButton></div>
       {/if}
     {:else}
-      <p>{reviewed.summary}</p><p class="provenance">{source === 'manual' ? 'Manual changes' : 'Edited Nebius proposal'} · {reviewed.changes.length} {reviewed.changes.length === 1 ? 'task' : 'tasks'} to update</p>
+      <p>{reviewed.summary}</p><p class="provenance">{source === 'manual' ? 'Manual changes' : 'Nebius proposal'} · {reviewed.changes.length} {reviewed.changes.length === 1 ? 'task' : 'tasks'} to update</p>
       {#each reviewed.changes as task (task.id)}
         <article class="diff" data-replan-diff><h4>{snapshot.tasks.find(item => item.id === task.id)?.title}</h4><p>{task.reason}</p>
           {#each fields as [key, label]}{@const before = snapshot.tasks.find(item => item.id === task.id)!}
@@ -193,7 +198,7 @@
       {/each}
       {#if reviewed.missingInformation.length}<h4>Questions to resolve</h4><ul>{#each reviewed.missingInformation as item}<li>{item}</li>{/each}</ul>{/if}
       <p class="field-help">The approved summary and each task’s reason will be saved in its activity.</p>
-      <div class="actions"><WornButton onclick={async () => { reviewed = null; await tick(); document.getElementById('replan-summary')?.focus(); }} disabled={saving}>Back to editing</WornButton><WornButton variant="primary" onclick={apply} disabled={saving || stale}>{saving ? 'Saving…' : 'Approve and save changes'}</WornButton></div>
+      <div class="actions"><WornButton onclick={async () => { reviewed = null; await tick(); document.getElementById('replan-summary')?.focus(); }} disabled={saving}>Back to editing</WornButton><WornButton variant="primary" onclick={apply} disabled={saving || stale}>{saving ? 'Saving…' : 'Save changes'}</WornButton></div>
     {/if}
     <div class="actions footer"><span class="muted">Unsaved changes</span><WornButton onclick={discard} disabled={saving}>Discard changes</WornButton></div>
   {/if}
@@ -202,5 +207,5 @@
 <style>
   .update-context,.task-panel{border:1px solid var(--worn-border);border-radius:var(--worn-radius-sm);padding:.75rem;margin-block:.75rem;min-width:0}.task-panel summary{overflow-wrap:anywhere}.task-panel-title{font-weight:700}.task-panel-context{display:block;font-weight:400;font-size:.8rem;color:var(--worn-text-secondary);margin-top:.35rem}.task-panel fieldset{border:0;padding:0;margin-block:.5rem 0}.error:focus{outline:2px solid var(--worn-focus);outline-offset:3px}
   .model-info,.field-help,.update-scope{font-size:.8rem;color:var(--worn-text-secondary);overflow-wrap:anywhere;line-height:1.5}.field-help{margin-block:.65rem 0}.replan-generation{border:1px solid var(--worn-border);border-radius:var(--worn-radius-sm);padding:.65rem}
-  .project-update{border-top:1px solid var(--worn-border);margin-top:1rem;padding-top:1rem;min-width:0}h3{font-size:1.1rem}h4{margin-block:.5rem}label{display:block;font-size:.875rem;font-weight:600;margin-block:.9rem .35rem}input:not([type=checkbox]),textarea,select{box-sizing:border-box;width:100%;min-width:0;min-height:44px;font:inherit;color:var(--worn-text);background:var(--worn-bg);border:1px solid var(--worn-border-strong);border-radius:var(--worn-radius-sm);padding:.65rem}textarea{resize:vertical}input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--worn-focus);outline-offset:2px}.actions{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin-block:.9rem}.footer{border-top:1px solid var(--worn-border);padding-top:.75rem;justify-content:space-between}.muted{font-size:.8rem;color:var(--worn-text-secondary)}summary{cursor:pointer;font-weight:600;padding-block:.65rem}.consent{display:flex;gap:.5rem;align-items:center;font-weight:400}.consent input{width:1.2rem;height:1.2rem;flex-shrink:0}fieldset,.diff,.provenance{border:1px solid var(--worn-border);padding:.75rem;margin-block:1rem;min-width:0;border-radius:var(--worn-radius-sm)}legend{font-weight:600;overflow-wrap:anywhere}.error{color:var(--worn-danger)}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto;font-size:.8rem}.field-diff{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-block:1rem}.field-diff>strong{grid-column:1/-1}.field-diff span{font-size:.8rem;color:var(--worn-text-secondary)}p,.field-diff{overflow-wrap:anywhere}.field-diff p{white-space:pre-wrap;margin-block:.25rem}.field-diff>div{min-width:0}@media(max-width:500px){.field-diff{grid-template-columns:1fr}.field-diff>strong{grid-column:auto}}
+  .project-update{border-top:1px solid var(--worn-border);margin-top:1rem;padding-top:1rem;min-width:0}h3{font-size:1.1rem}h4{margin-block:.5rem}label{display:block;font-size:.875rem;font-weight:600;margin-block:.9rem .35rem}input:not([type=checkbox]),textarea,select{box-sizing:border-box;width:100%;min-width:0;min-height:44px;font:inherit;color:var(--worn-text);background:var(--worn-bg);border:1px solid var(--worn-field-border);border-radius:var(--worn-radius-sm);padding:.65rem}textarea{resize:vertical}input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--worn-focus);outline-offset:2px}.actions{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin-block:.9rem}.footer{border-top:1px solid var(--worn-border);padding-top:.75rem;justify-content:space-between}.muted{font-size:.8rem;color:var(--worn-text-secondary)}summary{cursor:pointer;font-weight:600;padding-block:.65rem}.consent{display:flex;gap:.5rem;align-items:center;font-weight:400}.consent input{width:1.2rem;height:1.2rem;flex-shrink:0}fieldset,.diff,.provenance{border:1px solid var(--worn-border);padding:.75rem;margin-block:1rem;min-width:0;border-radius:var(--worn-radius-sm)}legend{font-weight:600;overflow-wrap:anywhere}.error{color:var(--worn-danger-text)}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto;font-size:.8rem}.field-diff{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-block:1rem}.field-diff>strong{grid-column:1/-1}.field-diff span{font-size:.8rem;color:var(--worn-text-secondary)}p,.field-diff{overflow-wrap:anywhere}.field-diff p{white-space:pre-wrap;margin-block:.25rem}.field-diff>div{min-width:0}@media(max-width:500px){.field-diff{grid-template-columns:1fr}.field-diff>strong{grid-column:auto}}
 </style>

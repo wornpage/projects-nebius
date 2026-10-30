@@ -1,11 +1,11 @@
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { fileURLToPath } from 'node:url';
+import { createCssHash } from './svelte-css-hash.mjs';
 
 const here = (relative) => fileURLToPath(new URL(relative, import.meta.url));
-const nebiusEdition = process.env.PROJECTS_NEBIUS_EDITION === 'true';
 
 const staticAdapter = {
-	name: 'webmcp-challenge-static-adapter',
+	name: 'nebius-static-adapter',
 	async adapt(builder) {
 		const output = here('../dist/static-publish');
 		builder.writeClient(output);
@@ -17,15 +17,18 @@ const staticAdapter = {
 const config = {
 	preprocess: vitePreprocess(),
 	compilerOptions: {
+		rootDir: here('.'),
+		cssHash: createCssHash(here('.')),
 		experimental: { async: true }
 	},
 	kit: {
+		appDir: '_app-r191',
 		adapter: staticAdapter,
 		files: {
 			assets: process.env.PROJECTS_SVELTE_ASSET_DIR || 'static'
 		},
-		version: { name: 'webmcp-challenge' },
-		prerender: { entries: ['/webmcp-challenge', '/priority', '/work', '/review', '/next'] },
+		version: { name: 'projects-nebius' },
+		prerender: { entries: ['/webmcp-challenge', '/priority', '/work', '/review', '/next', '/guide', '/grounding-rehearsal', '/recovery-rehearsal'] },
 		csp: {
 			mode: 'hash',
 			directives: {
@@ -33,7 +36,7 @@ const config = {
 				'base-uri': ['none'],
 				'object-src': ['none'],
 				'frame-ancestors': ['none'],
-				'frame-src': [nebiusEdition ? 'self' : 'none'],
+				'frame-src': ['self'],
 				'worker-src': ['self'],
 				'script-src': ['self'],
 				'style-src': [
@@ -46,7 +49,7 @@ const config = {
 				'media-src': ['none'],
 				'manifest-src': ['self'],
 				'connect-src': ['self'],
-				'form-action': [nebiusEdition ? 'self' : 'none']
+				'form-action': ['self']
 			}
 		}
 	}

@@ -1,12 +1,19 @@
 import { isRecord, validateTask, validateSelectedContext, validModelId } from './nebius-contract.mjs';
 
-export const RUN_VERSION = 'browser-tool.v2';
+export const RUN_VERSION = 'browser-tool.v3';
 export const RUN_RECORD_FORMAT = 'run-diagnostics.v3';
 export const TOOL_INPUT_LIMITS = Object.freeze({ items: 8, id: 80 });
+export const TOOL_OUTPUT_LIMITS = Object.freeze({ items: 12, id: 80 });
 // Serialized byte limits include JSON escaping. Leave room below the client's
 // 512 KiB response ceiling for the enclosing API object.
 export const RUN_EVIDENCE_LIMITS = Object.freeze({ responseBytes: 65536, recordBytes: 491520 });
-export const RUN_LIMITS = Object.freeze({ maxModelCalls: 2, maxSandboxRuns: 2, maxOutputTokens: 8000, sandboxSeconds: 30, runSeconds: 600, maxFileBytes: 32768, maxTotalFileBytes: 65536 });
+// Existing browser-tool.v3 records retain up to three attempts. This is a
+// read/evidence ceiling, not permission to schedule new provider work.
+export const RUN_RECORD_LIMITS = Object.freeze({ maxModelCalls: 3, maxSandboxRuns: 3 });
+export const RUN_LIMITS = Object.freeze({ maxModelCalls: 2, maxSandboxRuns: 2, maxOutputTokens: 32000, sandboxSeconds: 30, runSeconds: 600, maxFileBytes: 32768, maxTotalFileBytes: 65536 });
+// A reasoning response may take longer than one minute. The run owner still
+// clamps each request to its remaining ten-minute orchestration deadline.
+export const RUN_MODEL_TIMEOUT_MS = 240000;
 export const RUN_FILES = Object.freeze(['index.html', 'app.js', 'checks.cjs']);
 export const RUN_STATUSES = Object.freeze(['queued', 'generating', 'checking', 'repairing', 'cancelling', 'ready', 'failed', 'cancelled', 'uncertain']);
 export const TERMINAL_RUN_STATUSES = Object.freeze(['ready', 'failed', 'cancelled', 'uncertain']);
@@ -37,22 +44,59 @@ export function validateToolInputRequirements(value) {
   });
 }
 
+// Output requirements are a minimum set. [] explicitly sets no minimum;
+// null leaves the output contract unspecified. Neither rewrites older runs.
+export function validateToolOutputRequirements(value) {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.length > TOOL_OUTPUT_LIMITS.items) fail('Specify at most twelve required outputs, or leave outputs unspecified.');
+  const ids = new Set();
+  return Array.from(value, output => {
+    if (!exact(output, ['id', 'format']) || typeof output.id !== 'string'
+      || !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/u.test(output.id) || ids.has(output.id)
+      || !['text', 'timeline'].includes(output.format)) fail('Each required output needs a unique ID starting with a letter (up to 80 letters, digits, underscores or hyphens) and a text or timeline format.');
+    ids.add(output.id);
+    return { id: output.id, format: output.format };
+  });
+}
+
+export function validateToolRequirements(inputs, outputs) {
+  const requiredInputFormats = validateToolInputRequirements(inputs);
+  const requiredOutputs = validateToolOutputRequirements(outputs);
+  if (requiredInputFormats?.some(input => requiredOutputs?.some(output => output.id === input.id))) {
+    fail('Tool inputs and required outputs must use different IDs.');
+  }
+  return { requiredInputFormats, requiredOutputs };
+}
+
+// Runtime options are derived from each saved version's actual capabilities;
+// this projection never changes the saved request or its digest.
+export function runToolRequirements(value) {
+  if (!isRecord(value) || !['browser-tool.v1', 'browser-tool.v2', RUN_VERSION].includes(value.version)) fail('The tool request version is unsupported.');
+  return validateToolRequirements(value.version === 'browser-tool.v1' ? null : value.requiredInputFormats,
+    value.version === RUN_VERSION ? value.requiredOutputs : null);
+}
+
 export function validateRunInput(value) {
-  const legacy = isRecord(value) && value.version === 'browser-tool.v1';
+  const version = isRecord(value) ? value.version : null;
+  const hasInputs = ['browser-tool.v2', RUN_VERSION].includes(version);
+  const hasOutputs = version === RUN_VERSION;
   const keys = ['version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'consent'];
-  if (!legacy) keys.push('requiredInputFormats');
+  if (hasInputs) keys.push('requiredInputFormats');
+  if (hasOutputs) keys.push('requiredOutputs');
   if (!exact(value, keys)
-    || ![RUN_VERSION, 'browser-tool.v1'].includes(value.version) || value.consent !== true
+    || ![RUN_VERSION, 'browser-tool.v2', 'browser-tool.v1'].includes(value.version) || value.consent !== true
     || typeof value.packId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}(?::[a-z][a-z0-9_-]{0,39})?$/u.test(value.packId)
     || !['draft', 'active'].includes(value.currentStatus) || !validModelId(value.requestedModel)) fail('Choose an open task and review the run settings.');
   const pack = validateTask(value.pack);
   if (!pack.doneWhen.trim() || !pack.nextStep.trim()) fail('Add a next step and completion criteria before running this task.');
   if (pack.blocker.trim() && pack.blocker.trim().toLowerCase() !== 'none') fail('Resolve this task’s blocker before running it.');
-  // Retained v1 snapshots and backups keep their original shape and digest.
-  // Current writers and start admission use v2; this reader infers no metadata.
+  const requirements = runToolRequirements(value);
+  // Retained v1/v2 snapshots keep their original shape and digest. Current
+  // writers and admission use v3; historical output requirements stay absent.
   return { version: value.version, packId: value.packId, pack, currentStatus: value.currentStatus,
     context: validateSelectedContext(value.context), requestedModel: value.requestedModel,
-    ...(!legacy ? { requiredInputFormats: validateToolInputRequirements(value.requiredInputFormats) } : {}), consent: true };
+    ...(hasInputs ? { requiredInputFormats: requirements.requiredInputFormats } : {}),
+    ...(hasOutputs ? { requiredOutputs: requirements.requiredOutputs } : {}), consent: true };
 }
 
 export function validateRunFiles(value) {
@@ -75,20 +119,22 @@ export function validateRunRecord(value) {
   const keys = ['id', 'version', 'packId', 'pack', 'currentStatus', 'context', 'requestedModel', 'status', 'attempt', 'createdAt', 'updatedAt', 'events', 'files', 'checks', 'usage', 'error'];
   if (isRecord(value) && Object.hasOwn(value, 'failure')) keys.push('failure');
   if (isRecord(value) && Object.hasOwn(value, 'generationAttempts')) keys.push('generationAttempts');
-  if (isRecord(value) && value.version === RUN_VERSION) keys.push('requiredInputFormats');
+  if (isRecord(value) && ['browser-tool.v2', RUN_VERSION].includes(value.version)) keys.push('requiredInputFormats');
+  if (isRecord(value) && value.version === RUN_VERSION) keys.push('requiredOutputs');
   if (!exact(value, keys)
-    || !validRunId(value.id) || !RUN_STATUSES.includes(value.status) || !integer(value.attempt, 2)
+    || !validRunId(value.id) || !RUN_STATUSES.includes(value.status) || !integer(value.attempt, RUN_RECORD_LIMITS.maxModelCalls)
     || !iso(value.createdAt) || !iso(value.updatedAt) || Date.parse(value.updatedAt) < Date.parse(value.createdAt)
     || !(value.error === null || text(value.error, 500))) fail('The saved execution record is invalid.');
   const input = validateRunInput({ version: value.version, packId: value.packId, pack: value.pack,
     currentStatus: value.currentStatus, context: value.context, requestedModel: value.requestedModel,
-    ...(value.version === RUN_VERSION ? { requiredInputFormats: value.requiredInputFormats } : {}), consent: true });
+    ...(['browser-tool.v2', RUN_VERSION].includes(value.version) ? { requiredInputFormats: value.requiredInputFormats } : {}),
+    ...(value.version === RUN_VERSION ? { requiredOutputs: value.requiredOutputs } : {}), consent: true });
   if (!Array.isArray(value.events) || value.events.length > 24 || value.events.some(event => !exact(event, ['at', 'message']) || !iso(event.at) || !text(event.message, 240))) fail('The execution history is invalid.');
   if (!Array.isArray(value.files)) fail('The execution files are invalid.');
   const files = value.files.length ? validateRunFiles(value.files) : [];
-  if (!Array.isArray(value.checks) || value.checks.length > 2 || value.checks.some((check, index) =>
+  if (!Array.isArray(value.checks) || value.checks.length > RUN_RECORD_LIMITS.maxSandboxRuns || value.checks.some((check, index) =>
     !exact(check, ['attempt', 'operationId', 'checkpointId', 'exitCode', 'stdout', 'stderr', 'sourceDigest'])
-    || !integer(check.attempt, RUN_LIMITS.maxModelCalls) || check.attempt <= (value.checks[index - 1]?.attempt ?? 0)
+    || !integer(check.attempt, RUN_RECORD_LIMITS.maxModelCalls) || check.attempt <= (value.checks[index - 1]?.attempt ?? 0)
     || !validProviderId(check.operationId)
     || !(check.checkpointId === null || validProviderId(check.checkpointId))
     || !Number.isSafeInteger(check.exitCode) || check.exitCode < 0 || check.exitCode > 255
@@ -96,7 +142,7 @@ export function validateRunRecord(value) {
   const usageKeys = ['modelCalls', 'inputTokens', 'outputTokens'];
   const legacyUsage = isRecord(value.usage) && !Object.hasOwn(value.usage, 'totalsComplete');
   if (!legacyUsage) usageKeys.push('totalsComplete');
-  if (!exact(value.usage, usageKeys) || !integer(value.usage.modelCalls, 2)
+  if (!exact(value.usage, usageKeys) || !integer(value.usage.modelCalls, RUN_RECORD_LIMITS.maxModelCalls)
     || ![value.usage.inputTokens, value.usage.outputTokens].every(count => count === null || integer(count, 10000000))) fail('The execution usage is invalid.');
   // Persisted v1 runs and workspace backups predate diagnostics. Normalize only
   // at this owner: missing failure metadata stays unknown, and missing token
@@ -107,7 +153,7 @@ export function validateRunRecord(value) {
   if (value.attempt > usage.modelCalls || value.checks.some(check => check.attempt > value.attempt)) fail('The execution attempt counts are invalid.');
   // Historical runs have no retained generation response. Do not invent one.
   const generationAttempts = Object.hasOwn(value, 'generationAttempts') ? value.generationAttempts : [];
-  if (!Array.isArray(generationAttempts) || generationAttempts.length > RUN_LIMITS.maxModelCalls || generationAttempts.some((entry, index) =>
+  if (!Array.isArray(generationAttempts) || generationAttempts.length > RUN_RECORD_LIMITS.maxModelCalls || generationAttempts.some((entry, index) =>
     !exact(entry, ['attempt', 'outcome', 'responseText', 'retention', 'diagnostic'])
     || !integer(entry.attempt, usage.modelCalls) || entry.attempt <= (generationAttempts[index - 1]?.attempt ?? 0)
     || !['accepted', 'rejected'].includes(entry.outcome)
@@ -139,7 +185,8 @@ export function isRunConfig(value) {
 export function runSnapshotFromRecord(record) {
   const { consent, ...snapshot } = validateRunInput({ version: record.version, packId: record.packId, pack: record.pack, currentStatus: record.currentStatus,
     context: record.context, requestedModel: record.requestedModel,
-    ...(record.version === RUN_VERSION ? { requiredInputFormats: record.requiredInputFormats } : {}), consent: true });
+    ...(['browser-tool.v2', RUN_VERSION].includes(record.version) ? { requiredInputFormats: record.requiredInputFormats } : {}),
+    ...(record.version === RUN_VERSION ? { requiredOutputs: record.requiredOutputs } : {}), consent: true });
   return snapshot;
 }
 

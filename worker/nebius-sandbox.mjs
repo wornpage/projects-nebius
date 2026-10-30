@@ -1,6 +1,8 @@
 import { isRecord } from '../svelte-frontend/src/lib/nebius-contract.mjs';
 import { RUN_LIMITS, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
+import { TIMELINE_VALIDATOR_SOURCE } from '../svelte-frontend/src/lib/nebius-timeline-contract.mjs';
 import { runPageContract } from './nebius-run-preview.mjs';
+import { wrapRunChecks } from './nebius-run-checks.mjs';
 
 export class SandboxError extends Error {
   constructor(code, message, uncertain = false) { super(message); this.code = code; this.uncertain = uncertain; }
@@ -17,6 +19,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const realAssert = require('node:assert');
 const { types } = require('node:util');
+const validateTimelinePatch = ${TIMELINE_VALIDATOR_SOURCE};
 let validateCalls = 0, handleMessageCalls = 0, assertionCalls = 0, assertionFailed = false;
 let contractFailure = null;
 const harden = value => Object.freeze(Object.setPrototypeOf(value, null));
@@ -28,6 +31,8 @@ const quietConsole = Object.freeze(Object.assign(Object.create(null), {
 const context = vm.createContext(Object.assign(Object.create(null), { console: quietConsole }), {
   codeGeneration: { strings: false, wasm: false }
 });
+const contextObjectPrototype = vm.runInContext('Object.prototype', context);
+const contextArrayPrototype = vm.runInContext('Array.prototype', context);
 const ContextError = vm.runInContext('Error', context);
 const parseMessage = vm.runInContext('((parse) => value => parse(value))(JSON.parse)', context);
 const boundedMessage = error => String(error && error.message || error).slice(0, 800);
@@ -60,7 +65,7 @@ function runModule(source, filename, requireValue) {
   finally { delete context.__module; delete context.__require; }
   return moduleValue.exports;
 }
-const checksWrapper = source => '(function() { "use strict"; const {assert, validate, handleMessage} = __checks;\n' + source + '\n})();';
+const checksWrapper = ${wrapRunChecks.toString()};
 const contractDeny = message => { contractFailure ||= message; return deny(message); };
 const ownRecord = value => value !== null && typeof value === 'object' && !types.isProxy(value) && !Array.isArray(value);
 function plainData(value) {
@@ -85,7 +90,7 @@ function dataArray(value, limit) {
   }
   return data;
 }
-function checkPatches(message, patches, elements, refreshed) {
+function checkPatches(message, patches, elements, refreshed, refreshedTimelines) {
   const patchData = dataArray(patches, 100);
   if (!patchData) return contractDeny('handleMessage must return a patch array containing bounded plain-data patches.');
   const snapshot = [];
@@ -96,6 +101,9 @@ function checkPatches(message, patches, elements, refreshed) {
     const element = elements.get(patch.id), keys = Object.keys(patch);
     if (keys.length < 2 || keys.some(key => key !== 'id' && !element.fields.includes(key))) return contractDeny('A patch field is incompatible with its declared element.');
     const observed = { id: patch.id };
+    let timeline = null;
+    try { timeline = validateTimelinePatch(rawPatch, element.outputFormat, types.isProxy, contextObjectPrototype, contextArrayPrototype); }
+    catch (error) { return contractDeny(boundedMessage(error)); }
     for (const field of keys.filter(key => key !== 'id')) {
       const value = patch[field];
       if (field === 'text' || field === 'value') {
@@ -113,6 +121,7 @@ function checkPatches(message, patches, elements, refreshed) {
         })) return contractDeny('Select options exceed the supported patch shape.');
       }
     }
+    if (timeline) observed.timeline = timeline;
     snapshot.push(observed);
   }
   const outputIds = snapshot.filter(patch => Object.hasOwn(patch, 'text')).map(patch => patch.id);
@@ -128,6 +137,7 @@ function checkPatches(message, patches, elements, refreshed) {
     }
   }
   for (const id of outputIds) refreshed.add(id);
+  for (const patch of snapshot) if (patch.timeline) refreshedTimelines.add(patch.id);
 }
 function assertFacade(target) {
   const wrap = fn => harden((...args) => {
@@ -147,7 +157,7 @@ try {
   const page = JSON.parse(fs.readFileSync('control-contract.json', 'utf8'));
   if (page.version !== 1 || !Array.isArray(page.elements) || page.elements.length > 200) throw new Error('The server control contract is invalid.');
   const elements = new Map(page.elements.map(element => [element.id, element]));
-  const observedEvents = new Set(), postOutputEdits = new Set(), refreshed = new Set();
+  const observedEvents = new Set(), postOutputEdits = new Set(), refreshed = new Set(), refreshedTimelines = new Set();
   const requiredEvents = ['init', ...page.elements.flatMap(element => element.events.map(event => event + ':' + element.id))];
   const requiredEdits = page.elements.flatMap(element => element.events.filter(event => ['input', 'change'].includes(event)).map(event => event + ':' + element.id));
   const sources = new Map(['app.js', 'checks.cjs'].map(path => [path, fs.readFileSync(path, 'utf8')]));
@@ -185,7 +195,7 @@ try {
       try { normalized = parseMessage(JSON.stringify(observedMessage)); }
       catch { return contractDeny('The handler message could not be normalized to browser data.'); }
       const patches = app.handleMessage(normalized);
-      checkPatches(observedMessage, patches, elements, refreshed);
+      checkPatches(observedMessage, patches, elements, refreshed, refreshedTimelines);
       observedEvents.add(observedMessage.type === 'init' ? 'init' : observedMessage.event + ':' + observedMessage.id);
       if (afterOutput && ['input', 'change'].includes(observedMessage.event)) postOutputEdits.add(observedMessage.event + ':' + observedMessage.id);
       handleMessageCalls += 1;
@@ -207,6 +217,7 @@ try {
   const missingEdits = requiredEdits.filter(event => !postOutputEdits.has(event));
   if (missingEdits.length) throw new Error('Post-output edit coverage is incomplete: ' + (requiredEdits.length - missingEdits.length) + '/' + requiredEdits.length + '.');
   if (page.elements.some(element => element.requiresText && !refreshed.has(element.id))) throw new Error('Each declared textual output must receive an observed refresh patch.');
+  if (page.elements.some(element => element.outputFormat === 'timeline' && !refreshedTimelines.has(element.id))) throw new Error('Each declared timeline output must receive an observed timeline patch.');
   process.stdout.write('Observed successful assertions: ' + assertionCalls + '; validate calls: ' + validateCalls + '; handleMessage calls: ' + handleMessageCalls + '\n');
   const loaders = page.elements.filter(element => element.exampleFor !== null);
   const jsonLoaders = loaders.filter(element => elements.get(element.exampleFor).format === 'json');
@@ -294,9 +305,9 @@ function operationIdFromLocation(location) {
   } catch { return null; }
 }
 
-export async function spawnSandbox(config, files, { fetcher = globalThis.fetch, timeoutMs = 15000, requiredInputFormats = null } = {}) {
+export async function spawnSandbox(config, files, { fetcher = globalThis.fetch, timeoutMs = 15000, requiredInputFormats = null, requiredOutputs = null } = {}) {
   const admittedFiles = validateRunFiles(files);
-  const pageContract = runPageContract(admittedFiles, requiredInputFormats);
+  const pageContract = runPageContract(admittedFiles, { requiredInputFormats, requiredOutputs });
   const body = {
     command: '/usr/local/bin/node', args: ['-e', HARNESS], shell: false,
     image: config.imageId, disposable: false, preserve_env: false, cwd: '/tmp', uid: 1000, gid: 1000,
@@ -312,6 +323,10 @@ export async function spawnSandbox(config, files, { fetcher = globalThis.fetch, 
       headers: { ...headers(config), 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (response.status !== 201) {
       await response.body?.cancel();
+      // A timeout, server failure or unexpected success/redirect cannot prove
+      // that the POST was rejected. Keep its outcome unknown without retrying.
+      const uncertain = response.status < 400 || response.status === 408 || response.status >= 500;
+      if (uncertain) fail('sandbox_submission_uncertain', 'The isolated runner submission outcome is unknown.', true);
       fail('sandbox_submission_failed', 'The isolated runner refused the execution request.');
     }
     const operationId = operationIdFromLocation(response.headers.get('location') || '');

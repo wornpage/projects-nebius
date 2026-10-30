@@ -58,6 +58,8 @@ function boundedErrorText(value: unknown, maximum: number): value is string {
 }
 
 function parseApiError(value: unknown): ApiErrorBody | DisabledConfigBody | null {
+	// This client-owned signal requires an observed redirect, not a JSON error label.
+	if (value && typeof value === 'object' && 'code' in value && value.code === 'session_required') return null;
 	if (exactRecord(value, ['code', 'error']) && boundedErrorText(value.code, 80) && boundedErrorText(value.error, 500)) {
 		return { code: value.code, error: value.error };
 	}
@@ -125,6 +127,14 @@ function checkedResponse(response: Response, value: unknown): unknown {
 	return value;
 }
 
+async function rejectRedirect(response: Response): Promise<void> {
+	if (response.type !== 'opaqueredirect' && ![301, 302, 303, 307, 308].includes(response.status)) return;
+	await response.body?.cancel().catch(() => {});
+	throw new NebiusRunClientError('Task execution access was redirected. Sign-in may be required; sign in in a new tab, then refresh the saved run.', {
+		code: 'session_required', status: response.status
+	});
+}
+
 async function withRequestDeadline<T>(signal: AbortSignal | undefined, action: (requestSignal: AbortSignal) => Promise<T>): Promise<T> {
 	const controller = new AbortController();
 	const abort = () => controller.abort(signal?.reason);
@@ -143,7 +153,8 @@ async function fetchJson(input: RequestInfo | URL, init: RequestInit, signal?: A
 	return withRequestDeadline(signal, async (requestSignal) => {
 		const headers = new Headers(init.headers);
 		headers.set('X-Nebius-Run-Format', RUN_RECORD_FORMAT);
-		const response = await fetch(input, { ...init, headers, signal: requestSignal });
+		const response = await fetch(input, { ...init, headers, redirect: 'manual', signal: requestSignal });
+		await rejectRedirect(response);
 		return { response, value: await boundedJson(response) };
 	});
 }
@@ -228,6 +239,9 @@ export async function startRun(runId: string, runKey: string, input: RunInput, s
 		}, signal);
 		return (await parseRunResponse(checkedResponse(response, value), runId, validated.packId)).run;
 	} catch (error) {
+		if (error instanceof NebiusRunClientError && error.code === 'session_required') {
+			throw new NebiusRunClientError(error.message, { code: error.code, status: error.status, uncertain: true });
+		}
 		if (error instanceof NebiusRunClientError && error.status === 409 && error.code === 'run_format_changed') {
 			throw new NebiusRunClientError(error.message, { code: error.code, status: error.status, uncertain: true });
 		}
@@ -248,6 +262,9 @@ async function requestKnownRun(method: 'GET' | 'DELETE', runId: string, runKey: 
 		}, signal);
 		return (await parseRunResponse(checkedResponse(response, value), runId, packId)).run;
 	} catch (error) {
+		if (method === 'DELETE' && error instanceof NebiusRunClientError && error.code === 'session_required') {
+			throw new NebiusRunClientError(error.message, { code: error.code, status: error.status, uncertain: true });
+		}
 		if (method === 'DELETE' && !(error instanceof NebiusRunClientError && error.status >= 400 && error.status < 500)) {
 			throw new NebiusRunClientError('The cancellation response could not be verified. Cancellation is not confirmed; refresh this saved run.', { uncertain: true });
 		}
@@ -272,10 +289,12 @@ export async function downloadRunPreviewHtml(runId: string, runKey: string, sign
 				method: 'POST',
 				cache: 'no-store',
 				credentials: 'same-origin',
+				redirect: 'manual',
 				headers: { Accept: 'text/html', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
 				body: new URLSearchParams({ key: runKey }).toString(),
 				signal: requestSignal
 			});
+			await rejectRedirect(response);
 			if (!response.ok) {
 				const value = await boundedJson(response);
 				checkedResponse(response, value);

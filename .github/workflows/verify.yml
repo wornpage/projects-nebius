@@ -10,26 +10,6 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm --prefix svelte-frontend ci --ignore-scripts --no-audit --no-fund
-      - name: Resolve hosted Chrome
-        shell: bash
-        run: |
-          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
-          test -n "$chrome"
-          echo "CHROME_EXECUTABLE_PATH=$chrome" >> "$GITHUB_ENV"
-      - run: npm run verify
-      - run: npm run test:browser
-
-  verify-nebius:
     name: Nebius provider-free verification
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -51,10 +31,12 @@ jobs:
           chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
           test -n "$chrome"
           echo "CHROME_EXECUTABLE_PATH=$chrome" >> "$GITHUB_ENV"
-      # Authored/synthetic fixtures, local build, Worker dry run and disabled runtime.
+      # Authored fixtures and recorded model source, local build, dry run and disabled runtime.
       # These gates supply no provider credentials and do not establish model quality.
       - name: Verify the Nebius edition
-        run: npm run verify:nebius
+        run: npm run verify
+      - name: Check the recorded tool through the actual local Worker
+        run: npm run test:nebius:landing
       - name: Check the authored tool through the production preview
         run: npm run test:nebius:tool-preview
       - name: Check project approval and persistence

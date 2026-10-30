@@ -1,0 +1,255 @@
+/* Nebius palette owner. Both palettes retain their own light/dark colors
+   and share non-color cues. */
+:root {
+  color-scheme: light dark;
+  --worn-shadow-sm: 0 1px 2px light-dark(rgba(0,0,0,.04),rgba(0,0,0,.16)), 0 1px 4px light-dark(rgba(0,0,0,.06),rgba(0,0,0,.22));
+  --worn-shadow-md: 0 2px 4px light-dark(rgba(0,0,0,.04),rgba(0,0,0,.18)), 0 4px 12px light-dark(rgba(0,0,0,.08),rgba(0,0,0,.28));
+  --shadow: 0 1px 2px light-dark(rgba(23,33,29,.04),rgba(0,0,0,.08)), 0 1px 4px light-dark(rgba(23,33,29,.06),rgba(0,0,0,.15));
+  --shadow-lift: 0 24px 60px -28px light-dark(rgba(33,50,43,.35),rgba(0,0,0,.55));
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* Work and Task crossfades keep text still. Generated tools own their motion. */
+:root[data-palette]:has(.workspace-polish)::view-transition-group(screen) { animation: none; }
+:root[data-palette]:has(.workspace-polish)::view-transition-old(screen),
+:root[data-palette]:has(.workspace-polish)::view-transition-new(screen) {
+  animation: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-palette]:has(.workspace-polish)::view-transition-old(screen) { animation: workspace-screen-out 120ms ease-out both; }
+  :root[data-palette]:has(.workspace-polish)::view-transition-new(screen) { animation: workspace-screen-in 120ms ease-out both; }
+}
+@keyframes workspace-screen-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes workspace-screen-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Application reading rhythm. Prose and everyday controls use the body face;
+   code and identifiers retain monospace. Tool iframes own their typography. */
+:root[data-palette] #challenge-main {
+  line-height: 1.55;
+}
+:root[data-palette] #challenge-main .demo-panel-title {
+  font-weight: 700;
+  letter-spacing: -.015em;
+  text-wrap: balance;
+}
+:root[data-palette] #challenge-main :is(p, dd, li) {
+  text-wrap: pretty;
+}
+:root[data-palette] #challenge-main :is(.worn-input, .worn-textarea) {
+  font-family: var(--font-family-sans);
+  font-size: 1rem;
+  font-weight: 400;
+  /* Preserve comfortable field line spacing and existing control sizing. */
+  line-height: 28px;
+}
+:root[data-palette] #challenge-main .worn-btn {
+	font-family: var(--font-family-sans);
+  font-size: .875rem;
+  line-height: 1.4;
+}
+:root[data-palette] .challenge-shell :is(button, input, select, textarea, .challenge-nav-control, .worn-chip) {
+  font-family: var(--font-family-sans);
+}
+/* Plain multiline fields keep notebook rules from crossing the text. */
+:root[data-palette] :is(.ui-lab-shell, .worn-dialog) textarea {
+  background-image: none;
+}
+:root[data-palette] #challenge-main > .demo-panel {
+  box-shadow: none;
+}
+:root[data-palette] #challenge-main :is(.section-label, .run-review-kicker) {
+  font-size: .75rem;
+  line-height: 1.5;
+}
+:root[data-palette] #challenge-main [data-nebius-written-next-step] strong {
+  font-family: var(--font-family-sans);
+  font-size: .9375rem;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+:root[data-palette="neutral"] {
+  --worn-bg: light-dark(#f3f4f3, #141617);
+  --worn-surface: light-dark(#ffffff, #1d2122);
+  --worn-nav-bg: light-dark(#e8ebe9, #171a1b);
+  --worn-accent: light-dark(#0f766e, #2f7665);
+  --worn-accent-hover: light-dark(#0f766e, #285f53);
+  --worn-accent-text: light-dark(#ffffff, #ffffff);
+  --worn-link: light-dark(#0f766e, #d3e7df);
+  --worn-accent-50: light-dark(#e6f7f5, #292f30);
+  --worn-selected-bg: light-dark(#e5e9e7, #303738);
+  --worn-selected-fg: light-dark(#242c28, #f5f7f6);
+  --worn-border: light-dark(#d4d8d5, #454d4d);
+  --worn-border-strong: light-dark(#b8bfba, #606b67);
+  --worn-text: light-dark(#1f2522, #f5f7f6);
+  --worn-text-secondary: light-dark(#4f5853, #dce2df);
+  --worn-text-muted: light-dark(#59625d, #b8c1bd);
+  --worn-hover-bg: light-dark(#eef1ef, #292f30);
+  --worn-success-bg: light-dark(#ecfdf5, #222c28);
+  --worn-success-border: light-dark(#14b8a6, #14b8a6);
+  --worn-success-text: light-dark(#134e4a, #a7f3d0);
+  --worn-warning-bg: light-dark(#fff7ed, #431407);
+  --worn-warning-border: light-dark(#fdba74, #fdba74);
+  --worn-warning-text: light-dark(#a85200, #fde68a);
+  --worn-danger-bg: light-dark(#fef2f2, #450a0a);
+  --worn-danger-border: light-dark(#fca5a5, #fca5a5);
+  --worn-danger-text: light-dark(#991b1b, #fecaca);
+  --worn-danger-badge-bg: light-dark(#991b1b, #b91c1c);
+  --worn-danger-badge-text: light-dark(#ffffff, #ffffff);
+  --bg: light-dark(#f5f3ef, #141617);
+  --surface: light-dark(#fdfdfb, #1d2122);
+  --nav-bg: light-dark(#efede7, #171a1b);
+  --border: light-dark(#e2ddd5, #454d4d);
+  --border-strong: light-dark(#d0cac1, #606b67);
+  --ink: light-dark(#21322b, #f5f7f6);
+  --ink-soft: light-dark(#47564d, #dce2df);
+  --muted: light-dark(#5b6b62, #b8c1bd);
+  --accent: light-dark(#0f766e, #4ca48f);
+  --accent-hover: light-dark(#115e59, #7ddac3);
+  --accent-50: light-dark(#e6f7f5, #292f30);
+  --accent-text: light-dark(#ffffff, #04241d);
+  --selected-bg: light-dark(#d7efe7, #303738);
+  --warning-border: light-dark(#d98a4a, #fdba74);
+  --warning-text: light-dark(#a85200, #fde68a);
+  --warning-bg: light-dark(#fbeee0, #431407);
+  --success-border: light-dark(#14b8a6, #14b8a6);
+  --success-text: light-dark(#134e4a, #a7f3d0);
+  --danger-text: light-dark(#991b1b, #fecaca);
+  --worn-field-border: light-dark(#758176, #80978a);
+}
+
+:root[data-palette="original"] {
+  --worn-bg: light-dark(#f3f4f3, #0f1714);
+  --worn-surface: light-dark(#ffffff, #18241f);
+  --worn-nav-bg: light-dark(#e8ebe9, #121c18);
+  --worn-accent: light-dark(#0f766e, #2f7665);
+  --worn-accent-hover: light-dark(#0f766e, #285f53);
+  --worn-accent-text: light-dark(#ffffff, #ffffff);
+  --worn-link: light-dark(#0f766e, #7ddac3);
+  --worn-accent-50: light-dark(#e6f7f5, #16372f);
+  --worn-selected-bg: light-dark(#d7efe7, #16453b);
+  --worn-selected-fg: light-dark(#082f2b, #f7fffc);
+  --worn-border: light-dark(#d4d8d5, #3a4d45);
+  --worn-border-strong: light-dark(#b8bfba, #4d5c52);
+  --worn-text: light-dark(#1f2522, #f7fffc);
+  --worn-text-secondary: light-dark(#4f5853, #d9e8e2);
+  --worn-text-muted: light-dark(#59625d, #b0bcb4);
+  --worn-hover-bg: light-dark(#eef1ef, #16372f);
+  --worn-success-bg: light-dark(#ecfdf5, #022c22);
+  --worn-success-border: light-dark(#14b8a6, #14b8a6);
+  --worn-success-text: light-dark(#134e4a, #a7f3d0);
+  --worn-warning-bg: light-dark(#fff7ed, #431407);
+  --worn-warning-border: light-dark(#fdba74, #fdba74);
+  --worn-warning-text: light-dark(#a85200, #fde68a);
+  --worn-danger-bg: light-dark(#fef2f2, #450a0a);
+  --worn-danger-border: light-dark(#fca5a5, #fca5a5);
+  --worn-danger-text: light-dark(#991b1b, #fecaca);
+  --worn-danger-badge-bg: light-dark(#991b1b, #b91c1c);
+  --worn-danger-badge-text: light-dark(#ffffff, #ffffff);
+  --bg: light-dark(#f5f3ef, #0d1512);
+  --surface: light-dark(#fdfdfb, #17211d);
+  --nav-bg: light-dark(#efede7, #101a16);
+  --border: light-dark(#e2ddd5, #34473f);
+  --border-strong: light-dark(#d0cac1, #5b6a60);
+  --ink: light-dark(#21322b, #f7fffc);
+  --ink-soft: light-dark(#47564d, #d9e8e2);
+  --muted: light-dark(#5b6b62, #9aa99f);
+  --accent: light-dark(#0f766e, #4ca48f);
+  --accent-hover: light-dark(#115e59, #7ddac3);
+  --accent-50: light-dark(#e6f7f5, #16372f);
+  --accent-text: light-dark(#ffffff, #04241d);
+  --selected-bg: light-dark(#d7efe7, #16453b);
+  --warning-border: light-dark(#d98a4a, #fdba74);
+  --warning-text: light-dark(#a85200, #fde68a);
+  --warning-bg: light-dark(#fbeee0, #431407);
+  --success-border: light-dark(#14b8a6, #14b8a6);
+  --success-text: light-dark(#134e4a, #a7f3d0);
+  --danger-text: light-dark(#991b1b, #fecaca);
+  --worn-field-border: light-dark(#758176, #80978a);
+}
+
+:root[data-palette="original"] .lp-nebius .lp-cta-banner { background: var(--accent); }
+:root[data-palette="original"] .lp-nebius .lp-cta-banner :is(h2, p) { color: var(--accent-text); }
+:root[data-palette="original"] .lp-nebius .lp-cta-banner :is(a, summary):focus-visible { outline-color: var(--accent-text); }
+
+/* Landing tokens originally defined only in dark mode must follow the chosen
+   appearance rather than the operating-system media query. */
+:root[data-theme="light"] { --hover-bg: initial; --success-bg: initial; --danger-bg: initial; }
+:root[data-palette="original"][data-theme="dark"] { --hover-bg: #16372f; --success-bg: #022c22; --danger-bg: #450a0a; }
+:root[data-palette="neutral"][data-theme="dark"] { --hover-bg: #292f30; --success-bg: #222c28; --danger-bg: #450a0a; }
+
+:root[data-palette="original"] .lp-nebius .lp-cta-banner .lp-btn-oncta { background: var(--surface); border-color: var(--surface); color: var(--accent); }
+:root[data-palette="original"] .lp-nebius .lp-cta-banner .lp-btn-oncta:hover { background: var(--accent-50); border-color: var(--accent-50); }
+
+:root[data-palette="neutral"] .demo-grid-card.selected,
+:root[data-palette="neutral"] .demo-work-card.selected {
+  border-color: var(--worn-field-border);
+  box-shadow: none;
+  background: var(--worn-selected-bg);
+}
+
+/* Interactive boundaries are stronger than decorative panel dividers.
+   Dialogs are portalled outside the application shell. */
+:root[data-palette] :is(.challenge-shell, .worn-dialog) {
+  --worn-binary-focus: var(--worn-focus);
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .worn-btn:where(:not(.is-primary, .is-danger, .is-warning)):not(:disabled):not([aria-disabled="true"]),
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .worn-chip:where(button, a):not(.is-danger),
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .work-head-actions .worn-icon-btn:not(:disabled),
+:root[data-palette] :is(.challenge-shell, .worn-dialog) :is(.work-backup-download, .work-backup-import, .work-command-entry) {
+  border-color: var(--worn-field-border);
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .worn-btn.is-danger:not(:disabled):not([aria-disabled="true"]) {
+  border-color: var(--worn-danger-text);
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) :is(.worn-chip, .worn-btn)[aria-pressed="true"]:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--worn-selected-bg);
+  border-color: var(--worn-link);
+  box-shadow: inset 0 0 0 1px var(--worn-link);
+  color: var(--worn-selected-fg);
+  filter: none;
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .worn-btn[aria-pressed="true"] {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: .22em;
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .challenge-nav-control[aria-current="page"] {
+  border-color: var(--worn-link);
+  box-shadow: inset 0 -2px 0 var(--worn-link);
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) :is(.demo-work-card.selected, .demo-grid-card.selected, .demo-work-card.is-batch-checked, .demo-grid-card.is-batch-checked) {
+  border-color: var(--worn-field-border);
+  box-shadow: inset 0 0 0 1px var(--worn-field-border);
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .work-command-entry { border-width: 2px; }
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .work-command-entry-active { border-color: var(--worn-link); }
+
+/* Match the Task selection treatment without changing tab keyboard behavior. */
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .work-filter-stack [role="tablist"] { border: 0; gap: .375rem; }
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .work-filter-stack [role="tab"] {
+  border: 2px solid transparent;
+  border-radius: var(--worn-radius-sm);
+  margin-block-end: 0;
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .work-filter-stack [role="tab"][aria-selected="true"] {
+  background: var(--worn-selected-bg);
+  border-color: var(--worn-link);
+  color: var(--worn-selected-fg);
+  font-weight: 700;
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .work-filter-stack [role="tab"]:focus-visible {
+  outline: 2px dashed var(--worn-focus);
+  outline-offset: -6px;
+}
+
+/* Framed disclosures are controls; native nested summaries need their own ring. */
+:root[data-palette] :is(.challenge-shell, .worn-dialog) :is(.worn-collapsible, #nebius-task-editor, .decision-context, [data-nebius-evidence-review], .quick-create-options summary) {
+  border-color: var(--worn-field-border);
+}
+:root[data-palette] :is(.challenge-shell, .worn-dialog) :is(#nebius-task-editor, [data-nebius-suggestion], [data-nebius-task-activity], .decision-context, [data-nebius-evidence-review]) summary:focus-visible,
+:root[data-palette] :is(.challenge-shell, .worn-dialog) .grid-card-title:focus-visible {
+  outline: 2px dashed var(--worn-focus);
+  outline-offset: 3px;
+}

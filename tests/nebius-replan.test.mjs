@@ -47,8 +47,8 @@ for (const [label, mutate] of [
   ['cycle', s => { s.tasks[0] = { ...s.tasks[0], status: 'blocked', blocker: 'Waiting', blockedBy: s.tasks[1].id }; }],
   ['active predecessor', s => { s.tasks[1].status = 'active'; }], ['blocked None', s => { s.tasks[1].blocker = ' None '; }],
   ['long title', s => { s.tasks[0].title = 'x'.repeat(201); }], ['empty purpose', s => { s.tasks[0].purpose = ' '; }],
-  ['long purpose', s => { s.tasks[0].purpose = 'x'.repeat(1001); }], ['long step', s => { s.tasks[0].nextStep = 'x'.repeat(201); }],
-  ['long criteria', s => { s.tasks[0].doneWhen = 'x'.repeat(1001); }], ['long blocker', s => { s.tasks[0].blocker = 'x'.repeat(201); }],
+  ['long purpose', s => { s.tasks[0].purpose = 'x'.repeat(1001); }], ['long step', s => { s.tasks[0].nextStep = 'x'.repeat(2001); }],
+  ['long criteria', s => { s.tasks[0].doneWhen = 'x'.repeat(4001); }], ['long blocker', s => { s.tasks[0].blocker = 'x'.repeat(201); }],
   ['project title newline', s => { s.project.title = 'Bad\n'; }], ['title control', s => { s.tasks[0].title = 'Bad\n'; }],
   ['purpose control', s => { s.tasks[0].purpose = 'Bad\u0085'; }], ['summary control', s => { s.project.summary = 'Bad\r'; }],
 ]) test(`snapshot refuses ${label}`, () => { const value = snapshot(); mutate(value); assert.throws(() => validateProjectSnapshot(value)); });
@@ -96,7 +96,7 @@ test('valid multi-task changes are sorted and full changed graph may safely remo
   const result = validateProjectReplan(value, context); assert.equal(result.changes[0].id, context.tasks[0].id); assert.equal(context.tasks[1].blockedBy, context.tasks[0].id);
 });
 test('all maximum project/task/output boundaries accept without truncation', () => {
-  const context = { project: { id: 'p'.repeat(120), title: 'x'.repeat(120), summary: 'x'.repeat(600) }, tasks: Array.from({ length: 8 }, (_, i) => ({ ...task(`${i}${'x'.repeat(199)}`), title: 'x'.repeat(200), purpose: 'x'.repeat(1000), nextStep: 'x'.repeat(200), doneWhen: 'x'.repeat(1000) })) };
+  const context = { project: { id: 'p'.repeat(120), title: 'x'.repeat(120), summary: 'x'.repeat(600) }, tasks: Array.from({ length: 8 }, (_, i) => ({ ...task(`${i}${'x'.repeat(199)}`), title: 'x'.repeat(200), purpose: 'x'.repeat(1000), nextStep: 'x'.repeat(2000), doneWhen: 'x'.repeat(4000) })) };
   const value = { summary: 'x'.repeat(600), changes: context.tasks.map(t => change(t, { blocker: 'x'.repeat(200), status: 'blocked', reason: 'x'.repeat(400) })), missingInformation: Array(5).fill('x'.repeat(200)) };
   assert.deepEqual(validateProjectSnapshot(context), context); assert.deepEqual(validateProjectReplan(value, context), value); assert.equal(REPLAN_LIMITS.tasks, 8);
 });
@@ -111,6 +111,19 @@ test('replan submits exact canonical context once with bounded allowance and ret
   assert.deepEqual(body.usage, { input_tokens: 40, output_tokens: 100 }); assert.equal(typeof body.requestId, 'string'); assert.equal(h.calls, 1); assert.equal(h.reservations, 1); assert.equal(h.bucket, 'token-factory-daily');
   assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.equal(h.sent.url, TOKEN_FACTORY_URL); assert.equal(h.sent.options.redirect, 'manual');
   const sent = JSON.parse(h.sent.options.body); assert.deepEqual(JSON.parse(sent.messages[1].content), { snapshot: input.snapshot, update: input.update }); assert.equal(sent.max_tokens, 4000); assert.equal(sent.stream, false); assert.equal(sent.tools, undefined); assert.equal(sent.messages.length, 2); assert.match(sent.messages[0].content, /untrusted/); assert.match(sent.messages[0].content, /project-replan.v1/);
+});
+
+test('replan carries long saved requirements through the mocked provider unchanged', async t => {
+  const h = harness(t), input = h.body();
+  input.snapshot.tasks[0].nextStep = 'n'.repeat(593);
+  input.snapshot.tasks[0].doneWhen = 'd'.repeat(1332);
+  const response = await h.send(input), body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.replan.changes[0].doneWhen, input.snapshot.tasks[0].doneWhen);
+  const sent = JSON.parse(JSON.parse(h.sent.options.body).messages[1].content);
+  assert.equal(sent.snapshot.tasks[0].nextStep, input.snapshot.tasks[0].nextStep);
+  assert.equal(sent.snapshot.tasks[0].doneWhen, input.snapshot.tasks[0].doneWhen);
+  assert.equal(h.calls, 1);
 });
 test('input/consent/model/method/body refusals precede provider and budget use', async t => {
   const h = harness(t);
@@ -140,15 +153,15 @@ test('provider errors are sanitized and receive no retry', async t => {
 test('replan timeout aborts the single stalled call', async () => {
   let calls = 0, signal; await assert.rejects(replanWithNebius({ model, apiKey: 'synthetic' }, { snapshot: snapshot(), update: 'Clarify' }, { timeoutMs: 10, fetcher: async (_, options) => { calls++; signal = options.signal; return new Promise(() => {}); } }), { code: 'inference_timeout' }); assert.equal(calls, 1); assert.equal(signal.aborted, true);
 });
-test('128 KiB provider output cap cancels overflowing streams', async () => {
-  let cancelled = false; await assert.rejects(replanWithNebius({ model, apiKey: 'synthetic' }, { snapshot: snapshot(), update: 'Clarify' }, { fetcher: async () => new Response(new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(131073)); }, cancel() { cancelled = true; } }), { headers: { 'content-type': 'application/json' } }) }), { code: 'invalid_model_output' }); assert.equal(cancelled, true);
+test('768 KiB replan output cap cancels overflowing streams', async () => {
+  let cancelled = false; await assert.rejects(replanWithNebius({ model, apiKey: 'synthetic' }, { snapshot: snapshot(), update: 'Clarify' }, { fetcher: async () => new Response(new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(786433)); }, cancel() { cancelled = true; } }), { headers: { 'content-type': 'application/json' } }) }), { code: 'invalid_model_output' }); assert.equal(cancelled, true);
 });
-test('160 KiB endpoint cap fits full allowed UTF8 and JSON-escaped snapshots; old operations keep49 KiB', async t => {
+test('512 KiB endpoint cap fits full allowed UTF8 and JSON-escaped snapshots; old operations keep49 KiB', async t => {
   const h = harness(t), full = h.body(), fill = '\ud800';
   full.snapshot.project = { id: fill.repeat(120), title: fill.repeat(120), summary: fill.repeat(600) };
-  full.snapshot.tasks = Array.from({ length: 8 }, (_, i) => ({ id: fill.repeat(199) + String.fromCharCode(0xd800 + i), title: fill.repeat(200), purpose: fill.repeat(1000), nextStep: fill.repeat(200), doneWhen: fill.repeat(1000), status: 'blocked', blocker: fill.repeat(200), blockedBy: i ? fill.repeat(199) + String.fromCharCode(0xd800 + i - 1) : null, archived: false }));
+  full.snapshot.tasks = Array.from({ length: 8 }, (_, i) => ({ id: fill.repeat(199) + String.fromCharCode(0xd800 + i), title: fill.repeat(200), purpose: fill.repeat(1000), nextStep: fill.repeat(2000), doneWhen: fill.repeat(4000), status: 'blocked', blocker: fill.repeat(200), blockedBy: i ? fill.repeat(199) + String.fromCharCode(0xd800 + i - 1) : null, archived: false }));
   full.update = fill.repeat(2000); full.requestedModel = 'nvidia/' + 'x'.repeat(151); h.env.NEBIUS_MODEL_REASONING = full.requestedModel;
-  const length = Buffer.byteLength(JSON.stringify(full)); assert.equal(length, 161159); assert(length > 49152); assert(length <= REPLAN_REQUEST_LIMIT); assert.doesNotThrow(() => validateReplanInput({ snapshot: full.snapshot, update: full.update }));
+  const length = Buffer.byteLength(JSON.stringify(full)); assert.equal(length, 391559); assert(length > 49152); assert(length <= REPLAN_REQUEST_LIMIT); assert.doesNotThrow(() => validateReplanInput({ snapshot: full.snapshot, update: full.update }));
   // Sanitized invalid model output still proves input passed admission/provider.
   const response = await h.send(full); assert.equal(response.status, 502); assert.equal(h.calls, 1); assert.equal(h.reservations, 1);
   assert.equal((await h.send('x'.repeat(49153), { operation: 'plan-project' })).status, 413);

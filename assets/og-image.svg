@@ -1,120 +1,80 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">Wornpage Projects — Agent finds. Evidence proves. You decide.</title>
-  <desc id="desc">A WebMCP project handoff showing verified work, an unsaved next action, and a human-only approval boundary.</desc>
+  <title id="title">Wornpage Projects — Turn a task into a tool</title>
+  <desc id="desc">An illustrated project workspace showing a brief, a tool built with Nemotron on Nebius, and a human review.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f8f7f3"/>
-      <stop offset="0.55" stop-color="#f3f1eb"/>
-      <stop offset="1" stop-color="#e9f3ef"/>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111617"/>
+      <stop offset="1" stop-color="#22292a"/>
     </linearGradient>
-    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#fbfcfa"/>
+    <linearGradient id="surface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#252c2d"/>
+      <stop offset="1" stop-color="#1b2122"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
-      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#21322b" flood-opacity="0.16"/>
+    <radialGradient id="glow" cx="1" cy="0" r="1">
+      <stop offset="0" stop-color="#396e60" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#396e60" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="150%" height="155%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
     </filter>
-    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-      <path d="M32 0H0V32" fill="none" stroke="#0f766e" stroke-opacity="0.045" stroke-width="1"/>
-    </pattern>
   </defs>
 
-  <rect width="1200" height="630" fill="url(#bg)"/>
-  <rect width="1200" height="630" fill="url(#grid)"/>
-  <circle cx="1120" cy="-40" r="280" fill="#d7efe7" opacity="0.75"/>
-  <circle cx="-70" cy="620" r="240" fill="#fbeee0" opacity="0.7"/>
+  <rect width="1200" height="630" fill="url(#background)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <path d="M0 524H1200" stroke="#34403e" stroke-opacity="0.45"/>
+  <path d="M0 526H1200" stroke="#0c1112" stroke-opacity="0.4"/>
 
-  <g transform="translate(68 58)">
-    <rect width="44" height="44" rx="10" fill="#0f766e"/>
-    <text x="22" y="31" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="27" font-weight="700" fill="#ffffff">P</text>
-    <text x="58" y="18" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#21322b">Wornpage Projects</text>
-    <text x="58" y="38" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="600" fill="#5b6b62" letter-spacing="1.2">VISIBLE WEBMCP HANDOFF</text>
+  <g transform="translate(68 58)" font-family="Segoe UI, Arial, sans-serif">
+    <rect width="48" height="48" rx="12" fill="#e6efeb"/>
+    <text x="24" y="33" text-anchor="middle" font-size="27" font-weight="700" fill="#18211f">W</text>
+    <text x="64" y="20" font-size="20" font-weight="700" fill="#f4f7f5">Wornpage Projects</text>
+    <text x="64" y="41" font-size="12" font-weight="700" letter-spacing="1.5" fill="#a7b5af">NEBIUS EDITION</text>
   </g>
 
-  <g transform="translate(68 166)">
-    <text font-family="DejaVu Sans, sans-serif" font-size="51" font-weight="700" fill="#21322b" letter-spacing="-1.5">
-      <tspan x="0" y="0">Agent finds.</tspan>
-      <tspan x="0" y="64">Evidence proves.</tspan>
-      <tspan x="0" y="128" fill="#0f766e">You decide.</tspan>
-    </text>
-    <text x="0" y="177" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#47564d">
-      <tspan x="0" dy="0">The agent narrows visible work, cites exact facts,</tspan>
-      <tspan x="0" dy="28">and stops before the consequential action.</tspan>
-    </text>
-
-    <g transform="translate(0 258)">
-      <rect x="0" y="0" width="104" height="34" rx="17" fill="#ffffff" stroke="#d0cac1"/>
-      <circle cx="18" cy="17" r="5" fill="#14b8a6"/>
-      <text x="31" y="22" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="650" fill="#21322b">No login</text>
-
-      <rect x="116" y="0" width="118" height="34" rx="17" fill="#ffffff" stroke="#d0cac1"/>
-      <circle cx="134" cy="17" r="5" fill="#14b8a6"/>
-      <text x="147" y="22" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="650" fill="#21322b">No backend</text>
-
-      <rect x="246" y="0" width="155" height="34" rx="17" fill="#e6f7f5" stroke="#0f766e"/>
-      <circle cx="264" cy="17" r="5" fill="#0f766e"/>
-      <text x="277" y="22" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="700" fill="#134e4a">Human-only Save</text>
-    </g>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="68" y="175" font-size="13" font-weight="700" letter-spacing="2" fill="#91cdb9">FROM WORK TO A TOOL</text>
+    <text x="68" y="251" font-size="64" font-weight="700" letter-spacing="-1.6" fill="#f6f8f7">Turn a task</text>
+    <text x="68" y="324" font-size="64" font-weight="700" letter-spacing="-1.6" fill="#f6f8f7">into a tool.</text>
+    <text x="70" y="381" font-size="21" fill="#cbd5d0">Build with Nemotron on Nebius.</text>
+    <text x="70" y="414" font-size="21" fill="#cbd5d0">Review the evidence. You decide.</text>
+    <path d="M70 465H116" stroke="#87c8b3" stroke-width="3" stroke-linecap="round"/>
+    <text x="130" y="471" font-size="13" font-weight="700" letter-spacing="1.2" fill="#aebcb6">BRIEF  /  TOOL  /  REVIEW</text>
   </g>
 
-  <g transform="translate(620 72)" filter="url(#shadow)">
-    <rect width="512" height="486" rx="18" fill="url(#panel)" stroke="#c9d4ce" stroke-width="1.5"/>
+  <g transform="translate(644 91)" filter="url(#shadow)" font-family="Segoe UI, Arial, sans-serif">
+    <rect width="488" height="454" rx="20" fill="url(#surface)" stroke="#596863" stroke-width="1.5"/>
+    <text x="28" y="39" font-size="12" font-weight="700" letter-spacing="1.4" fill="#aebcb6">PROJECT WORKSPACE</text>
+    <text x="460" y="39" text-anchor="end" font-size="12" font-weight="700" fill="#9ed9c4">TASK</text>
+    <path d="M28 58H460" stroke="#495652"/>
 
-    <g transform="translate(24 22)">
-      <text x="0" y="13" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="700" fill="#0f766e" letter-spacing="1.35">VERIFIED ACTION TRAIL</text>
-      <text x="0" y="42" font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" fill="#21322b">One accountable handoff</text>
-      <rect x="312" y="2" width="152" height="30" rx="15" fill="#e6f7f5" stroke="#9bcfc3"/>
-      <text x="388" y="22" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="700" fill="#0f766e">3 verified · 1 pending</text>
+    <text x="28" y="99" font-size="25" font-weight="700" fill="#f4f7f5">Release packet checker</text>
+    <text x="28" y="126" font-size="15" fill="#b7c4be">A small tool for the work at hand</text>
+
+    <g transform="translate(28 157)">
+      <path d="M16 16V180" stroke="#536b61" stroke-width="2"/>
+      <circle cx="16" cy="16" r="16" fill="#e4efea"/>
+      <text x="16" y="21" text-anchor="middle" font-size="14" font-weight="700" fill="#1a2923">1</text>
+      <text x="46" y="13" font-size="17" font-weight="700" fill="#f4f7f5">Brief</text>
+      <text x="46" y="35" font-size="14" fill="#bdc9c3">Define what the tool should do.</text>
+
+      <circle cx="16" cy="97" r="16" fill="#e4efea"/>
+      <text x="16" y="102" text-anchor="middle" font-size="14" font-weight="700" fill="#1a2923">2</text>
+      <text x="46" y="94" font-size="17" font-weight="700" fill="#f4f7f5">Tool</text>
+      <text x="46" y="116" font-size="14" fill="#bdc9c3">Generate code and checks on Nebius.</text>
+
+      <circle cx="16" cy="178" r="16" fill="#e4efea"/>
+      <text x="16" y="183" text-anchor="middle" font-size="14" font-weight="700" fill="#1a2923">3</text>
+      <text x="46" y="175" font-size="17" font-weight="700" fill="#f4f7f5">Review</text>
+      <text x="46" y="197" font-size="14" fill="#bdc9c3">Inspect the source and evidence.</text>
     </g>
 
-    <g transform="translate(24 86)">
-      <g>
-        <rect width="145" height="94" rx="10" fill="#fdfdfb" stroke="#d0cac1"/>
-        <circle cx="21" cy="21" r="11" fill="#d7efe7" stroke="#0f766e"/>
-        <path d="M16 21l3 3 7-8" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="39" y="17" font-family="DejaVu Sans, sans-serif" font-size="9" font-weight="700" fill="#0f766e" letter-spacing="0.7">VERIFIED</text>
-        <text x="14" y="50" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="700" fill="#5b6b62">WORK NARROWED</text>
-        <text x="14" y="76" font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" fill="#21322b">4 of 8</text>
-      </g>
-      <g transform="translate(159 0)">
-        <rect width="145" height="94" rx="10" fill="#fdfdfb" stroke="#d0cac1"/>
-        <circle cx="21" cy="21" r="11" fill="#d7efe7" stroke="#0f766e"/>
-        <path d="M16 21l3 3 7-8" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="39" y="17" font-family="DejaVu Sans, sans-serif" font-size="9" font-weight="700" fill="#0f766e" letter-spacing="0.7">VERIFIED</text>
-        <text x="14" y="50" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="700" fill="#5b6b62">REVIEW CHECKED</text>
-        <text x="14" y="76" font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" fill="#21322b">2 facts</text>
-      </g>
-      <g transform="translate(318 0)">
-        <rect width="145" height="94" rx="10" fill="#fdfdfb" stroke="#0f766e"/>
-        <circle cx="21" cy="21" r="11" fill="#d7efe7" stroke="#0f766e"/>
-        <path d="M16 21l3 3 7-8" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="39" y="17" font-family="DejaVu Sans, sans-serif" font-size="9" font-weight="700" fill="#0f766e" letter-spacing="0.7">VERIFIED</text>
-        <text x="14" y="50" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="700" fill="#5b6b62">NEXT PREPARED</text>
-        <text x="14" y="76" font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" fill="#21322b">Unsaved</text>
-      </g>
-    </g>
-
-    <g transform="translate(24 198)">
-      <rect width="464" height="88" rx="11" fill="#fbeee0" stroke="#d98a4a"/>
-      <text x="16" y="24" font-family="DejaVu Sans, sans-serif" font-size="10" font-weight="700" fill="#a85200" letter-spacing="0.85">VERIFIED EVIDENCE</text>
-      <text x="16" y="50" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700" fill="#21322b">Workflow: Blocked</text>
-      <text x="16" y="72" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="500" fill="#47564d">Blocker: Waiting on final details</text>
-    </g>
-
-    <g transform="translate(24 300)">
-      <rect width="464" height="162" rx="12" fill="#fdfdfb" stroke="#0f766e" stroke-width="1.5"/>
-      <rect x="16" y="14" width="144" height="26" rx="13" fill="#0f766e"/>
-      <text x="88" y="31" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="9" font-weight="700" fill="#ffffff" letter-spacing="0.75">AGENT STOPPED HERE</text>
-      <text x="16" y="67" font-family="DejaVu Sans, sans-serif" font-size="10" font-weight="700" fill="#5b6b62" letter-spacing="0.75">PROPOSED NEXT ACTION</text>
-      <text x="16" y="92" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#21322b">Confirm handoff details</text>
-
-      <rect x="16" y="111" width="192" height="36" rx="7" fill="#ffffff" stroke="#d0cac1"/>
-      <text x="112" y="134" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="700" fill="#21322b">Discard draft</text>
-      <rect x="220" y="111" width="228" height="36" rx="7" fill="#0f766e" stroke="#0f766e"/>
-      <text x="334" y="134" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="700" fill="#ffffff">Approve and save</text>
-    </g>
+    <path d="M28 382H460" stroke="#495652"/>
+    <text x="28" y="414" font-size="14" font-weight="700" fill="#a3d7c5">Your decision</text>
+    <text x="28" y="435" font-size="13" fill="#cbd5d0">Choose what to keep with your project.</text>
   </g>
 
-  <text x="68" y="592" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="600" fill="#5b6b62">Browser-local project workspace · bounded tools · visible receipts</text>
-  <text x="1132" y="592" text-anchor="end" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="700" fill="#0f766e">projects-webmcp-extension.pages.dev</text>
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1" fill="#aebcb6">
+    <text x="68" y="587">NVIDIA NEMOTRON  +  NEBIUS</text>
+    <text x="1132" y="587" text-anchor="end">WORK  ·  BUILD  ·  REVIEW</text>
+  </g>
 </svg>

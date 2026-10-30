@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { WornAlert, WornButton, WornTextarea } from '$lib/components';
+  import NebiusInferenceFailure from '$lib/NebiusInferenceFailure.svelte';
   import type { DemoPack } from '$lib/demo-workflow';
   import { CONTEXT_LIMITS, type NebiusContextItem, type NebiusChanges } from '$lib/nebius-contract.mjs';
   import { createSuggestionClient, emptySuggestionView, type SuggestionView } from './nebius-client.mjs';
@@ -69,13 +70,14 @@
     {#if (online && view.config && view.phase !== 'unavailable') || updateText}
     <label class="update-field" for="nebius-task-update">Task update · optional<WornTextarea id="nebius-task-update" rows={3} maxlength={1000} bind:value={updateText} disabled={disabled || view.phase === 'generating'} placeholder="What changed or what help do you need?" /></label>
     {/if}
-    {#if updateText}<WornButton type="button" disabled={view.phase === 'generating'} onclick={clearUpdate}>Clear update</WornButton>{/if}
+    {#if updateText}<div class="suggestion-actions"><WornButton type="button" disabled={view.phase === 'generating'} onclick={clearUpdate}>Clear update</WornButton></div>{/if}
     <p role="status" aria-live="polite">{view.phase === 'loading' ? 'Loading model settings…' : view.phase === 'generating' ? 'Generating a suggestion…' : view.phase === 'complete' ? !suggestionHasChanges ? 'No changes suggested. Your saved task already matches this response.' : used ? 'Review the task draft to apply changes.' : 'Suggestion ready. Nothing has been saved.' : ''}</p>
     {#if !online}<WornAlert tone="info">You are offline. Browser-local edits remain available. Reconnect before asking Nebius again; generation will not restart automatically.</WornAlert>{/if}
     {#if view.error}<WornAlert tone="danger">{view.error}</WornAlert>{/if}
+    <NebiusInferenceFailure failure={view.failure} />
     {#if view.phase === 'unavailable'}
-      <WornAlert tone="info">{disabled ? 'Nebius is unavailable here.' : 'Nebius is unavailable here. Task editing and the Evidence view are still available.'}</WornAlert>
-      <WornButton type="button" disabled={!online} onclick={() => void client.reload()}>Check availability again</WornButton>
+      <WornAlert tone="info">Nebius is unavailable here.</WornAlert>
+      <div class="suggestion-actions"><WornButton type="button" disabled={!online} onclick={() => void client.reload()}>Check availability again</WornButton></div>
     {/if}
     {#if view.task && view.config}
       {#if availableContext.length > 0}
@@ -118,29 +120,36 @@
         <div><strong>Information still needed</strong><ul>{#each view.result.missingInformation as item}<li>{item}</li>{/each}</ul></div>
       {/if}
       <p class="model">Model suggestion · check the facts before using it.</p>
-      {#if suggestionHasChanges}
-        <WornButton type="button" disabled={disabled || used} onclick={() => { if (!disabled && view.result) { onUse(view.result.changes); used = true; } }}>Review changes</WornButton>
-      {:else}
-        <WornButton type="button" disabled={disabled} onclick={() => document.getElementById('nebius-task-update')?.focus()}>Add an update</WornButton>
-      {/if}
     {/if}
-    {#if view.phase === 'error' || view.phase === 'complete'}
-      <WornButton type="button" disabled={!online || disabled} onclick={() => { if (online && !disabled) { used = false; void client.reload(); } }}>Reload preview</WornButton>
+    {#if view.result || view.phase === 'error' || view.phase === 'complete'}
+      <div class="suggestion-actions">
+        {#if view.result && suggestionHasChanges}
+          <WornButton type="button" disabled={disabled || used} onclick={() => { if (!disabled && view.result) { onUse(view.result.changes); used = true; } }}>Review changes</WornButton>
+        {:else if view.result}
+          <WornButton type="button" disabled={disabled} onclick={() => document.getElementById('nebius-task-update')?.focus()}>Add an update</WornButton>
+        {/if}
+        {#if view.phase === 'error' || view.phase === 'complete'}
+          <WornButton type="button" disabled={!online || disabled} onclick={() => { if (online && !disabled) { used = false; void client.reload(); } }}>Reload preview</WornButton>
+        {/if}
+      </div>
     {/if}
   </section>
 {/if}
 
 <style>
-  .nebius-suggestion { border: 1px solid var(--worn-border); border-radius: var(--worn-radius); padding: 1rem; margin-block: 1rem; min-inline-size: 0; overflow-wrap: anywhere; }
+  .nebius-suggestion { border: 1px solid var(--worn-border); border-radius: var(--worn-radius); padding: 12px; margin-block: 8px; min-inline-size: 0; overflow-wrap: anywhere; }
   h2 { font-size: 1.1rem; margin-block: 0 0.5rem; }
-  p { max-inline-size: 70ch; margin-block: 0.7rem; }
-  summary { cursor: pointer; padding-block: 0.75rem; }
+  p { max-inline-size: 70ch; margin-block: 8px; }
+  p[role="status"]:empty { margin: 0; }
+  summary { align-content: center; box-sizing: border-box; cursor: pointer; min-block-size: 44px; padding-block: 8px; }
   dl div { padding-block: 0.4rem; }
   dt { font-weight: 600; }
   dd { margin: 0; white-space: pre-wrap; }
   .model { font-size: 0.875rem; }
   .suggested-action { font-weight: 600; white-space: pre-wrap; }
   .update-field { display: grid; gap: 0.5rem; font-weight: 650; }
+  .suggestion-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 8px; }
+  .suggestion-actions :global(.worn-btn) { min-block-size: 44px; }
   .context-picker { border: 1px solid var(--worn-border); border-radius: var(--worn-radius-sm); padding: 0.5rem 0.75rem; }
   .context-choice { align-items: start; display: flex; gap: 0.5rem; margin-block: 0.5rem; overflow-wrap: anywhere; }
   .context-choice input { flex: none; margin-block-start: 0.25rem; }

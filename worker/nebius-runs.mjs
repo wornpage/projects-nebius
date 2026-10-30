@@ -1,16 +1,22 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
-  RUN_LIMITS, RUN_VERSION, RUN_RECORD_FORMAT, RUN_EVIDENCE_LIMITS, TERMINAL_RUN_STATUSES, runFilesDigest, runJsonBytes, runSnapshotFromRecord,
-  validRunId, validRunKey, validateRunInput, validateRunIntegrity, validateRunRecord,
+  RUN_LIMITS, RUN_MODEL_TIMEOUT_MS, RUN_VERSION, RUN_RECORD_FORMAT, RUN_EVIDENCE_LIMITS, TERMINAL_RUN_STATUSES, runFilesDigest, runJsonBytes, runSnapshotFromRecord,
+  validRunId, validRunKey, validateRunInput, validateRunFiles, validateRunIntegrity, validateRunRecord, runToolRequirements,
 } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 import { RunProviderError, generateRunFiles, runModelConfiguration } from './nebius-run-provider.mjs';
 import { SandboxError, cancelSandboxOperation, readSandboxOperation, sandboxConfiguration, spawnSandbox } from './nebius-sandbox.mjs';
-import { renderRunPreview, runPageContract } from './nebius-run-preview.mjs';
+import { renderRunPreview } from './nebius-run-preview.mjs';
+import { validateGeneratedSource, boundedRunMessage } from './nebius-run-admission.mjs';
+import { generationDiagnosticEvent } from './nebius-run-diagnostics.mjs';
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const POLL_MS = 1500;
 const MAX_JSON_BYTES = 131072;
-const PHASES = new Set(['model-ready', 'model-submitting', 'sandbox-ready', 'sandbox-submitting', 'sandbox-polling', 'retained']);
+const PHASES = new Set(['model-ready', 'model-submitting', 'model-validating', 'sandbox-ready', 'sandbox-submitting', 'sandbox-polling', 'retained']);
+const SUBMITTING = new Set(['model-submitting', 'sandbox-submitting']);
+const SUBMISSION_SETTLE_MS = 1000;
+const MAX_PENDING_BYTES = RUN_LIMITS.maxTotalFileBytes * 2 + RUN_EVIDENCE_LIMITS.responseBytes + 8192;
+const MAX_STATE_BYTES = RUN_EVIDENCE_LIMITS.recordBytes + MAX_PENDING_BYTES + 16384;
 const remainingMs = (state, maximum) => Math.max(1, Math.min(maximum, state.deadline - Date.now()));
 
 class RunApiError extends Error {
@@ -128,7 +134,7 @@ async function handlePreview(request, env, id) {
   if (params.length !== 1 || params[0][0] !== 'key' || !validRunKey(params[0][1])) fail(401, 'run_unauthorized', 'Provide this run’s access key.');
   const run = rpcResult(await runStub(env, id).read(params[0][1]));
   if (run.status !== 'ready') fail(409, 'run_not_ready', 'The isolated preview is available only after checks pass.');
-  const rendered = await renderRunPreview(run.files, run.version === RUN_VERSION ? run.requiredInputFormats : null);
+  const rendered = await renderRunPreview(run.files, runToolRequirements(run));
   return new Response(rendered.html, { status: 200, headers: {
     'content-type': 'text/html; charset=utf-8', 'content-security-policy': rendered.csp,
     'x-frame-options': 'SAMEORIGIN', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff',
@@ -189,10 +195,6 @@ export async function handleNebiusRuns(request, env) {
   } catch (error) { return publicError(error); }
 }
 
-function safeMessage(error, fallback) {
-  const message = typeof error === 'string' ? error : error instanceof Error && typeof error.message === 'string' ? error.message : fallback;
-  return message.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 500) || fallback;
-}
 
 function constantTimeHexEqual(left, right) {
   if (typeof left !== 'string' || typeof right !== 'string' || left.length !== 64 || right.length !== 64) return false;
@@ -216,6 +218,24 @@ function failureDetails(error, phase, stage) {
   };
 }
 
+function lateGenerationFailureEvent(attempt, error, response, usage) {
+  if (error === null || response) return null;
+  const details = failureDetails(error, 'model-submitting', 'generation');
+  const prefix = `Late generation failure evidence for attempt ${attempt}: `;
+  const code = typeof details.code === 'string' && /^[a-z][a-z0-9_]{0,79}$/u.test(details.code) ? details.code : 'execution_failed';
+  const base = { attempt, code, stage: details.stage, message: '', responseObserved: false, usageObserved: usage != null };
+  const known = error instanceof RunProviderError || error instanceof SandboxError || error instanceof RunApiError;
+  const codePoints = [...boundedRunMessage(known ? error : null, 'Late generation failed.')];
+  const serialize = length => prefix + JSON.stringify({ ...base, message: codePoints.slice(0, length).join('') });
+  if (serialize(0).length > 240) throw new Error('Late generation failure audit base exceeds its event bound.');
+  let low = 0, high = codePoints.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (serialize(middle).length <= 240) low = middle; else high = middle - 1;
+  }
+  return { prefix, message: serialize(low) };
+}
+
 function retainModelUsage(state, observed) {
   if (!state.usageBase) return state;
   const base = state.usageBase;
@@ -230,12 +250,19 @@ function retainModelUsage(state, observed) {
   } } };
 }
 
+function retainGenerationDiagnostics(state, attempt, diagnostics) {
+  if (attempt !== state.record.usage.modelCalls) return state;
+  const event = generationDiagnosticEvent(attempt, diagnostics);
+  if (!event || state.record.events.some(item => item.message.startsWith(event.prefix))) return state;
+  return { ...state, record: addEvent(state.record, event.message) };
+}
+
 function retainGeneration(state, response, error = null) {
   if (!response) return state;
   if (state.record.generationAttempts.some(entry => entry.attempt === state.record.usage.modelCalls)) return state;
   const entry = { attempt: state.record.usage.modelCalls, outcome: error ? 'rejected' : 'accepted', ...response,
-    diagnostic: error ? { ...failureDetails(error, state.phase), message: safeMessage(error, 'Source validation failed.') } : null };
-  // Reserve space for two bounded Sandbox outputs and remaining run events.
+    diagnostic: error ? { ...failureDetails(error, state.phase), message: boundedRunMessage(error, 'Source validation failed.') } : null };
+  // Reserve space for bounded Sandbox outputs and remaining run events.
   // Earlier evidence is immutable; omit the new text explicitly if needed.
   let record = { ...state.record, generationAttempts: [...state.record.generationAttempts, entry] };
   if (runJsonBytes(record) > RUN_EVIDENCE_LIMITS.recordBytes - 114688) {
@@ -248,19 +275,64 @@ function retainGeneration(state, response, error = null) {
 const sourceRejection = error => error instanceof RunProviderError && !error.uncertain
   && ['tool_files', 'tool_page', 'tool_worker', 'tool_checks', 'preview'].includes(error.stage);
 
-async function validateGeneratedPreview(files, requiredInputFormats = null) {
-  try {
-    const page = runPageContract(files, requiredInputFormats);
-    const missing = page.elements.filter(element => element.textValue && element.format === null);
-    if (missing.length) throw new TypeError('Every textual input needs an explicit data-input-format="text" or "json" declaration. Missing: ' + missing.map(element => element.id).join(', '));
-    await renderRunPreview(files, requiredInputFormats);
-  } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
-    throw new RunProviderError('invalid_model_output', safeMessage(error, 'The generated page could not be prepared for preview.'), false, 'preview');
+
+function sameStep(current, expected) {
+  return current && current.phase === expected.phase && current.inputDigest === expected.inputDigest
+    && current.admissionId === expected.admissionId && current.operationId === expected.operationId
+    && current.record.usage.modelCalls === expected.record.usage.modelCalls && current.record.attempt === expected.record.attempt
+    && current.sourceDigest === expected.sourceDigest && current.record.checks.length === expected.record.checks.length
+    && (current.submission?.id ?? null) === (expected.submission?.id ?? null);
+}
+
+function submissionWindow(state) {
+  const value = state.submission;
+  if (!value || Object.keys(value).sort().join(',') !== 'attempt,deadline,id,phase,responseDeadline,startedAt'
+    || !validRunId(value.id) || value.phase !== state.phase || !SUBMITTING.has(value.phase)
+    || value.attempt !== (state.phase === 'model-submitting' ? state.record.usage.modelCalls : state.record.attempt)
+    || ![value.startedAt, value.responseDeadline, value.deadline].every(Number.isSafeInteger)
+    || value.startedAt < Date.parse(state.record.createdAt) || value.responseDeadline <= value.startedAt
+    || value.deadline < value.responseDeadline || value.deadline > state.deadline
+    || value.deadline - value.responseDeadline > SUBMISSION_SETTLE_MS
+    || value.responseDeadline - value.startedAt > (state.phase === 'model-submitting' ? RUN_MODEL_TIMEOUT_MS : 15000)) return null;
+  return value;
+}
+
+function validResponseEvidence(value) {
+  return value && Object.keys(value).sort().join(',') === 'responseText,retention'
+    && (value.retention === 'size_limit' ? value.responseText === null
+      : value.retention === 'retained' && typeof value.responseText === 'string' && runJsonBytes(value.responseText) <= RUN_EVIDENCE_LIMITS.responseBytes);
+}
+
+function pendingGeneration(state) {
+  const value = state.pendingGeneration;
+  if (!value || Object.keys(value).sort().join(',') !== 'attempt,files,response'
+    || value.attempt !== state.record.usage.modelCalls || !submissionWindow({ ...state, phase: 'model-submitting' })
+    || !validResponseEvidence(value.response) || runJsonBytes(value) > MAX_PENDING_BYTES) {
+    throw new RunApiError(503, 'invalid_generation_receipt', 'The saved generation receipt cannot be validated.');
   }
+  return { attempt: value.attempt, files: validateRunFiles(value.files), response: value.response };
+}
+
+function checkStoredState(state) {
+  validateRunRecord(state.record);
+  if (state.phase === 'model-validating') pendingGeneration(state);
+  else if (state.pendingGeneration != null) throw new RunApiError(503, 'invalid_generation_receipt', 'Pending generation data cannot outlive its validation phase.');
+  if (runJsonBytes(state) > MAX_STATE_BYTES) throw new RunApiError(503, 'run_state_too_large', 'The run state exceeds its bounded storage size.');
+  return state;
+}
+
+function alarmTime(state) {
+  if (state.phase === 'retained') return state.retentionAt;
+  if (SUBMITTING.has(state.phase)) return submissionWindow(state)?.deadline ?? Date.now() + 100;
+  return Date.now() + (state.phase === 'sandbox-polling' ? POLL_MS : 100);
 }
 
 function terminalState(state, status, message, error = null, stage = null) {
+  const pending = state.pendingGeneration;
+  if (pending?.attempt === state.record.usage.modelCalls && validResponseEvidence(pending.response)) {
+    state = retainGeneration(state, pending.response,
+      new RunProviderError('source_validation_stopped', 'The run stopped before this received source completed local validation.', false, 'preview'));
+  }
   const at = nextIso(state.record.updatedAt);
   let usage = state.record.usage;
   // A pre-diagnostics in-flight repair cleared totals but retained the first
@@ -273,8 +345,8 @@ function terminalState(state, status, message, error = null, stage = null) {
       totalsComplete: false,
     };
   }
-  return { ...state, phase: 'retained', retentionAt: Date.parse(state.record.createdAt) + RETENTION_MS,
-    record: { ...addEvent(state.record, message, at), status, usage, error: error === null ? null : safeMessage(error, 'The run stopped.'),
+  return { ...state, pendingGeneration: null, phase: 'retained', retentionAt: Date.parse(state.record.createdAt) + RETENTION_MS,
+    record: { ...addEvent(state.record, message, at), status, usage, error: error === null ? null : boundedRunMessage(error, 'The run stopped.'),
       failure: failureDetails(error, state.phase, stage) } };
 }
 
@@ -286,15 +358,58 @@ export class NebiusRun extends DurableObject {
     return { ...state, record: await validateRunIntegrity(state.record) };
   }
 
-  async save(state, alarmAt = null) {
-    await this.ctx.storage.put('state', state);
-    if (alarmAt !== null) await this.ctx.storage.setAlarm(alarmAt);
+  async commit(expected, update) {
+    let saved = null;
+    await this.ctx.storage.transaction(async transaction => {
+      saved = null;
+      const current = await transaction.get('state');
+      if (!current || current.phase === 'retained') return;
+      current.record = validateRunRecord(current.record);
+      if (!sameStep(current, expected)) return;
+      const next = update(current);
+      if (!next) return;
+      checkStoredState(next);
+      await transaction.put('state', next);
+      await transaction.setAlarm(alarmTime(next));
+      saved = next;
+    });
+    return saved;
   }
 
-  async ensureAlarm(state) {
-    if (await this.ctx.storage.getAlarm() === null) {
-      await this.ctx.storage.setAlarm(state.phase === 'retained' ? state.retentionAt : Date.now() + 100);
-    }
+  async claimSubmission(expected, phase, maximum, update) {
+    const id = crypto.randomUUID();
+    return this.commit(expected, current => {
+      if (current.cancelRequested) return terminalState(current, 'cancelled', 'Run cancelled before another provider operation started.');
+      const startedAt = Date.now(), responseDeadline = Math.min(current.deadline, startedAt + maximum);
+      if (responseDeadline <= startedAt) return terminalState(current, 'failed', 'The run reached its orchestration deadline.', 'The run did not finish within ten minutes.');
+      const submission = { id, phase,
+        attempt: phase === 'model-submitting' ? current.record.usage.modelCalls + 1 : current.record.attempt,
+        startedAt, responseDeadline, deadline: Math.min(current.deadline, responseDeadline + SUBMISSION_SETTLE_MS) };
+      return { ...update(current), phase, submission, pendingGeneration: null };
+    });
+  }
+
+  async abandonUnsentClaim(state) {
+    return this.commit(state, current => {
+      const stopped = current.phase === 'model-submitting' && current.usageBase
+        ? { ...current, usageBase: null, record: { ...current.record, usage: current.usageBase } } : current;
+      // The budget reservation remains consumed. Only this owner's known-unsent
+      // record is corrected; no persisted daily counter is refunded or reset.
+      return terminalState(stopped, 'failed', 'The claimed provider request did not start before its deadline.',
+        new RunApiError(503, 'submission_deadline', 'The provider request was not sent before its submission deadline.'));
+    });
+  }
+
+  async ensureAlarm() {
+    // A running alarm normally has no scheduled alarm. Recover from current
+    // durable ownership, not a caller's stale snapshot or a presumed restart.
+    await this.ctx.storage.transaction(async transaction => {
+      if (await transaction.getAlarm() !== null) return;
+      const current = await transaction.get('state');
+      if (!current) return;
+      current.record = validateRunRecord(current.record);
+      await transaction.setAlarm(alarmTime(current));
+    });
   }
 
   async authorize(key) {
@@ -319,7 +434,7 @@ export class NebiusRun extends DurableObject {
     if (!existing) return { ok: true, exists: false };
     if (!constantTimeHexEqual(existing.accessHash, accessHash)) return { ok: false, status: 409, code: 'run_conflict', error: 'This run ID is already in use.' };
     if (!constantTimeHexEqual(existing.inputDigest, inputDigest)) return { ok: false, status: 409, code: 'run_conflict', error: 'This run already has a different reviewed input.' };
-    await this.ensureAlarm(existing);
+    await this.ensureAlarm();
     return { ok: true, exists: true, run: existing.record };
   }
 
@@ -339,7 +454,7 @@ export class NebiusRun extends DurableObject {
       usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, totalsComplete: true }, error: null, failure: null });
     const state = { record, accessHash, inputDigest, phase: 'model-ready', operationId: null, sourceDigest: null,
       deadline: Date.now() + RUN_LIMITS.runSeconds * 1000, cancelRequested: false, cancelSubmitted: false,
-      retentionAt: null, dailyCallLimit, admissionId, usageBase: null };
+      retentionAt: null, dailyCallLimit, admissionId, usageBase: null, submission: null, pendingGeneration: null };
     let result;
     await this.ctx.storage.transaction(async transaction => {
       const existing = await transaction.get('state');
@@ -352,25 +467,26 @@ export class NebiusRun extends DurableObject {
             : { ok: true, created: false, run: existing.record };
         return;
       }
+      checkStoredState(state);
       await transaction.put('state', state);
+      await transaction.setAlarm(Date.now() + 100);
       result = { ok: true, created: true, run: record };
     });
     if (result?.ok) await validateRunIntegrity(result.run);
-    if (result.created) await this.ctx.storage.setAlarm(Date.now() + 100);
     return result;
   }
 
   async read(key) {
     const { state, error } = await this.authorize(key);
     if (error) return error;
-    await this.ensureAlarm(state);
+    await this.ensureAlarm();
     return { ok: true, run: state.record };
   }
 
   async cancel(key) {
     if (!validRunKey(key)) return { ok: false, status: 401, code: 'run_unauthorized', error: 'Provide this run’s access key.' };
     const suppliedHash = await sha256Hex(key);
-    let result, alarmAt = null;
+    let result;
     await this.ctx.storage.transaction(async transaction => {
       const state = await transaction.get('state');
       if (!state) { result = { ok: false, status: 404, code: 'not_found', error: 'Run not found.' }; return; }
@@ -380,22 +496,22 @@ export class NebiusRun extends DurableObject {
         return;
       }
       if (TERMINAL_RUN_STATUSES.includes(state.record.status)) { result = { ok: true, run: state.record }; return; }
-      if (!state.operationId && !['model-submitting', 'sandbox-submitting'].includes(state.phase)) {
+      if (!state.operationId && !SUBMITTING.has(state.phase) && state.phase !== 'model-validating') {
         const done = terminalState({ ...state, cancelRequested: true }, 'cancelled', 'Run cancelled before another provider operation started.');
         validateRunRecord(done.record);
         await transaction.put('state', done);
-        alarmAt = done.retentionAt;
+        await transaction.setAlarm(done.retentionAt);
         result = { ok: true, run: done.record };
         return;
       }
-      const updated = { ...state, cancelRequested: true, record: { ...addEvent(state.record, 'Cancellation requested. Provider confirmation is pending.'), status: 'cancelling' } };
+      const updated = { ...state, cancelRequested: true, record: { ...addEvent(state.record, state.phase === 'model-validating'
+        ? 'Cancellation requested. Received source validation is pending.' : 'Cancellation requested. Provider confirmation is pending.'), status: 'cancelling' } };
       validateRunRecord(updated.record);
       await transaction.put('state', updated);
-      alarmAt = Date.now() + 100;
+      await transaction.setAlarm(SUBMITTING.has(state.phase) ? alarmTime(updated) : Date.now() + 100);
       result = { ok: true, run: updated.record };
     });
     if (result?.ok) await validateRunIntegrity(result.run);
-    if (alarmAt !== null) await this.ctx.storage.setAlarm(alarmAt);
     return result;
   }
 
@@ -404,11 +520,12 @@ export class NebiusRun extends DurableObject {
     await validateRunIntegrity(candidate.record);
     let saved = null;
     await this.ctx.storage.transaction(async transaction => {
+      saved = null;
       const current = await transaction.get('state');
       if (!current) return;
       current.record = validateRunRecord(current.record);
       if (current.phase === 'retained') { saved = current; return; }
-      if (current.phase !== state.phase || current.operationId !== state.operationId || current.inputDigest !== state.inputDigest) {
+      if (!sameStep(current, state)) {
         saved = current;
         return;
       }
@@ -422,9 +539,10 @@ export class NebiusRun extends DurableObject {
         events: [...current.record.events, terminalEvent].slice(-24) });
       saved = { ...candidate, cancelRequested: current.cancelRequested || candidate.cancelRequested,
         cancelSubmitted: current.cancelSubmitted || candidate.cancelSubmitted, record };
+      checkStoredState(saved);
       await transaction.put('state', saved);
+      await transaction.setAlarm(saved.retentionAt);
     });
-    if (saved?.phase === 'retained') await this.ctx.storage.setAlarm(saved.retentionAt);
     return saved;
   }
 
@@ -433,53 +551,63 @@ export class NebiusRun extends DurableObject {
     return budget.reserveExecution(state.record.id, state.admissionId, attempt, state.dailyCallLimit);
   }
 
-  async retainLateGeneration(attempt, usage, response, error) {
+  async retainLateGeneration(attempt, submissionId, usage, response, error, diagnostics = null) {
     // A cancellation/interrupted-submission stop may win while its original
     // response is still returning. Enrich only that terminal attempt; never
     // reopen it, promote readiness, or schedule another provider operation.
     await this.ctx.storage.transaction(async transaction => {
       let current = await transaction.get('state');
-      if (!current || current.phase !== 'retained' || current.record.usage.modelCalls !== attempt) return;
+      if (!current || current.phase !== 'retained' || current.record.usage.modelCalls !== attempt
+        || current.submission?.id !== submissionId) return;
       current.record = validateRunRecord(current.record);
       const newResponse = response && !current.record.generationAttempts.some(entry => entry.attempt === attempt);
-      if (!newResponse && !(usage && current.usageBase)) return;
+      const event = generationDiagnosticEvent(attempt, diagnostics);
+      const newDiagnostics = event && !current.record.events.some(item => item.message.startsWith(event.prefix));
+      const failureEvent = lateGenerationFailureEvent(attempt, error, response, usage);
+      const newFailure = failureEvent && !current.record.events.some(item => item.message.startsWith(failureEvent.prefix));
+      if (!newResponse && !newDiagnostics && !newFailure && !(usage && current.usageBase)) return;
       if (usage) current = retainModelUsage(current, usage);
+      if (newDiagnostics) current = retainGenerationDiagnostics(current, attempt, diagnostics);
       if (newResponse) current = retainGeneration(current, response, error);
-      current.record = validateRunRecord(addEvent(current.record, 'Recorded a late generation response; the stopped run remains terminal.'));
+      current.record = validateRunRecord(addEvent(current.record, newFailure ? failureEvent.message
+        : 'Recorded late generation evidence; the stopped run remains terminal.'));
       await transaction.put('state', current);
     });
   }
 
   async handleCancellation(state, sandboxConfig) {
+    if (state.phase === 'model-validating') return false;
     if (!state.operationId) {
-      if (['model-submitting', 'sandbox-submitting'].includes(state.phase)) {
-        await this.finish(state, 'uncertain', 'Cancellation found a provider submission without a durable receipt.', 'The provider submission outcome is unknown.');
+      if (SUBMITTING.has(state.phase)) {
+        const window = submissionWindow(state);
+        if (window && Date.now() < window.deadline) {
+          await this.commit(state, current => current);
+        } else {
+          await this.finish(state, 'uncertain', 'Cancellation could not recover a provider receipt within the bounded submission window.', 'The provider submission outcome is unknown.');
+        }
       } else await this.finish(state, 'cancelled', 'Run cancelled before another provider operation started.');
       return true;
     }
-    if (!state.cancelSubmitted) {
-      const submitting = { ...state, cancelSubmitted: true };
-      await this.ctx.storage.put('state', submitting);
-      try { await cancelSandboxOperation(sandboxConfig, state.operationId, { timeoutMs: remainingMs(state, 15000) }); }
-      catch (error) {
-        if (error instanceof SandboxError && error.uncertain) {
-          await this.finish(submitting, 'uncertain', 'The sandbox cancellation response was lost.', error);
-          return true;
-        }
-        throw error;
+    if (state.cancelSubmitted) return false;
+    const claimed = await this.commit(state, current => current.cancelSubmitted ? null : { ...current, cancelSubmitted: true });
+    if (!claimed) return true;
+    try { await cancelSandboxOperation(sandboxConfig, claimed.operationId, { timeoutMs: remainingMs(claimed, 15000) }); }
+    catch (error) {
+      if (error instanceof SandboxError && error.uncertain) {
+        await this.finish(claimed, 'uncertain', 'The sandbox cancellation response was lost.', error);
+        return true;
       }
-      await this.ctx.storage.setAlarm(Date.now() + POLL_MS);
-      return true;
-    } else {
-      return false;
+      throw error;
     }
+    await this.commit(claimed, current => current);
+    return true;
   }
 
   async alarm() {
-    let state = await this.load();
+    let state = await this.load(), ownerState = state;
     let failureStage = 'orchestration';
-    let generatedResponse = null;
-    let submittedAttempt = null, generatedUsage = null;
+    let generatedResponse = null, generatedDiagnostics = null, generatedUsage = null;
+    let submittedAttempt = null, submissionId = null;
     if (!state) return;
     if (state.phase === 'retained') {
       if (Date.now() >= state.retentionAt) { await this.ctx.storage.deleteAlarm(); await this.ctx.storage.deleteAll(); }
@@ -487,9 +615,6 @@ export class NebiusRun extends DurableObject {
       return;
     }
     try {
-      // A retained v1 receipt remains readable. Pending old generation or
-      // Sandbox submission cannot spend another call under an obsolete spec.
-      // Already submitted operations may still be observed through their IDs.
       if (state.record.version !== RUN_VERSION && ['model-ready', 'sandbox-ready'].includes(state.phase)) {
         await this.finish(state, 'failed', 'The saved request needs current input requirements.',
           new RunApiError(409, 'run_input_changed', 'Review the current input requirements before starting a new run.'));
@@ -497,10 +622,12 @@ export class NebiusRun extends DurableObject {
       }
       if (Date.now() >= state.deadline) {
         if (state.operationId) {
-          state = { ...state, cancelRequested: true, record: { ...addEvent(state.record, 'The orchestration deadline passed; sandbox cancellation is pending.'), status: 'cancelling' } };
-          await this.ctx.storage.put('state', state);
+          state = await this.commit(state, current => ({ ...current, cancelRequested: true,
+            record: { ...addEvent(current.record, 'The orchestration deadline passed; sandbox cancellation is pending.'), status: 'cancelling' } }));
+          if (!state) return;
+          ownerState = state;
         } else {
-          await this.finish(state, ['model-submitting', 'sandbox-submitting'].includes(state.phase) ? 'uncertain' : 'failed',
+          await this.finish(state, SUBMITTING.has(state.phase) ? 'uncertain' : 'failed',
             'The run reached its orchestration deadline.', 'The run did not finish within ten minutes.');
           return;
         }
@@ -509,8 +636,17 @@ export class NebiusRun extends DurableObject {
       if (state.operationId || state.phase === 'sandbox-ready' || state.phase === 'sandbox-submitting') sandboxConfig = sandboxConfiguration(this.env);
       if (state.cancelRequested && await this.handleCancellation(state, sandboxConfig)) return;
 
-      if (state.phase === 'model-submitting' || state.phase === 'sandbox-submitting') {
-        await this.finish(state, 'uncertain', 'A provider submission restarted without a durable receipt.', 'The provider submission outcome is unknown.');
+      if (SUBMITTING.has(state.phase)) {
+        const window = submissionWindow(state);
+        if (window && Date.now() < window.deadline) {
+          await this.commit(state, current => current);
+        } else {
+          await this.finish(state, 'uncertain', window
+            ? 'No committed submission receipt was recovered by the submission deadline.'
+            : 'The pending provider submission has no valid recovery ownership metadata.',
+          window ? new RunApiError(503, 'submission_receipt_deadline', 'The provider submission outcome is unknown.')
+            : new RunApiError(503, 'submission_ownership_invalid', 'The pending submission has no valid recovery ownership metadata.'));
+        }
         return;
       }
 
@@ -518,87 +654,114 @@ export class NebiusRun extends DurableObject {
         failureStage = 'generation';
         const attempt = state.record.usage.modelCalls + 1;
         if (attempt > RUN_LIMITS.maxModelCalls) {
-          await this.finish(state, 'failed', 'The model-call limit was reached.', new RunApiError(429, 'run_limit', 'The run has used both model calls.'));
+          await this.finish(state, 'failed', 'The model-call limit was reached.', new RunApiError(429, 'run_limit', 'The run has used its model-call allowance.'));
           return;
         }
         const reserved = await this.reserveInference(state, attempt);
-        state = await this.load();
-        if (!state || state.phase === 'retained') return;
-        if (state.phase !== 'model-ready') return;
+        const current = await this.load();
+        if (!current || current.phase === 'retained' || !sameStep(current, state)) return;
+        state = current; ownerState = current;
         if (state.cancelRequested) { await this.handleCancellation(state, null); return; }
         if (Date.now() >= state.deadline) { await this.finish(state, 'failed', 'The run reached its orchestration deadline.', 'The run did not finish within ten minutes.'); return; }
         if (reserved === false) { await this.finish(state, 'failed', 'Run stopped at the daily inference ceiling.', new RunApiError(429, 'daily_limit', 'The demo has reached its daily generation limit.')); return; }
         if (reserved !== true) throw new Error('Inference budget unavailable.');
         const config = runModelConfiguration(this.env, state.record.requestedModel);
-        const usageBase = { ...state.record.usage };
-        const submitting = { ...state, phase: 'model-submitting', usageBase, record: { ...addEvent(state.record,
-          attempt === 1 ? 'Generating the three browser tool files.' : 'Using the second model call to repair the observed failure.'),
-          status: attempt === 1 ? 'generating' : 'repairing', usage: { modelCalls: attempt,
-            inputTokens: attempt === 1 ? null : usageBase.inputTokens,
-            outputTokens: attempt === 1 ? null : usageBase.outputTokens, totalsComplete: false } } };
-        await this.ctx.storage.put('state', submitting);
-        submittedAttempt = attempt;
+        state = await this.claimSubmission(state, 'model-submitting', RUN_MODEL_TIMEOUT_MS, current => ({
+          ...current, usageBase: { ...current.record.usage },
+          record: { ...addEvent(current.record, attempt === 1 ? 'Generating the three browser tool files.' : `Using model call ${attempt} to repair the observed failure.`),
+            status: attempt === 1 ? 'generating' : 'repairing', usage: { modelCalls: attempt,
+              inputTokens: attempt === 1 ? null : current.record.usage.inputTokens,
+              outputTokens: attempt === 1 ? null : current.record.usage.outputTokens, totalsComplete: false } }
+        }));
+        if (!state || state.phase !== 'model-submitting') return;
+        ownerState = state; submittedAttempt = attempt; submissionId = state.submission.id;
+        if (Date.now() >= state.submission.responseDeadline) { await this.abandonUnsentClaim(state); return; }
         const rejected = state.record.generationAttempts.at(-1);
         const repair = attempt === 1 ? null : rejected?.outcome === 'rejected'
           ? { rejected } : { files: state.record.files, check: state.record.checks.at(-1) };
-        const generated = await generateRunFiles(config, runSnapshotFromRecord(state.record), repair, { timeoutMs: remainingMs(state, 60000) });
-        generatedResponse = generated.response;
-        generatedUsage = generated.usage;
-        state = await this.load();
-        if (!state) return;
-        if (state.phase === 'retained') {
-          await validateGeneratedPreview(generated.files, state.record.version === RUN_VERSION ? state.record.requiredInputFormats : null);
-          await this.retainLateGeneration(attempt, generated.usage, generatedResponse, null);
+        const generated = await generateRunFiles(config, runSnapshotFromRecord(state.record), repair,
+          { timeoutMs: Math.max(1, state.submission.responseDeadline - Date.now()) });
+        generatedResponse = generated.response; generatedDiagnostics = generated.responseDiagnostics; generatedUsage = generated.usage;
+        const observed = await this.load();
+        if (!observed) return;
+        if (observed.phase === 'retained') {
+          await validateGeneratedSource(generated.files, runToolRequirements(observed.record));
+          await this.retainLateGeneration(attempt, submissionId, generated.usage, generatedResponse, null, generatedDiagnostics);
           return;
         }
-        if (state.phase !== 'model-submitting') return;
-        state = retainModelUsage(state, generated.usage);
-        // Persist usage before any subsequent source validation.
-        await this.save(state);
-        failureStage = 'preview';
-        await validateGeneratedPreview(generated.files, state.record.version === RUN_VERSION ? state.record.requiredInputFormats : null);
-        const digest = await runFilesDigest(generated.files);
-        state = await this.load();
+        if (!sameStep(observed, ownerState)) return;
+        state = await this.commit(observed, current => {
+          let next = retainModelUsage(current, generated.usage);
+          next = retainGenerationDiagnostics(next, attempt, generatedDiagnostics);
+          next = { ...next, phase: 'model-validating', pendingGeneration: {
+            attempt, files: generated.files, response: generated.response
+          } };
+          pendingGeneration(next);
+          return next;
+        });
         if (!state) return;
-        if (state.phase === 'retained') { await this.retainLateGeneration(attempt, generated.usage, generatedResponse, null); return; }
-        if (state.phase !== 'model-submitting') return;
-        const failedCheck = state.record.checks.at(-1);
-        if (failedCheck && failedCheck.exitCode !== 0 && failedCheck.sourceDigest === digest) {
-          throw new RunProviderError('unchanged_repair', 'The repair returned the same files that already failed Sandbox checks. No duplicate check was submitted.', false, 'tool_files');
+        ownerState = state;
+      }
+
+      if (state.phase === 'model-validating') {
+        failureStage = 'preview';
+        submittedAttempt = state.record.usage.modelCalls; submissionId = state.submission?.id ?? null;
+        const pending = pendingGeneration(state);
+        generatedResponse = pending.response;
+        await validateGeneratedSource(pending.files, runToolRequirements(state.record));
+        const digest = await runFilesDigest(pending.files);
+        const observed = await this.load();
+        if (!observed) return;
+        if (observed.phase === 'retained') {
+          await this.retainLateGeneration(submittedAttempt, submissionId, generatedUsage, generatedResponse, null, generatedDiagnostics);
+          return;
         }
-        state = retainGeneration({ ...state, record: { ...state.record, attempt, files: generated.files } }, generatedResponse);
-        await this.save(state);
-        if (state.cancelRequested) { await this.finish(state, 'cancelled', 'Run cancelled after generation; source was retained without executing it.'); return; }
-        state = { ...state, phase: 'sandbox-ready', sourceDigest: digest,
-          record: { ...addEvent(state.record, 'Generated files are ready for isolated syntax, control-contract and model-authored checks.'), attempt,
-            status: 'checking', files: generated.files }, usageBase: null };
-        await this.save(state, Date.now() + 100);
+        if (!sameStep(observed, ownerState)) return;
+        await this.commit(observed, current => {
+          if (Date.now() >= current.deadline) return terminalState(current, current.cancelRequested ? 'cancelled' : 'failed',
+            'The run stopped before received source completed validation within its deadline.', current.cancelRequested ? null : 'Source validation did not finish within the run deadline.', 'preview');
+          const failedCheck = current.record.checks.at(-1);
+          if (failedCheck && failedCheck.exitCode !== 0 && failedCheck.sourceDigest === digest) {
+            throw new RunProviderError('unchanged_repair', 'The repair returned the same files that already failed Sandbox checks. No duplicate check was submitted.', false, 'tool_files');
+          }
+          let next = retainGeneration({ ...current, pendingGeneration: null,
+            record: { ...current.record, attempt: pending.attempt, files: pending.files } }, pending.response);
+          if (next.cancelRequested) return terminalState(next, 'cancelled', 'Run cancelled after generation; source was retained without executing it.');
+          return { ...next, phase: 'sandbox-ready', submission: null, sourceDigest: digest, usageBase: null,
+            record: { ...addEvent(next.record, 'Generated files are ready for isolated syntax, control-contract and model-authored checks.'), status: 'checking' } };
+        });
         return;
       }
 
       if (state.phase === 'sandbox-ready') {
         failureStage = 'sandbox';
+        if (state.record.attempt > RUN_LIMITS.maxModelCalls || state.record.checks.length >= RUN_LIMITS.maxSandboxRuns) {
+          await this.finish(state, 'failed', 'The isolated-check limit was reached.', new RunApiError(429, 'run_limit', 'The run has used its current execution allowance.'));
+          return;
+        }
         sandboxConfig ||= sandboxConfiguration(this.env);
-        const submitting = { ...state, phase: 'sandbox-submitting', record: addEvent(state.record, `Submitting isolated check attempt ${state.record.attempt}.`) };
-        await this.ctx.storage.put('state', submitting);
-        const operationId = await spawnSandbox(sandboxConfig, state.record.files, { timeoutMs: remainingMs(state, 15000),
-          requiredInputFormats: state.record.version === RUN_VERSION ? state.record.requiredInputFormats : null });
-        state = await this.load();
-        if (!state || state.phase === 'retained' || state.phase !== 'sandbox-submitting') return;
-        state = { ...state, phase: 'sandbox-polling', operationId, cancelSubmitted: false,
-          record: addEvent(state.record, `Isolated check attempt ${state.record.attempt} accepted by the provider.`) };
-        await this.save(state, Date.now() + POLL_MS);
+        state = await this.claimSubmission(state, 'sandbox-submitting', 15000, current => ({ ...current,
+          record: addEvent(current.record, `Submitting isolated check attempt ${current.record.attempt}.`) }));
+        if (!state || state.phase !== 'sandbox-submitting') return;
+        ownerState = state; submissionId = state.submission.id;
+        if (Date.now() >= state.submission.responseDeadline) { await this.abandonUnsentClaim(state); return; }
+        const operationId = await spawnSandbox(sandboxConfig, state.record.files,
+          { timeoutMs: Math.max(1, state.submission.responseDeadline - Date.now()), ...runToolRequirements(state.record) });
+        const observed = await this.load();
+        if (!observed || observed.phase === 'retained' || !sameStep(observed, ownerState)) return;
+        await this.commit(observed, current => ({ ...current, phase: 'sandbox-polling', submission: null,
+          operationId, cancelSubmitted: false, record: addEvent(current.record, `Isolated check attempt ${current.record.attempt} accepted by the provider.`) }));
         return;
       }
 
       if (state.phase === 'sandbox-polling') {
-        failureStage = 'sandbox';
-        sandboxConfig ||= sandboxConfiguration(this.env);
+        failureStage = 'sandbox'; sandboxConfig ||= sandboxConfiguration(this.env);
         const polledOperationId = state.operationId;
         const observed = await readSandboxOperation(sandboxConfig, polledOperationId, { timeoutMs: remainingMs(state, 15000) });
-        state = await this.load();
-        if (!state || state.phase === 'retained' || state.phase !== 'sandbox-polling' || state.operationId !== polledOperationId) return;
-        if (!observed.terminal) { await this.ctx.storage.setAlarm(Date.now() + POLL_MS); return; }
+        const current = await this.load();
+        if (!current || current.phase === 'retained' || !sameStep(current, ownerState)) return;
+        state = current; ownerState = current;
+        if (!observed.terminal) { await this.commit(state, next => next); return; }
         if (observed.status === 'CANCELLED') {
           await this.finish(state, state.cancelRequested ? 'cancelled' : 'failed', state.cancelRequested
             ? 'The sandbox confirmed cancellation.' : 'The sandbox cancelled without a local request.', state.cancelRequested ? null : 'The isolated check was cancelled.');
@@ -606,44 +769,52 @@ export class NebiusRun extends DurableObject {
         }
         const check = { attempt: state.record.attempt, operationId: state.operationId, checkpointId: observed.checkpointId,
           exitCode: observed.exitCode, stdout: observed.stdout, stderr: observed.stderr, sourceDigest: state.sourceDigest };
-        state = { ...state,
-          record: { ...state.record, checks: [...state.record.checks, check] } };
-        if (state.cancelRequested) { await this.finish(state, 'cancelled', 'The check finished during cancellation; its observed result was retained but not accepted.'); return; }
-        if (observed.exitCode === 0 && observed.status === 'SUCCESS') {
-          await this.finish(state, 'ready', 'Observed syntax, control-contract and model-authored checks passed in the isolated sandbox.');
-          return;
-        }
-        if (state.record.usage.modelCalls < RUN_LIMITS.maxModelCalls) {
-          state = { ...state, phase: 'model-ready', operationId: null, sourceDigest: null, cancelSubmitted: false,
-            record: { ...addEvent(state.record, 'The first isolated check failed; one repair is available.'), status: 'repairing' } };
-          await this.save(state, Date.now() + 100);
-          return;
-        }
-        await this.finish(state, 'failed', 'The isolated checks still failed after the one repair.', 'The generated browser tool did not pass its isolated checks.');
+        if (await runFilesDigest(state.record.files) !== state.sourceDigest) throw new RunApiError(503, 'source_integrity_failed', 'The returned check does not match the saved source.');
+        await this.commit(state, current => {
+          const checked = { ...current, record: { ...current.record, checks: [...current.record.checks, check] } };
+          if (checked.cancelRequested) return terminalState(checked, 'cancelled', 'The check finished during cancellation; its observed result was retained but not accepted.');
+          if (Date.now() >= checked.deadline) return terminalState(checked, 'failed', 'The run reached its orchestration deadline.', 'The run did not finish within ten minutes.');
+          if (observed.exitCode === 0 && observed.status === 'SUCCESS') return terminalState(checked, 'ready', 'Observed syntax, control-contract and model-authored checks passed in the isolated sandbox.');
+          if (checked.record.usage.modelCalls < RUN_LIMITS.maxModelCalls) return { ...checked, phase: 'model-ready', submission: null, pendingGeneration: null,
+            operationId: null, sourceDigest: null, cancelSubmitted: false,
+            record: { ...addEvent(checked.record, 'An isolated check failed; another conditional repair is available.'), status: 'repairing' } };
+          return terminalState(checked, 'failed', 'The isolated checks did not pass.', 'The generated browser tool did not pass its isolated checks.');
+        });
       }
     } catch (error) {
-      state = await this.load() || state;
-      if (error instanceof RunProviderError && error.usage && state.phase === 'model-submitting') {
-        state = retainModelUsage(state, error.usage);
-      }
-      if (state.phase === 'retained') {
-        if (submittedAttempt !== null && error instanceof RunProviderError) {
-          await this.retainLateGeneration(submittedAttempt, error.usage || generatedUsage, error.response || generatedResponse, error);
+      const current = await this.load();
+      if (!current) return;
+      if (current.phase === 'retained') {
+        if (submittedAttempt !== null && submissionId !== null) {
+          await this.retainLateGeneration(submittedAttempt, submissionId,
+            error instanceof RunProviderError ? error.usage || generatedUsage : generatedUsage,
+            error instanceof RunProviderError ? error.response || generatedResponse : generatedResponse,
+            error, error instanceof RunProviderError ? error.responseDiagnostics || generatedDiagnostics : generatedDiagnostics);
         }
         return;
       }
-      if (state.phase === 'model-submitting') {
-        state = retainGeneration(state, error instanceof RunProviderError ? error.response || generatedResponse : null, error);
-        await this.save(state);
-        const rejected = state.record.generationAttempts.at(-1);
-        if (!state.cancelRequested && Date.now() < state.deadline && sourceRejection(error)
-          && state.record.usage.modelCalls < RUN_LIMITS.maxModelCalls && state.record.usage.totalsComplete
-          && rejected?.attempt === state.record.usage.modelCalls && rejected.retention === 'retained') {
-          state = { ...state, phase: 'model-ready', record: { ...addEvent(state.record,
-            'Source validation rejected the first response; retained it and scheduled the one repair before Sandbox.'), status: 'repairing' } };
-          await this.save(state, Date.now() + 100);
-          return;
-        }
+      if (!sameStep(current, ownerState)) return;
+      state = current;
+      if (state.phase === 'model-submitting' || state.phase === 'model-validating') {
+        await this.commit(state, current => {
+          let next = current;
+          const usage = error instanceof RunProviderError ? error.usage || generatedUsage : generatedUsage;
+          if (usage) next = retainModelUsage(next, usage);
+          next = retainGenerationDiagnostics(next, submittedAttempt, error instanceof RunProviderError ? error.responseDiagnostics || generatedDiagnostics : generatedDiagnostics);
+          next = retainGeneration(next, error instanceof RunProviderError ? error.response || generatedResponse : generatedResponse, error);
+          const rejected = next.record.generationAttempts.at(-1);
+          if (!next.cancelRequested && Date.now() < next.deadline && sourceRejection(error)
+            && next.record.usage.modelCalls < RUN_LIMITS.maxModelCalls && next.record.usage.totalsComplete
+            && rejected?.attempt === next.record.usage.modelCalls && rejected.retention === 'retained') {
+            return { ...next, phase: 'model-ready', submission: null, pendingGeneration: null,
+              record: { ...addEvent(next.record, 'Source validation rejected the response; retained it and scheduled a conditional repair before Sandbox.'), status: 'repairing' } };
+          }
+          const uncertain = error instanceof RunProviderError && error.uncertain;
+          return terminalState(next, uncertain ? 'uncertain' : next.cancelRequested ? 'cancelled' : 'failed',
+            uncertain ? 'A provider response was lost after submission.' : next.cancelRequested ? 'Cancellation completed after the provider step returned.' : 'The run stopped safely after a bounded provider error.',
+            next.cancelRequested && !uncertain ? null : error, failureStage);
+        });
+        return;
       }
       if (state.cancelRequested && state.operationId && error instanceof SandboxError && !error.uncertain) {
         await this.finish(state, 'uncertain', 'Cancellation could not confirm the sandbox operation state.', error);
@@ -652,7 +823,7 @@ export class NebiusRun extends DurableObject {
       } else if ((error instanceof RunProviderError || error instanceof SandboxError) && error.uncertain) {
         await this.finish(state, 'uncertain', 'A provider response was lost after submission.', error);
       } else if (error instanceof SandboxError && error.code === 'sandbox_status_unavailable' && Date.now() < state.deadline) {
-        await this.ctx.storage.setAlarm(Date.now() + 5000);
+        await this.commit(state, current => current);
       } else {
         await this.finish(state, 'failed', 'The run stopped safely after a bounded provider error.', error, failureStage);
       }

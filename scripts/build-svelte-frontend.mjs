@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildStaticPublish, DEFAULT_STATIC_PUBLISH_DIR } from './build-static-publish.mjs';
 import { collectInlineScriptBodies } from './inline-script-bodies.mjs';
+import { resolveSocialImageUrl, rewriteSocialImageMetadata } from './social-image-metadata.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const frontendRoot = path.join(repoRoot, 'svelte-frontend');
@@ -51,7 +52,6 @@ function finalizeServiceWorker(outputDir) {
 	if (workerSource.split(SW_NEBIUS_API_BYPASS).length !== 2) {
 		throw new Error('Service worker must contain exactly one Nebius API bypass marker.');
 	}
-	if (process.env.PROJECTS_NEBIUS_EDITION !== 'true') workerSource = workerSource.replace(SW_NEBIUS_API_BYPASS, '');
 	if (workerSource.split(SW_GENERATION_SOURCE).length !== 2) {
 		throw new Error('Service worker must contain exactly one cache-generation source marker.');
 	}
@@ -59,7 +59,7 @@ function finalizeServiceWorker(outputDir) {
 		throw new Error('Service worker must contain exactly one build-assets source marker.');
 	}
 
-	const clientRoot = path.join(outputDir, '_app');
+	const clientRoot = path.join(outputDir, '_app-r191');
 	if (!existsSync(clientRoot)) throw new Error('Static build did not emit the Svelte client asset directory.');
 	const buildAssets = collectFiles(clientRoot)
 		.map((file) => `/${path.relative(outputDir, file).split(path.sep).join('/')}`)
@@ -112,9 +112,9 @@ function finalizeStaticCsp(outputDir) {
 		throw new Error('Static CSP must contain exactly one Svelte script-hash placeholder.');
 	}
 	let finalizedHeaders = headers.replace(CSP_SCRIPT_HASH_PLACEHOLDER, [...hashes].sort().join(' '));
-	if (process.env.PROJECTS_NEBIUS_EDITION === 'true') {
+	{
 		// An explicit same-origin POST opens the isolated generated-tool preview
-		// in its named sandboxed frame. The frozen WebMCP artifact keeps its CSP.
+		// in its named sandboxed frame.
 		if (finalizedHeaders.split("form-action 'none'").length !== 2) throw new Error('Nebius preview form policy could not be finalized.');
 		finalizedHeaders = finalizedHeaders.replace("form-action 'none'", "form-action 'self'");
 		// no-referrer makes a native form POST carry Origin:null. The authenticated
@@ -125,7 +125,27 @@ function finalizeStaticCsp(outputDir) {
 	writeFileSync(headersPath, finalizedHeaders, 'utf8');
 }
 
+function finalizeSocialImageMetadata(outputDir, imageUrl) {
+	if (!imageUrl) return;
+	const required = new Set(['index.html', 'landing.html', 'work.html', 'next.html']);
+	for (const file of collectFiles(outputDir).filter((entry) => entry.endsWith('.html'))) {
+		const relative = path.relative(outputDir, file).split(path.sep).join('/');
+		const original = readFileSync(file, 'utf8');
+		const result = rewriteSocialImageMetadata(original, imageUrl);
+		if (result.found) {
+			writeFileSync(file, result.html, 'utf8');
+			required.delete(relative);
+		}
+	}
+	if (required.size) throw new Error(`Social image metadata missing from: ${[...required].join(', ')}`);
+}
+
 async function buildSvelteFrontend(args) {
+	const releaseFlags = args.filter((arg) => arg === '--require-social-origin').length;
+	if (releaseFlags > 1) throw new Error('Specify --require-social-origin only once.');
+	args = args.filter((arg) => arg !== '--require-social-origin');
+	// Validate before replacing any existing build output.
+	const socialImageUrl = resolveSocialImageUrl(process.env.NEBIUS_PUBLIC_ORIGIN, { required: releaseFlags === 1 });
 	try {
 		await buildStaticPublish(stagedPublicDir);
 		rmSync(DEFAULT_STATIC_PUBLISH_DIR, { recursive: true, force: true });
@@ -141,14 +161,13 @@ async function buildSvelteFrontend(args) {
 			error.exitCode = result.status ?? 1;
 			throw error;
 		}
+		finalizeSocialImageMetadata(DEFAULT_STATIC_PUBLISH_DIR, socialImageUrl);
 		finalizeServiceWorker(DEFAULT_STATIC_PUBLISH_DIR);
 		finalizeStaticCsp(DEFAULT_STATIC_PUBLISH_DIR);
 	} finally {
 		rmSync(stagedPublicDir, { recursive: true, force: true });
 	}
-	process.stdout.write(process.env.PROJECTS_NEBIUS_EDITION === 'true'
-		? 'Built the static Nebius frontend artifact.\n'
-		: 'Built the static WebMCP challenge artifact.\n');
+	process.stdout.write('Built the static Nebius frontend artifact.\n');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

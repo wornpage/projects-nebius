@@ -1,17 +1,18 @@
-import { PROMPT_VERSION, projectTask, validModelId, validateSelectedContext, validateSuggestionText, validateCurrentStatus, validateUpdate } from '../../lib/nebius-contract.mjs';
+import { PROMPT_VERSION, projectTask, validModelId, providerFailureDetails, validateSelectedContext, validateSuggestionText, validateCurrentStatus, validateUpdate } from '../../lib/nebius-contract.mjs';
 import { isOperationConfig } from '../../lib/nebius-routing-contract.mjs';
-export const emptySuggestionView = () => ({ phase: 'hidden', task: null, currentStatus: null, update: '', config: null, result: null, error: '' });
+export const emptySuggestionView = () => ({ phase: 'hidden', task: null, currentStatus: null, update: '', config: null, result: null, error: '', failure: null });
 const messages = {
   model_changed: 'The model settings changed. Reload the preview.',
   rate_limited: 'Wait before requesting another suggestion.',
   daily_limit: 'The demo has reached its daily generation limit.',
+  invalid_model_output: 'Nebius did not return usable task changes. Your draft is unchanged.',
   inference_timeout: 'Nebius did not finish in time. Reload the preview before trying again.',
 };
 async function read(response) {
   if (response.status === 404) throw Object.assign(new Error('disabled'), { code: 'nebius_disabled' });
   let body;
   try { body = await response.json(); } catch { throw new Error('Invalid response'); }
-  if (!response.ok) throw Object.assign(new Error('Request failed'), { code: body?.code });
+  if (!response.ok) throw Object.assign(new Error('Request failed'), { code: body?.code, failure: providerFailureDetails(body) });
   return body;
 }
 export function createSuggestionClient({ fetcher = globalThis.fetch, onChange }) {
@@ -23,7 +24,7 @@ export function createSuggestionClient({ fetcher = globalThis.fetch, onChange })
   const failed = (error, token) => {
     if (!current(token)) return;
     publish(error?.code === 'nebius_disabled' ? { ...emptySuggestionView(), phase: 'unavailable' } : {
-      ...emptySuggestionView(), phase: 'error', error: messages[error?.code] || 'A suggestion is unavailable. Reload the preview to try again.',
+      ...emptySuggestionView(), phase: 'error', failure: error?.failure ?? null, error: messages[error?.code] || 'A suggestion is unavailable. Reload the preview to try again.',
     });
   };
   async function load() {

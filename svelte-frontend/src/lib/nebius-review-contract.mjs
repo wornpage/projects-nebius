@@ -1,6 +1,6 @@
 import { isRecord, validateTask } from './nebius-contract.mjs';
 
-export const REVIEW_VERSION = 'nebius-review.v1';
+export const REVIEW_VERSION = 'nebius-review.v3';
 export const REVIEW_LIMITS = Object.freeze({ criteria: 3, criterionText: 500, evidence: 2000, explanation: 600, quote: 500 });
 const badControl = /[\u0000-\u0008\u000b-\u001f\u007f]/u;
 const exactKeys = (value, keys) => isRecord(value) && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
@@ -22,12 +22,12 @@ export function validateReviewInput(value) {
 
 export function validateReviewOutput(value, input) {
   const selected = validateReviewInput(input);
-  if (!exactKeys(value, ['checks', 'consistency']) || !Array.isArray(value.checks)
+  if (!exactKeys(value, ['checks', 'comparison']) || !Array.isArray(value.checks)
     || value.checks.length !== selected.criteria.length
-    || !exactKeys(value.consistency, ['assessment', 'reason'])
-    || !['consistent', 'conflicting', 'unclear'].includes(value.consistency.assessment)
-    || typeof value.consistency.reason !== 'string' || !value.consistency.reason.trim()
-    || value.consistency.reason.length > REVIEW_LIMITS.explanation || badControl.test(value.consistency.reason)) {
+    || !exactKeys(value.comparison, ['assessment', 'reason'])
+    || !['aligned', 'mismatched', 'unclear'].includes(value.comparison.assessment)
+    || typeof value.comparison.reason !== 'string' || !value.comparison.reason.trim()
+    || value.comparison.reason.length > REVIEW_LIMITS.explanation || badControl.test(value.comparison.reason)) {
     throw new TypeError('Review output is incomplete.');
   }
   const checks = value.checks.map((item, index) => {
@@ -41,5 +41,5 @@ export function validateReviewOutput(value, input) {
     }
     return { id: item.id, assessment: item.assessment, reason: item.reason, quote: item.quote };
   });
-  return { checks, consistency: { assessment: value.consistency.assessment, reason: value.consistency.reason }, selectedCount: selected.criteria.length, exhaustive: false };
+  return { checks, comparison: { assessment: value.comparison.assessment, reason: value.comparison.reason }, selectedCount: selected.criteria.length, exhaustive: false };
 }

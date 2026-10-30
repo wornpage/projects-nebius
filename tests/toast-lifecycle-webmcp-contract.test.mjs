@@ -43,11 +43,11 @@ const componentIndexSource = readFileSync(
 	new URL('../svelte-frontend/src/lib/components/index.ts', import.meta.url),
 	'utf8'
 );
-const producerRouteSources = ['work', 'review', 'next'].map((route) => readFileSync(
+const producerRouteSources = ['work', 'next'].map((route) => readFileSync(
 	new URL(`../svelte-frontend/src/routes/${route}/+page.svelte`, import.meta.url),
 	'utf8'
 ));
-const receiptRouteSources = ['next', 'webmcp-challenge', 'work'].map((route) => readFileSync(
+const receiptRouteSources = ['next', 'work'].map((route) => readFileSync(
 	new URL(`../svelte-frontend/src/routes/${route}/+page.svelte`, import.meta.url),
 	'utf8'
 ));

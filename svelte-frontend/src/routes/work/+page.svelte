@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { getContext, onDestroy, onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
+	import { COMMANDS_CONTEXT, isAllWorkScopeUrl, type CommandsHost } from '$lib/nebius-command-context';
 	import { page } from '$app/stores';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Command from '@lucide/svelte/icons/command';
@@ -20,15 +21,16 @@
 		ChallengeStateError,
 		displayToast,
 		actionBusy,
-		pendingNextActionDrafts,
-		createDraftPacks,
-		selectProject
+		selectProject,
+		exportWorkspaceState,
+		importWorkspaceState,
+		previewWorkspaceImport,
+		type WorkspaceImportPreview
 	} from '$lib/demo-client';
 	import {
 		PACK_ACTIONS,
 		blockerText,
 		dueDateLabel,
-		evidenceFacts,
 		filterPacks,
 		orderPacks,
 		ownerLabel,
@@ -55,11 +57,7 @@
 	import { focusAndPulse } from '$lib/focus-pulse.mjs';
 	import { settleProgressiveReveal } from '$lib/progressive-reveal.mjs';
 	import { parseRecentWorkIds, prependRecentWorkId } from '$lib/recent-work.mjs';
-	import { registerPageTools } from '$lib/webmcp.mjs';
-	import { keepActivityPresenterVisible } from '$lib/webmcp-activity-presentation.mjs';
-	import { recordWebMcpHandoffStep } from '$lib/webmcp-handoff-store';
 	import { decisionWorkspaceWorkFocusRequest } from '$lib/decision-workspace-navigation.mjs';
-	import WebMcpActivityStrip from '$lib/WebMcpActivityStrip.svelte';
 	import WorkGridCard from '$lib/components/WorkGridCard.svelte';
 	import WorkListCard from '$lib/components/WorkListCard.svelte';
 	import WorkBatchActions from './WorkBatchActions.svelte';
@@ -67,20 +65,13 @@
 	import WorkFilterControls from './WorkFilterControls.svelte';
 	import WorkQuickAdd from './WorkQuickAdd.svelte';
 	import NebiusProjectWorkspace from './NebiusProjectWorkspace.svelte';
+	import NebiusProjectRehearsal from './NebiusProjectRehearsal.svelte';
 	import WorkRecentActivity from './WorkRecentActivity.svelte';
 	import WorkShortcutHelp from './WorkShortcutHelp.svelte';
 	import {
-		WORK_SEARCH_TOOL_NAME,
-		WORK_DRAFT_TOOL_NAME,
-		createCurrentWorkTool,
-		createShowWorkSearchTool,
-		createWorkDraftsTool,
 		routeWorkSearch,
-		visibleDecisionDecider,
-		workItemPageView,
-		workPageView,
-		workSearchPresentationReceipt
-	} from './work-webmcp.mjs';
+		visibleDecisionDecider
+	} from './work-view-helpers.mjs';
 
 	const FILTERS: Array<[string, string]> = [
 		['all', 'All'],
@@ -88,7 +79,7 @@
 		['blocked', 'Blocked'],
 		['draft', 'Draft'],
 		['done', 'Done'],
-		['review', 'Review'],
+		['review', __NEBIUS_EDITION__ ? 'Attention' : 'Review'],
 		['archived', 'Archived']
 	];
 	// Keep the Work route responsive when a real workspace holds thousands of
@@ -148,6 +139,7 @@
 		.filter((pack): pack is DemoPack => Boolean(pack && canSetNextAction(pack))));
 	let snoozeDays = $state<Record<string, string>>({});
 	let quickAddBusy = $state(false);
+	let quickAdd = $state<{ openIntake: () => Promise<void> } | null>(null);
   let projectWorkspace = $state<{ canChangeScope: () => boolean } | null>(null);
 	let sortBy = $state('urgency');
 	let manualOrderAnnouncement = $state('');
@@ -155,6 +147,19 @@
 	let manualOrder = $derived(($demoState?.manualOrder ?? []) as string[]);
 	let renderLimit = $state(WORK_RENDER_LIMIT);
 	let commandPaletteOpen = $state(false);
+	const commandHost = getContext<CommandsHost | undefined>(COMMANDS_CONTEXT);
+	const commandContributionOwner = Symbol('Work commands');
+	let appliedAllWorkRoute = '';
+	let workMenuOpen = $state(false);
+	let appliedWorkMenuRoute = $state('');
+	let workMenuRouteFrame: number | null = null;
+	let importBusy = $state(false);
+	let importReadGeneration = 0;
+	let importPreview = $state<WorkspaceImportPreview | null>(null);
+	let importError = $state('');
+	let importInput = $state<HTMLInputElement | null>(null);
+	let exportHref = $state('');
+	let replaceConfirmOpen = $state(false);
 	let commandPaletteQuery = $state('');
 	let commandPaletteActiveIndex = $state(0);
 	type WorkCommand = {
@@ -171,33 +176,40 @@
 		const selectedCanSetNext = Boolean(selectedPack && canSetNextAction(selectedPack));
 		const all: WorkCommand[] = [
 			{
+				id: 'add-work',
+				label: __NEBIUS_EDITION__ ? 'Add work' : 'Quick add work',
+				description: __NEBIUS_EDITION__ ? 'Open the draft task form.' : 'Focus the Quick Add form.',
+				disabled: quickAddBusy,
+				run: () => { void quickAdd?.openIntake(); }
+			},
+			{
 				id: 'search',
 				label: 'Focus search',
-				description: 'Jump to the work filter search box.',
+				description: showWorkControls ? 'Jump to the work filter search box.' : 'Search is available when there are multiple tasks or active filters.',
+				disabled: !showWorkControls,
 				run: () => {
 					filterInput()?.focus();
 				}
 			},
 			{
 				id: 'review',
-				label: 'Open Review',
-				description: 'Jump to the review queue.',
+				label: __NEBIUS_EDITION__ ? 'Show attention items' : 'Open Review',
+				description: __NEBIUS_EDITION__ ? 'Filter Work to tasks that need review.' : 'Jump to the review queue.',
 				run: () => {
-					goto('/review');
+					if (__NEBIUS_EDITION__) void applyFilter('review');
+					else goto('/review');
 				}
 			},
 			{
 				id: 'challenge',
-				label: __NEBIUS_EDITION__ ? 'Open Guide' : 'Open WebMCP guide',
-				description: __NEBIUS_EDITION__ ? 'Learn the project workflow and backup options.' : 'Load the handoff walkthrough.',
-				run: () => {
-					goto('/webmcp-challenge');
-				}
+				label: 'Open workspace backup',
+				description: 'Export or import this browser workspace.',
+				run: () => { workMenuOpen = true; }
 			},
 			{
 				id: 'next-selected',
-				label: 'Open next for selected',
-				description: selectedCanSetNext ? `Open ${workTitle(selectedPack!)} in Next` : selectedPack ? 'Completed work has no next action to edit.' : 'Select a work item first.',
+				label: __NEBIUS_EDITION__ ? 'Open selected task' : 'Open next for selected',
+				description: selectedCanSetNext ? `Open ${workTitle(selectedPack!)} in ${__NEBIUS_EDITION__ ? 'Task' : 'Next'}` : selectedPack ? 'Completed work has no next action to edit.' : 'Select a work item first.',
 				disabled: !selectedCanSetNext,
 				run: () => {
 					if (!selectedPack || !canSetNextAction(selectedPack)) return;
@@ -206,8 +218,8 @@
 			},
 			{
 				id: 'next-decision',
-				label: 'Open decision workspace item in Next',
-				description: decisionWorkspace ? `Open ${workTitle(decisionWorkspace.pack)} in Next` : 'No visible decision item.',
+				label: __NEBIUS_EDITION__ ? 'Open decision workspace task' : 'Open decision workspace item in Next',
+				description: decisionWorkspace ? `Open ${workTitle(decisionWorkspace.pack)} in ${__NEBIUS_EDITION__ ? 'Task' : 'Next'}` : 'No visible decision item.',
 				disabled: !decisionWorkspace,
 				run: () => {
 					if (!decisionWorkspace) return;
@@ -252,6 +264,103 @@
 		if (!normalized) return all;
 		return all.filter((entry) => `${entry.label} ${entry.description}`.toLowerCase().includes(normalized));
 	});
+
+	$effect(() => {
+		if (!__NEBIUS_EDITION__ || !commandHost) return;
+		commandHost.publish(commandContributionOwner, {
+			commands: commandPaletteCommands,
+			scopeKey: selectedProjectId ? `project:${selectedProjectId}` : 'all',
+			orderedIds: orderPacks(scopedPacks, sortBy, manualOrder).map(pack => pack.id!).filter(Boolean)
+		});
+		return () => commandHost.publish(commandContributionOwner, null);
+	});
+
+	$effect(() => {
+		if (!__NEBIUS_EDITION__ || !browser || !$demoState || $page.url.pathname !== '/work') return;
+		if (!isAllWorkScopeUrl($page.url)) { appliedAllWorkRoute = ''; return; }
+		const routeKey = $page.url.href;
+		if (appliedAllWorkRoute === routeKey) return;
+		appliedAllWorkRoute = routeKey;
+		void tick().then(async () => {
+			if ($page.url.href !== routeKey) return;
+			const clean = new URL($page.url);
+			clean.searchParams.delete('scope');
+			// Existing page guards have already permitted this navigation. Applying
+			// its scope intent must not ask for the same discard decision twice.
+			try { if ($demoState?.selectedProjectId) await selectProject(null); }
+			catch (error) { errorText = describeError(error, 'All work could not be shown.'); }
+			finally { if ($page.url.href === routeKey) replaceState(clean, $page.state); }
+		});
+	});
+
+	onDestroy(() => {
+		importReadGeneration += 1;
+		if (workMenuRouteFrame !== null) cancelAnimationFrame(workMenuRouteFrame);
+		if (exportHref) URL.revokeObjectURL(exportHref);
+	});
+
+	$effect(() => {
+		if (!__NEBIUS_EDITION__ || !browser) return;
+		if ($page.url.searchParams.get('menu') !== 'backup') {
+			appliedWorkMenuRoute = '';
+			return;
+		}
+		const routeKey = `${$page.url.pathname}${$page.url.search}${$page.url.hash}`;
+		if (routeKey === appliedWorkMenuRoute) return;
+		appliedWorkMenuRoute = routeKey;
+		void tick().then(() => {
+			if (`${$page.url.pathname}${$page.url.search}${$page.url.hash}` !== routeKey || $page.url.searchParams.get('menu') !== 'backup') return;
+			workMenuRouteFrame = requestAnimationFrame(() => {
+				workMenuRouteFrame = null;
+				if (`${$page.url.pathname}${$page.url.search}${$page.url.hash}` === routeKey) workMenuOpen = true;
+			});
+		});
+	});
+
+	function prepareWorkspaceExport() {
+		if (exportHref) URL.revokeObjectURL(exportHref);
+		exportHref = URL.createObjectURL(new Blob([exportWorkspaceState()], { type: 'application/json' }));
+		displayToast('Workspace backup is ready to download.', 'success');
+	}
+
+	async function selectWorkspaceFile(event: Event) {
+		if (importBusy) return;
+		const generation = ++importReadGeneration;
+		const file = (event.currentTarget as HTMLInputElement).files?.[0];
+		importPreview = null;
+		importError = '';
+		if (!file) return;
+		try {
+			const serialized = await file.text();
+			if (generation !== importReadGeneration) return;
+			importPreview = previewWorkspaceImport(serialized);
+		} catch (error) {
+			if (generation === importReadGeneration) importError = error instanceof Error ? error.message : 'The workspace backup is invalid.';
+		}
+	}
+
+	async function applyWorkspaceImport(mode: 'replace' | 'merge') {
+		if (!importPreview || importBusy) return;
+		importBusy = true;
+		try {
+			const result = await importWorkspaceState(importPreview.serialized, mode);
+			displayToast(mode === 'replace' ? `Workspace replaced with ${result.packs} work items.` : `Workspace merged with ${result.packs} new work items${result.skipped ? ` (${result.skipped} existing skipped)` : ''}.`, 'success');
+			importPreview = null;
+			if (importInput) importInput.value = '';
+		} catch (error) {
+			importError = error instanceof Error ? error.message : 'The workspace could not be imported.';
+		} finally {
+			importBusy = false;
+		}
+	}
+
+	function requestWorkspaceImport(mode: 'replace' | 'merge') {
+		if (mode === 'replace') {
+			replaceConfirmOpen = true;
+			return;
+		}
+		void applyWorkspaceImport(mode);
+	}
 
 	let filter = $derived($demoState?.filter || 'all');
 	let visible = $derived((()=>{let v=orderPacks(filterPacks(scopedPacks,filter,debouncedQuery,energyFilter,areaFilter,recurrenceFilter,ownerFilter,hideDone), sortBy, manualOrder);if(dueUrgencyFilter!=='all'){v=v.filter(p=>dueUrgency(p)===dueUrgencyFilter)}const sel=$demoState?.selectedId;if(focusMode&&sel){return v.filter(p=>p.id===sel)}return v})());
@@ -349,134 +458,25 @@
 	});
 	let blockedCount = $derived(visible.filter(hasBlocker).length);
 	let nebiusSelectedPack = $derived(
-		scopedPacks.find((candidate) => candidate.id === $demoState?.selectedId && canSetNextAction(candidate)) ||
-		visible.find(canSetNextAction) || null
+		scopedPacks.find((candidate) => candidate.id === $demoState?.selectedId) ||
+		visible[0] || null
 	);
 	let workStatus = $derived(
 		packs.length === 0
 			? undefined
 			: `${renderedVisible.length} shown · ${visible.length} matching${selectedProjectId ? ` · ${scopedPacks.length} project` : ''} · ${packs.length} workspace${blockedCount > 0 ? ` · ${blockedCount} with blockers` : ''}`
 	);
-	let currentWorkView = $derived.by(() => workPageView({
-		scope: {
-			search: query,
-			appliedSearch: debouncedQuery,
-			status: filter,
-			energy: energyFilter,
-			area: areaFilter,
-			recurrence: recurrenceFilter,
-			owner: ownerFilter,
-			dueUrgency: dueUrgencyFilter,
-			sort: sortBy,
-			hideDone: hideDoneApplies,
-			focusMode,
-			density
-		},
-		counts: {
-			workspace: packs.length,
-			matching: visible.length,
-			shown: renderedVisible.length,
-			remaining: Math.max(0, visible.length - renderedVisible.length),
-			blocked: blockedCount
-		},
-		recommendation: decisionWorkspace
-			? {
-				id: decisionWorkspace.pack.id,
-				title: workTitle(decisionWorkspace.pack),
-				reason: decisionWorkspaceReason,
-				decider: decisionWorkspaceDecider,
-				decisionCount: decisionWorkspace.visibleDecisionCount,
-				blockedCount: decisionWorkspace.visibleBlockedCount,
-				overdueCount: decisionWorkspace.visibleOverdueCount,
-				sourceCount: decisionWorkspace.pack.sources?.length || 0,
-				outsideCurrentView: focusedDecisionOutsideView || undefined
-			}
-			: null,
-		items: renderedVisible.map((pack) => workItemPageView({
-			id: pack.id,
-			title: workTitle(pack),
-			...evidenceFacts(pack),
-			owner: density === 'grid' ? (pack.owner ? String(pack.owner) : null) : ownerLabel(pack.owner),
-			due: pack.due ? dueDateLabel(pack) : null
-		}))
-	}));
-	let workReceiptScopeKey = $derived(currentWorkView
-		? JSON.stringify({ scope: currentWorkView.scope, counts: currentWorkView.counts })
-		: '');
 	let receipt = $derived($demoState?.actionReceipt || null);
 	let readyNextPacks = $derived(__NEBIUS_EDITION__ ? receiptReadyPacks(receipt, packs, selectedProjectId) : []);
-	let webMcpActivityReceipt = $state<{
-		summary: string;
-		cells: Array<{ label: string; value: string }>;
-		scopeKey: string | null;
-		toolName: string;
-	} | null>(null);
 	let receiptVisible = $derived(Boolean(receipt?.summary && receipt.summary !== dismissedReceiptSummary));
+	let nebiusContinuePack = $derived(
+		nebiusSelectedPack && !canSetNextAction(nebiusSelectedPack) && receiptVisible
+			? readyNextPacks[0] ?? null : null
+	);
+	let additionalReadyPacks = $derived(nebiusContinuePack
+		? readyNextPacks.filter((pack) => pack.id !== nebiusContinuePack?.id)
+		: readyNextPacks);
 	let receiptFocusTimer: ReturnType<typeof setTimeout> | null = null;
-	let stopWorkWebMcp: (() => void) | null = null;
-
-	$effect(() => {
-		if (webMcpActivityReceipt?.scopeKey && webMcpActivityReceipt.scopeKey !== workReceiptScopeKey) {
-			webMcpActivityReceipt = null;
-		}
-	});
-
-	async function recordWorkWebMcpResult({ toolName, result }: { toolName: string; result: unknown }) {
-		if (toolName === WORK_DRAFT_TOOL_NAME) {
-			const outcome = result as {
-				created: Array<{ title: string; status: 'draft' }>;
-				workspaceBefore: number;
-				workspaceAfter: number;
-				requiresHumanStart: true;
-			};
-			recordWebMcpHandoffStep({
-				id: 'draft-batch',
-				title: 'Draft work staged',
-				summary: `${outcome.created.length} Drafts · ${outcome.workspaceBefore} → ${outcome.workspaceAfter}`,
-				status: 'complete',
-				outcome: 'drafts-created',
-				count: outcome.created.length
-			});
-			const pendingWebMcpDraft = pendingNextActionDrafts($demoState).find(({ source }) => source === 'webmcp');
-			if (pendingWebMcpDraft) {
-				recordWebMcpHandoffStep({
-					id: 'human-decision',
-					title: 'Human decision',
-					summary: 'Pending approval',
-					status: 'pending',
-					outcome: 'proposal-pending'
-				});
-			}
-			return;
-		}
-		if (toolName !== WORK_SEARCH_TOOL_NAME) return;
-		const outcome = result as {
-			focus?: ReturnType<typeof focusWorkSearchDestination>;
-			work: {
-				counts: { matching: number; workspace: number; blocked: number; shown: number };
-			};
-		};
-		webMcpActivityReceipt = { ...workSearchPresentationReceipt(result), toolName };
-		await tick();
-		const finalFocus = focusWorkSearchDestination(true);
-		if (!outcome.focus || finalFocus.target !== outcome.focus.target || finalFocus.itemId !== outcome.focus.itemId) {
-			throw new Error('Work receipt focus did not match the rendered search destination.');
-		}
-		recordWebMcpHandoffStep({
-			id: 'work-scope',
-			title: 'Work narrowed',
-			summary: `${outcome.work.counts.matching} matching of ${outcome.work.counts.workspace}`,
-			status: 'complete',
-			outcome: 'scope-verified'
-		});
-	}
-
-	async function clearFailedWorkWebMcpReceipt({ toolName }: { toolName: string }) {
-		if (toolName === WORK_DRAFT_TOOL_NAME) return;
-		if (webMcpActivityReceipt?.toolName === toolName) webMcpActivityReceipt = null;
-		await tick();
-	}
-
 	async function refreshWork(
 		{
 			reuseRecent = false,
@@ -500,9 +500,8 @@
 		}
 	}
 
-	// URL search is intentionally a one-time, page-local arrival state. It
-	// shares the public tool's normalizer but does not write, navigate, or
-	// initiate any work beyond rendering the existing Work route.
+	// URL search is a one-time, page-local arrival state. It does not write,
+	// navigate, or initiate work beyond rendering the existing Work route.
 	function applyRouteWorkSearch(searchParam: unknown): string {
 		const routeSearch = routeWorkSearch(searchParam);
 		query = routeSearch;
@@ -520,14 +519,8 @@
 	onMount(() => {
 		let mounted = true;
 		const routeSearch = applyRouteWorkSearch($page.url.searchParams.get('search'));
-		stopWorkWebMcp = registerPageTools(document, [
-			createCurrentWorkTool(() => currentWorkView),
-			createShowWorkSearchTool(showWorkSearchFromWebMcp),
-			createWorkDraftsTool(createWorkerDraftsFromWebMcp)
-		], {
-			onInvocationError: clearFailedWorkWebMcpReceipt,
-			onResult: recordWorkWebMcpResult
-		});
+		const routeFilter = __NEBIUS_EDITION__ && $page.url.searchParams.get('filter') === 'review' ? 'review' : '';
+		if (routeFilter) void applyFilter(routeFilter);
 		void refreshWork({
 			reuseRecent: true,
 			afterRefresh: (state) => {
@@ -542,9 +535,6 @@
 		} catch {}
 		return () => {
 			mounted = false;
-			stopWorkWebMcp?.();
-			stopWorkWebMcp = null;
-			webMcpActivityReceipt = null;
 			if (receiptFocusTimer) clearTimeout(receiptFocusTimer);
 			receiptFocusTimer = null;
 			// Leaving Work drops its route-only batch and focus modes.
@@ -684,115 +674,13 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 			block: 'center',
 			requireVisibleFocus
 		});
-		const activityPresenter = document.getElementById('work-webmcp-activity');
-		if (requireVisibleFocus && activityPresenter) keepActivityPresenterVisible(activityPresenter, destination);
 		return firstItem
 			? { target: 'item' as const, itemId: firstItem.dataset.packId || '', ...focusReceipt }
 			: { target: 'search' as const, itemId: null, ...focusReceipt };
 	}
-	async function showWorkSearchFromWebMcp(nextQuery: string) {
-		finishArrivalPreparation();
-		const changed = query !== nextQuery || debouncedQuery !== nextQuery;
-		query = nextQuery;
-		debouncedQuery = nextQuery;
-		await tick();
-		if (!currentWorkView || currentWorkView.scope.search !== nextQuery) {
-			throw new Error('Work did not render the requested search.');
-		}
-		return {
-			changed,
-			query: nextQuery,
-			focus: focusWorkSearchDestination(true),
-			work: currentWorkView
-		};
-	}
-	type WorkerDraftInput = {
-		expectedWorkspaceCount: number;
-		drafts: Array<{
-			title: string;
-			owner: string | null;
-			area: string | null;
-			type: string | null;
-			due: string | null;
-			energy: string | null;
-			recurrence: string | null;
-			proofTarget: string | null;
-		}>;
-	};
-	async function createWorkerDraftsFromWebMcp(input: WorkerDraftInput) {
-		if (quickAddBusy || busyId) throw new Error('Worker draft creation is unavailable while Work is busy.');
-		if (input.expectedWorkspaceCount !== packs.length) {
-			throw new Error('Workspace changed after the worker read it. Refresh Work and try again.');
-		}
-		const existingTitles = new Set(packs.map((pack) => workTitle(pack).toLocaleLowerCase('en-US')));
-		const duplicateDraft = input.drafts.find((draft) => existingTitles.has(draft.title.toLocaleLowerCase('en-US')));
-		if (duplicateDraft) {
-			throw new Error(`Draft work title "${duplicateDraft.title}" already exists. Choose a unique title.`);
-		}
-		const previousReceipt = webMcpActivityReceipt ? $state.snapshot(webMcpActivityReceipt) : null;
-		webMcpActivityReceipt = {
-			summary: `Preparing ${input.drafts.length} ${input.drafts.length === 1 ? 'draft' : 'drafts'} for creation…`,
-			cells: [
-				{ label: 'Requested drafts', value: String(input.drafts.length) },
-				{ label: 'Workspace', value: `${input.expectedWorkspaceCount} current · not changed yet` },
-				{ label: 'Authority', value: 'Draft status only · Human Start required' }
-			],
-			scopeKey: null,
-			toolName: WORK_DRAFT_TOOL_NAME
-		};
-		await tick();
-		const receiptTarget = document.getElementById('work-webmcp-activity');
-		if (!(receiptTarget instanceof HTMLElement)) {
-			webMcpActivityReceipt = previousReceipt;
-			throw new Error('Worker draft creation could not find its visible receipt.');
-		}
-		try {
-			const focus = focusAndPulse(receiptTarget, { behavior: 'auto', block: 'center', requireVisibleFocus: true });
-			if (!focus.focused || !focus.focusVisible || !focus.inViewport || !focus.pulsed) {
-				throw new Error('Worker draft creation receipt focus was not verified.');
-			}
-			const result = await createDraftPacks(
-				input.drafts.map((draft) => ({
-					title: draft.title,
-					status: 'draft',
-					next: 'Start',
-					owner: draft.owner || undefined,
-					area: draft.area || undefined,
-					type: draft.type || undefined,
-					due: draft.due || undefined,
-					energy: draft.energy || undefined,
-					recurrence: draft.recurrence || undefined,
-					doneWhen: draft.proofTarget || undefined
-				})),
-				input.expectedWorkspaceCount
-			);
-			webMcpActivityReceipt = {
-				summary: `${result.packs.length} ${result.packs.length === 1 ? 'draft work item' : 'draft work items'} created for human review.`,
-				cells: [
-					{ label: 'Created', value: `${result.packs.length} · Draft` },
-					{ label: 'Draft work', value: result.packs.map((pack) => workTitle(pack)).join(' · ') },
-					{ label: 'Workspace', value: `${input.expectedWorkspaceCount} → ${result.state.packs.length}` },
-					{ label: 'Authority', value: 'No work started · Human Start required' }
-				],
-				scopeKey: null,
-				toolName: WORK_DRAFT_TOOL_NAME
-			};
-			await tick();
-			return {
-				created: result.packs.map((pack) => ({ id: pack.id!, title: workTitle(pack), status: 'draft' as const })),
-				workspaceBefore: input.expectedWorkspaceCount,
-				workspaceAfter: result.state.packs.length,
-				workspaceChanged: true as const,
-				requiresHumanStart: true as const,
-				focus: { id: 'work-webmcp-activity' as const, focused: true as const, focusVisible: true as const, inViewport: true as const, pulsed: true as const }
-			};
-		} catch (error) {
-			webMcpActivityReceipt = previousReceipt;
-			await tick();
-			throw error instanceof ChallengeStateError ? new Error(error.message) : error;
-		}
-	}
 	function handleWindowKeys(e: KeyboardEvent) {
+		// Dialogs and the palette own their keyboard events, including Escape.
+		if (commandPaletteOpen || workMenuOpen || shortcutHelpOpen || document.querySelector('[aria-modal="true"], dialog[open]')) return;
 		const tag = (e.target as HTMLElement)?.tagName;
 		const editing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean((e.target as HTMLElement)?.isContentEditable);
 		if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey) && !editing) {
@@ -800,12 +688,7 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 			openWorkCommandPalette();
 			return;
 		}
-		if (commandPaletteOpen && e.key === 'Escape') {
-			e.preventDefault();
-			closeWorkCommandPalette();
-			return;
-		}
-		if (shortcutHelpOpen || editing) return;
+		if (editing) return;
 		if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
 			e.preventDefault();
 			toggleFocusMode();
@@ -813,15 +696,16 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 		}
 		if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
 			e.preventDefault();
-			filterInput()?.focus();
+			const search = filterInput();
+			if (search) search.focus();
+			else displayToast('Search is available when there are multiple tasks or active filters.', 'info');
 			focusedIndex = -1;
 			return;
 		}
 		if (e.key === 'Escape') { filterInput()?.blur(); focusedIndex = -1; }
-		// n / c: focus the local quick-create input when that view exposes it.
+		// The same route-owned form is available through the visible button and Commands.
 		if ((e.key === 'n' || e.key === 'c') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
-			const input = document.querySelector<HTMLInputElement>('.quick-create-input');
-			if (input) { e.preventDefault(); input.focus(); }
+			if (quickAdd) { e.preventDefault(); void quickAdd.openIntake(); }
 		}
 	}
 
@@ -832,17 +716,23 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 	}
 
 	function openWorkCommandPalette() {
+		if (__NEBIUS_EDITION__) {
+			commandHost?.open();
+			return;
+		}
 		commandPaletteOpen = true;
 		commandPaletteQuery = '';
 		const enabled = enabledCommandIndices();
 		commandPaletteActiveIndex = enabled.length > 0 ? enabled[0] : -1;
 	}
 
-	function runWorkCommand(command: WorkCommand) {
+	async function runWorkCommand(command: WorkCommand) {
 		if (command.disabled) return;
 		commandPaletteOpen = false;
 		commandPaletteQuery = '';
 		commandPaletteActiveIndex = 0;
+		// Finish modal cleanup and return focus before starting a command's own focus lifecycle.
+		await tick();
 		command.run();
 	}
 
@@ -981,10 +871,17 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 		}, 80);
 	}
 
-	async function revealQuickAddReceipt() {
+	async function revealQuickAddReceipt(pack: DemoPack) {
 		if (__NEBIUS_EDITION__) {
-			try { if (!projectWorkspace || projectWorkspace.canChangeScope()) { await selectProject(null); await clearAllFilters(); } }
-			catch (error) { errorText = describeError(error, 'Task created; switching to All work did not save.'); }
+			// Quick Add owns the actionable confirmation. Keep project editors mounted;
+			// changing scope must still respect their existing unsaved-edit guard.
+			dismissedReceiptSummary = $demoState?.actionReceipt?.summary ?? '';
+			try {
+				const targetProjectId = pack.projectId ?? null;
+				if (selectedProjectId !== targetProjectId && (!projectWorkspace || projectWorkspace.canChangeScope())) await selectProject(targetProjectId);
+				await clearAllFilters(false);
+			} catch (error) { errorText = describeError(error, 'Draft saved. Its project view could not be shown; use Open task.'); }
+			return;
 		}
 		dismissedReceiptSummary = '';
 		revealReceipt();
@@ -1283,10 +1180,9 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 	{:else}
 		<WornEmpty
 			title="No sample work available"
-			description="Load the guide sample to preview each step, or add your own items in Work."
+			description={__NEBIUS_EDITION__ ? 'Add a task or start a new project in Work.' : 'Load the guide sample to preview each step, or add your own items in Work.'}
 		>
-			<WornButton variant="primary" size="md" href="/webmcp-challenge">Open guide</WornButton>
-			<WornButton size="md" href="/review">Open Review</WornButton>
+			<WornButton variant="primary" size="md" href="/work">Work</WornButton>
 		</WornEmpty>
 	{/if}
 {/snippet}
@@ -1306,6 +1202,8 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 	{#snippet headActions()}
 		<div class="work-head-actions">
 			<WorkShortcutHelp bind:open={shortcutHelpOpen} />
+			{#if __NEBIUS_EDITION__}<WornButton size="sm" href={scopedSelectedId ? `/recovery-rehearsal?pack=${encodeURIComponent(scopedSelectedId)}` : '/recovery-rehearsal'}>Try recovery simulator</WornButton>{/if}
+			{#if __NEBIUS_EDITION__}<WornButton size="sm" aria-haspopup="dialog" aria-expanded={workMenuOpen} onclick={() => (workMenuOpen = true)}>Work menu</WornButton>{/if}
 			<WornButton
 				class="work-command-trigger"
 				size="sm"
@@ -1351,8 +1249,78 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 	{/if}
 
 	{#if __NEBIUS_EDITION__}
-		<NebiusProjectWorkspace bind:this={projectWorkspace} onApproved={clearAllFilters} />
+		<NebiusProjectWorkspace bind:this={projectWorkspace} onApproved={async () => {
+			await clearAllFilters(false);
+			await tick();
+			document.querySelector<HTMLAnchorElement>('[data-nebius-work-entry] a')?.focus();
+		}} />
+		<section class="nebius-work-entry" aria-label="Task actions" data-nebius-work-entry>
+			<div>
+				<strong>{nebiusSelectedPack ? workTitle(nebiusSelectedPack) : 'Choose a task'}</strong>
+			</div>
+			<div class="nebius-work-actions">
+			{#if nebiusSelectedPack}
+				{#if !canSetNextAction(nebiusSelectedPack)}
+					{#if nebiusContinuePack}
+						<WornButton data-nebius-continue variant="primary" href={`/next?pack=${encodeURIComponent(nebiusContinuePack.id)}`}>Continue: {workTitle(nebiusContinuePack)}</WornButton>
+					{/if}
+					<WornButton data-nebius-task-history-action variant={nebiusContinuePack ? 'default' : 'primary'} href={`/next?pack=${encodeURIComponent(nebiusSelectedPack.id)}&view=review`}>View task history</WornButton>
+				{:else if nebiusSelectedPack.executionRun}
+					<WornButton variant="primary" href={`/next?pack=${encodeURIComponent(nebiusSelectedPack.id)}&view=review`}>Review saved run</WornButton>
+				{:else}
+					<WornButton variant="primary" href={`/next?pack=${encodeURIComponent(nebiusSelectedPack.id)}&view=brief`}>Open task</WornButton>
+				{/if}
+			{:else}
+				<WornButton variant="primary" type="button" disabled>Open task</WornButton>
+			{/if}
+			</div>
+			<div class="nebius-work-context">
+				{#if nebiusSelectedPack}
+					{#if !canSetNextAction(nebiusSelectedPack)}
+						<p data-nebius-task-history><b>{nebiusSelectedPack.archived ? 'Archived task.' : 'Completed task.'}</b></p>
+						{#if nebiusSelectedPack.nextStep || hasBlocker(nebiusSelectedPack)}
+							<details data-nebius-historical-context>
+								<summary>Previous task context</summary>
+								{#if nebiusSelectedPack.nextStep}<p><b>Previous next step:</b> {nebiusSelectedPack.nextStep}</p>{/if}
+								{#if hasBlocker(nebiusSelectedPack)}<p><b>Previous blocker:</b> {blockerText(nebiusSelectedPack)}</p>{/if}
+							</details>
+						{/if}
+					{:else}
+					{#if nebiusSelectedPack.nextStep}<p data-nebius-selected-next-step><b>Next step:</b> {nebiusSelectedPack.nextStep}</p>{/if}
+					{#if hasBlocker(nebiusSelectedPack)}<p data-nebius-selected-blocker><b>Blocker:</b> {blockerText(nebiusSelectedPack)}</p>{/if}
+					{#if nebiusSelectedPack.executionRun}<p>Review the saved run before deciding what to do next.</p>{/if}
+					{/if}
+				{:else}<p>Create or open a task to continue.</p>{/if}
+			</div>
+		</section>
+		{#if receiptVisible && additionalReadyPacks.length}
+			<section class="demo-ready-next" aria-labelledby="ready-next-heading" data-ready-next>
+				<h2 id="ready-next-heading">{nebiusContinuePack ? 'More ready tasks' : 'Ready next'}</h2>
+				<ul>
+					{#each additionalReadyPacks as pack (pack.id)}
+						<li><a href={`/next?pack=${encodeURIComponent(pack.id)}`}>{workTitle(pack)}</a></li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 	{/if}
+
+	{#if __NEBIUS_EDITION__}
+		<NebiusProjectRehearsal
+			project={$demoState?.projects?.find(project => project.id === selectedProjectId) ?? null}
+			tasks={selectedProjectId ? orderPacks(scopedPacks, sortBy, manualOrder) : []}
+		/>
+	{/if}
+
+	<WorkQuickAdd
+		bind:this={quickAdd}
+		filters={{ owner: ownerFilter, area: areaFilter, energy: energyFilter, recurrence: recurrenceFilter }}
+		projects={$demoState?.projects ?? []}
+		{selectedProjectId}
+		onCreated={revealQuickAddReceipt}
+		onUndone={() => { dismissedReceiptSummary = $demoState?.actionReceipt?.summary ?? ''; }}
+		bind:busy={quickAddBusy}
+	/>
 
 	{#if decisionWorkspace}
 		<WorkDecisionWorkspace
@@ -1418,51 +1386,11 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 			onundo={() => undoReceipt()}
 			ondone={() => (dismissedReceiptSummary = receipt?.summary || '')}
 		/>
-		{#if __NEBIUS_EDITION__ && readyNextPacks.length}
-			<section class="demo-ready-next" aria-label="Ready next" data-ready-next>
-				<h2>Ready next</h2>
-				<ul>
-					{#each readyNextPacks as pack (pack.id)}
-						<li><a href={`/next?pack=${encodeURIComponent(pack.id)}`}>{workTitle(pack)}</a></li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
 	{/if}
 
 	{#if errorText}
 		<WornAlert tone="danger" dismissible dismissLabel="Dismiss work-list error">{errorText}</WornAlert>
 	{/if}
-
-	{#if webMcpActivityReceipt}
-		<WebMcpActivityStrip
-			id="work-webmcp-activity"
-			route="work"
-			outcome={webMcpActivityReceipt.summary}
-			toolName={webMcpActivityReceipt.toolName}
-			cells={webMcpActivityReceipt.cells}
-		/>
-	{/if}
-	{#if __NEBIUS_EDITION__}
-		<section class="nebius-work-entry" aria-label="Nebius guidance for work" data-nebius-work-entry>
-			<div>
-				<strong>Choose your next step</strong>
-				<p>{nebiusSelectedPack ? `Selected: ${workTitle(nebiusSelectedPack)}. Edit the task, get guidance, or build a browser tool.` : 'Create or select a task to plan the next step or build a browser tool.'}</p>
-			</div>
-			{#if nebiusSelectedPack}
-				<WornButton variant="primary" href={`/next?pack=${encodeURIComponent(nebiusSelectedPack.id)}`}>Open next step</WornButton>
-			{:else}
-				<WornButton variant="primary" type="button" disabled>Open next step</WornButton>
-			{/if}
-		</section>
-	{/if}
-
-	{#if __NEBIUS_EDITION__}<p class="ungrouped-note">Add ungrouped task · New tasks appear under All work, outside any project.</p>{/if}
-	<WorkQuickAdd
-		filters={{ owner: ownerFilter, area: areaFilter, energy: energyFilter, recurrence: recurrenceFilter }}
-		onCreated={revealQuickAddReceipt}
-		bind:busy={quickAddBusy}
-	/>
 
 	{#each densityPanelTabs as densityTab (densityTab.id)}
 	<div
@@ -1559,7 +1487,7 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 	</div>
 	{/each}
 
-	<WornDialog bind:open={commandPaletteOpen} title="Work command palette" size="sm">
+	{#if !__NEBIUS_EDITION__}<WornDialog bind:open={commandPaletteOpen} title="Work command palette" size="sm">
 		<p class="work-command-palette-help">Filter commands with your keyboard and run one safe action.</p>
 		<WornInput
 			type="search"
@@ -1595,20 +1523,62 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 		<div class="work-command-palette-actions">
 			<WornButton type="button" onclick={closeWorkCommandPalette}>Close</WornButton>
 		</div>
-	</WornDialog>
+	</WornDialog>{/if}
 
 	<WorkRecentActivity {packs} />
 </WornPage>
 
+{#if __NEBIUS_EDITION__}
+	<WornDialog bind:open={workMenuOpen} title="Work menu" size="sm">
+		<section class="work-backup" aria-labelledby="work-backup-title">
+			<h2 id="work-backup-title">Workspace backup</h2>
+			<p>Download projects, tasks, pending drafts, and saved tool results. Review a backup before merging it or replacing this browser workspace.</p>
+			{#if packs.some((pack) => pack.executionRun)}<p>Keep this backup private: it includes saved tool results and access to their retained runs.</p>{/if}
+			<div class="work-backup-actions">
+				<WornButton type="button" size="sm" onclick={prepareWorkspaceExport}>Prepare backup</WornButton>
+				{#if exportHref}<a class="work-backup-download" href={exportHref} download="projects-workspace.json">Download backup</a>{/if}
+				<label class="work-backup-import">Import backup<input bind:this={importInput} type="file" accept="application/json" disabled={importBusy} onchange={selectWorkspaceFile} /></label>
+			</div>
+			{#if importError}<p class="work-backup-error" role="alert">{importError}</p>{/if}
+			{#if importPreview}
+				<div class="work-backup-preview" aria-live="polite"><strong>Preview:</strong> {importPreview.packs} work items · {importPreview.pendingApprovals} pending approvals · {importPreview.collisions} existing ID collisions{importPreview.collisionIds.length ? ` (${importPreview.collisionIds.join(', ')})` : ''}.</div>
+				<div class="work-backup-actions"><WornButton size="sm" variant="primary" disabled={importBusy} onclick={() => requestWorkspaceImport('merge')}>Merge</WornButton><WornButton size="sm" variant="danger" disabled={importBusy} onclick={() => requestWorkspaceImport('replace')}>Replace</WornButton></div>
+			{/if}
+			<p><a href="/landing.html#help">Help and local setup</a></p>
+		</section>
+	</WornDialog>
+	<WornDialog bind:open={replaceConfirmOpen} title="Confirm workspace replacement" size="sm">
+		<p class="work-backup-warning">Replace will discard the current browser workspace and restore the imported file. Download a backup first if you may need the current state.</p>
+		<div class="work-backup-actions"><WornButton type="button" onclick={() => (replaceConfirmOpen = false)}>Cancel</WornButton><WornButton type="button" variant="danger" disabled={importBusy} onclick={() => { replaceConfirmOpen = false; void applyWorkspaceImport('replace'); }}>Confirm replace</WornButton></div>
+	</WornDialog>
+{/if}
+
 <style>
-	.demo-ready-next { border: 1px solid var(--worn-border); border-radius: var(--worn-radius); margin-block: .5rem 1rem; min-width: 0; padding: .75rem 1rem; }
+	.work-backup { display: grid; gap: 12px; }
+	.work-backup h2, .work-backup p { margin: 0; }
+	.work-backup p, .work-backup-preview, .work-backup-warning { color: var(--worn-text-secondary); line-height: 1.5; }
+	.work-backup-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+	.work-backup-download, .work-backup-import { align-content: center; border: 1px solid var(--worn-border); border-radius: var(--worn-radius-sm); color: var(--worn-text); cursor: pointer; font-family: var(--font-typewriter); font-size: 12px; font-weight: 650; min-block-size: 32px; padding: 4px 10px; text-decoration: none; }
+	.work-backup-import input { max-inline-size: 1px; opacity: 0; position: absolute; }
+	.work-backup-import:focus-within, .work-backup-download:focus-visible { outline: 2px solid var(--worn-focus); outline-offset: 2px; }
+	.work-backup-error { color: var(--worn-danger-text) !important; }
+	.demo-ready-next { border-inline-start: 1px solid var(--worn-border-strong); margin-block: 1rem; min-width: 0; padding-inline: 1rem; }
 	.demo-ready-next h2 { font-size: 1rem; margin: 0 0 .5rem; }
 	.demo-ready-next ul { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; list-style: none; margin: 0; padding: 0; }
 	.demo-ready-next li { max-width: 100%; min-width: 0; }
-	.demo-ready-next a { display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
-	.ungrouped-note { color: var(--worn-text-secondary); font-size: .8rem; margin-block: 1rem .3rem; }
-	.nebius-work-entry { align-items: center; background: var(--worn-surface); border: 1px solid var(--worn-border); border-radius: var(--worn-radius); display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; margin-block: 1rem; padding: 1rem; }
-	.nebius-work-entry p { color: var(--worn-text-secondary); margin: 0.25rem 0 0; overflow-wrap: anywhere; }
+	.demo-ready-next a, .demo-ready-next a:visited { align-items: center; color: var(--worn-text); display: inline-flex; min-height: 44px; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: .2em; }
+	.demo-ready-next a:hover { text-decoration-thickness: 2px; }
+	.demo-ready-next a:focus-visible { border-radius: 2px; outline: 2px solid var(--worn-focus); outline-offset: 3px; }
+	.nebius-work-entry { align-items: center; background: var(--worn-surface); border: 1px solid var(--worn-border-strong); border-radius: var(--worn-radius); box-shadow: var(--worn-shadow-sm); display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; justify-content: space-between; margin-block: 1rem 1.5rem; padding: clamp(1rem, 2.5vw, 1.5rem); }
+	.nebius-work-entry p { color: var(--worn-text-secondary); line-height: 1.55; margin: 0; overflow-wrap: anywhere; }
+	.nebius-work-entry > div:first-child { flex: 1 1 14rem; max-inline-size: 100%; min-inline-size: 0; }
+	.nebius-work-entry strong { display: block; font-size: clamp(1.1rem, 1.8vw, 1.35rem); line-height: 1.35; overflow-wrap: anywhere; }
+	.nebius-work-context { display: grid; flex: 1 0 100%; gap: .5rem; min-inline-size: 0; }
+	.nebius-work-context b { color: var(--worn-text); font-weight: 650; }
+	.nebius-work-context [data-nebius-selected-next-step] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+	.nebius-work-actions { display: flex; flex-wrap: wrap; gap: .5rem; min-inline-size: 0; }
+	.nebius-work-actions :global(.worn-btn) { max-inline-size: 100%; min-block-size: 44px; white-space: normal; }
+	@media (max-width: 480px) { .nebius-work-actions { flex: 1 1 100%; } .nebius-work-actions :global(.worn-btn) { flex: 1; } }
 	.manual-order-toolbar { margin-top: 12px; }
 	.work-head-actions {
 		align-items: center;
@@ -1619,13 +1589,14 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 	}
 	:global(.work-command-trigger svg) { height: 16px; width: 16px; }
 	:global(.work-mode-active) {
-		background: var(--worn-accent) !important;
-		border-color: var(--worn-accent) !important;
-		color: var(--worn-accent-text) !important;
+		background: var(--worn-selected-bg) !important;
+		border-color: var(--worn-link) !important;
+		box-shadow: inset 0 0 0 1px var(--worn-link);
+		color: var(--worn-selected-fg) !important;
 	}
 	@media(max-width:420px){
 		:global(.demo-panel-head:has(.work-head-actions)){align-items:flex-start;flex-wrap:wrap}
-		.work-head-actions{flex-wrap:nowrap;gap:4px;justify-content:flex-start;width:100%}
+		.work-head-actions{flex-wrap:wrap;gap:4px;justify-content:flex-start;width:100%}
 	}
 	@media(max-width:700px){
 		:global(.demo-panel-head:has(.work-head-actions)){gap:8px;padding-block:7px}
@@ -1649,9 +1620,10 @@ function handleCardKeys(e: KeyboardEvent, cardIndex: number = -1) {
 	.work-command-palette-help { color: var(--worn-text-muted); font-size: 13px; margin: 0 0 10px; }
 	.work-command-palette-list { border-top: 1px solid var(--worn-border); display: grid; gap: 8px; margin-top: 8px; max-height: 50vh; overflow: auto; padding-top: 8px; }
 	.work-command-entry { appearance: none; background: var(--worn-surface); border: 1px solid var(--worn-border); border-radius: var(--worn-radius-sm); color: var(--worn-text); display: grid; font: inherit; gap: 4px; padding: 10px 12px; text-align: left; width: 100%; }
-	.work-command-entry:hover,
-	.work-command-entry:focus-visible,
-	.work-command-entry-active { background: var(--worn-selected-bg); border-color: var(--worn-accent); outline: 0; }
+	.work-command-entry:hover { background: var(--worn-selected-bg); border-color: var(--worn-field-border); }
+	.work-command-entry:focus-visible { outline: 2px dashed var(--worn-focus); outline-offset: -4px; }
+	.work-command-entry-active { background: var(--worn-selected-bg); border: 2px solid var(--worn-field-border); }
+	.work-command-entry-active span { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: .2em; }
 	.work-command-entry:disabled { opacity: 0.6; }
 	.work-command-entry span { font-weight: 610; }
 	.work-command-entry small { color: var(--worn-text-muted); font-size: 12px; }

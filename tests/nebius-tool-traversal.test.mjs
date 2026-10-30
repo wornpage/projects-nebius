@@ -10,9 +10,75 @@ import { authoredCheckerFiles, authoredPreviewReference, materializeAuthoredChec
 import { PACKET_CASES, INCOMPLETE, CORRECTED, THREE_GAPS, READY, assertPacketResult } from './fixtures/nebius-release-packet-cases.mjs';
 import { runFilesDigest, validateRunFiles } from '../svelte-frontend/src/lib/nebius-execution-contract.mjs';
 import { renderRunPreview } from '../worker/nebius-run-preview.mjs';
+import { planCheckerReplay } from '../scripts/nebius-retained-checker.mjs';
 
 const files = await materializeAuthoredChecker();
 const script = files.find(file => file.path === 'app.js').content;
+
+const recordingBindings = { input: 'packet', output: 'result', check: 'check-packet', incomplete: 'load-incomplete', corrected: 'load-corrected' };
+async function recordingFixture() {
+  const record = structuredClone((await authoredPreviewReference(files)).record);
+  record.requiredInputFormats = [{ id: 'packet', format: 'json' }];
+  record.checks[0].stdout = 'Observed successful assertions: 9; validate calls: 4; handleMessage calls: 6\nControl events observed: 6/6; declared JSON example loaders: 2/2; inputs without a declared format: 0\n';
+  return record;
+}
+
+test('recording plan derives observed counts and export digest from the ready record', async () => {
+  const record = await recordingFixture(), plan = await planCheckerReplay(record, recordingBindings);
+  assert.equal(plan.runId, record.id); assert.equal(plan.sourceDigest, record.checks[0].sourceDigest);
+  assert.match(plan.exportDigest, /^[0-9a-f]{64}$/u);
+  assert.equal(plan.checks.successfulAssertions, 9); assert.equal(plan.checks.successfulAttempt, 1);
+  assert.deepEqual(plan.checks.jsonLoaders, { observed: 2, total: 2 }); assert.equal(plan.checks.failure, null);
+});
+
+test('recording plan distinguishes a source rejection before the only Sandbox check', async () => {
+  const record = await recordingFixture(); record.attempt = 2; record.usage.modelCalls = 2; record.checks[0].attempt = 2;
+  record.generationAttempts = [
+    { attempt: 1, outcome: 'rejected', responseText: 'Authored rejected response.', retention: 'retained', diagnostic: { code: 'invalid_model_output', stage: 'tool_files', message: 'Authored source rejection.' } },
+    { attempt: 2, outcome: 'accepted', responseText: 'Authored accepted response.', retention: 'retained', diagnostic: null }
+  ];
+  const plan = await planCheckerReplay(record, recordingBindings);
+  assert.equal(plan.checks.failure.kind, 'source'); assert.equal(plan.checks.failure.attempt, 1);
+  assert.equal(plan.checks.failure.text, 'Authored source rejection.'); assert.equal(plan.checks.sandboxResults, 1);
+  assert.equal(plan.checks.successfulAttempt, 2);
+});
+
+test('recording plan derives a retained failed Sandbox check without inventing source rejection', async () => {
+  const record = await recordingFixture(); record.attempt = 2; record.usage.modelCalls = 2;
+  record.checks = [{ ...record.checks[0], exitCode: 1, stderr: 'Authored first check failed.\nMore detail.' }, { ...record.checks[0], attempt: 2 }];
+  const plan = await planCheckerReplay(record, recordingBindings);
+  assert.equal(plan.checks.failure.kind, 'sandbox'); assert.equal(plan.checks.failure.text, 'Authored first check failed.');
+  assert.equal(plan.checks.sandboxResults, 2);
+});
+
+test('recording plan refuses cancelled and unknown outcomes even with an exit-zero check', async () => {
+  for (const status of ['cancelled', 'uncertain']) {
+    const record = await recordingFixture(); record.status = status;
+    await assert.rejects(planCheckerReplay(record, recordingBindings), /Only a retained ready checker/u);
+  }
+});
+
+test('recording plan requires the recorded task to own the bound JSON input', async () => {
+  const record = await recordingFixture(); record.requiredInputFormats = null;
+  await assert.rejects(planCheckerReplay(record, recordingBindings), /task-owned JSON input/u);
+});
+
+test('recording plan refuses missing or excessive observed counts', async () => {
+  for (const stdout of ['No observed counts.', 'Observed successful assertions: 1001; declared JSON example loaders: 2/2;']) {
+    const record = await recordingFixture(); record.checks[0].stdout = stdout;
+    await assert.rejects(planCheckerReplay(record, recordingBindings), /bounded observed/u);
+  }
+});
+
+test('recording plan refuses duplicate or non-ID control bindings', async () => {
+  const record = await recordingFixture();
+  await assert.rejects(planCheckerReplay(record, { ...recordingBindings, output: recordingBindings.input }), /unique observed HTML/u);
+  await assert.rejects(planCheckerReplay(record, { ...recordingBindings, input: '#packet' }), /unique observed HTML/u);
+});
+
+
+
+
 
 // Execute only the committed authored fixture. This is not a security sandbox
 // for arbitrary model code and does not call Token Factory Sandboxes.
@@ -173,17 +239,24 @@ test('retained preview rejects ambiguous or untrusted input before browser execu
 // stub. Blob bytes are retained as data and never executed in host Node/vm.
 // The real browser verifier separately runs the authored code in its Worker.
 async function domBridgeHarness(prepare = () => {}) {
+  let documentState, frameHasFocus = true;
+  const focusCalls = [];
   class Element {
     constructor(id = '', tagName = 'DIV') {
       this.id = id; this.tagName = tagName; this.dataset = {}; this.textContent = '';
-      this.attributes = new Map(); this.style = {}; this.childNodes = []; this.beforeNodes = []; this.labels = []; this.hidden = false;
+      this.attributes = new Map(); this.style = { setProperty(name, value, priority) { this[name] = value; this[name + 'Priority'] = priority; } }; this.childNodes = []; this.beforeNodes = []; this.labels = []; this.hidden = false; this.isConnected = true;
     }
     closest(selector) {
       if (selector === '[id]') return this;
-      for (let node = this; node; node = node.parentElement) if (node.hidden || node.getAttribute('aria-hidden') === 'true') return node;
+      for (let node = this; node; node = node.parentElement) if ((selector.includes('[hidden]') && node.hidden) ||
+        (selector.includes('[aria-hidden=') && node.getAttribute('aria-hidden') === 'true') ||
+        (selector.includes('[inert]') && node.getAttribute('inert') !== null)) return node;
       return null;
     }
+    matches(selector) { assert.equal(selector, ':disabled'); return this.disabled === true; }
+    focus(options) { documentState.activeElement = this; focusCalls.push({ element: this, options }); }
     getClientRects() { return this.hidden || this.style.display === 'none' ? [] : [{}]; }
+    getBoundingClientRect() { return this.box || { width: 100, height: 20, left: 10, top: 10, right: 110, bottom: 30 }; }
     setAttribute(name, value) { this.attributes.set(name, value); }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
     removeAttribute(name) { this.attributes.delete(name); }
@@ -212,23 +285,29 @@ async function domBridgeHarness(prepare = () => {}) {
   const rendered = await renderRunPreview(files);
   const bootstrap = rendered.html.match(/<script>([\s\S]*)<\/script><\/body><\/html>$/u)?.[1];
   assert.ok(bootstrap, 'The actual renderer must supply its fixed bootstrap.');
-  const context = createContext({
-    document: { body: { querySelectorAll: selector => selector === '[id]' ? [...elements.values()] : [...elements.values()].filter(el=>el.getAttribute('aria-live')!==null||['status','alert','log','marquee','timer'].includes(el.getAttribute('role'))), append: () => {},
+  documentState = { documentElement: { clientWidth: 1280, clientHeight: 900 }, body: { querySelectorAll: selector => selector === '[id]' ? [...elements.values()] : [...elements.values()].filter(el=>el.getAttribute('aria-live')!==null||['status','alert','log','marquee','timer'].includes(el.getAttribute('role'))), append: () => {},
       addEventListener: (name, listener) => listeners.set(name, listener) },
       createElement: tag => { const element = new Element('', tag.toUpperCase()); created.push(element); return element; },
-      getElementById: id => elements.get(id) || null },
-    Element, HTMLInputElement: Input, HTMLTextAreaElement: Textarea, HTMLSelectElement: Select, HTMLButtonElement: Button,
+      getElementById: id => elements.get(id) || null, hasFocus: () => frameHasFocus };
+  documentState.activeElement = documentState.body;
+  const context = createContext({
+    document: documentState,
+    Element, HTMLElement: Element, HTMLInputElement: Input, HTMLTextAreaElement: Textarea, HTMLSelectElement: Select, HTMLButtonElement: Button,
     window: {}, parent: { postMessage: data => notifications.push({ ...data, renderedOutput: elements.get('result').textContent }) },
     atob: text => Buffer.from(text, 'base64').toString('binary'), Uint8Array,
     Blob: class {}, URL: { createObjectURL: () => 'blob:authored-unused-by-stub', revokeObjectURL: () => {} }, Worker,
     setTimeout: (callback, milliseconds) => { const id = ++timerId; timers.set(id, { callback, milliseconds }); return id; },
     clearTimeout: id => timers.delete(id), addEventListener: (name, listener) => windowListeners.set(name, listener),
     requestAnimationFrame: callback => { frames.push(callback); return frames.length; },
-    getComputedStyle: element => ({visibility:element.style.visibility || 'visible'}),
+    getComputedStyle: element => ({visibility:element.style.visibility || 'visible',opacity:element.style.opacity ?? '1',clip:element.style.clip || 'auto',clipPath:element.style.clipPath || 'none'}),
   });
   runInContext(bootstrap, context, { timeout: 1000 });
   return {
-    elements, worker, status: created.find(el=>el.getAttribute('role')==='status'), created, messages, notifications, timers,
+    elements, worker, status: created.find(el=>el.getAttribute('role')==='status'), created, messages, notifications, timers, focusCalls,
+    focusControl(id) { documentState.activeElement = elements.get(id); listeners.get('focusin')({ target: documentState.activeElement }); },
+    leaveFrame() { documentState.activeElement = documentState.body; frameHasFocus = false; },
+    returnFrame() { frameHasFocus = true; windowListeners.get('focus')(); },
+    activeControl() { return documentState.activeElement; },
     flushAnnouncements() { for (const callback of frames.splice(0)) callback(); },
     emit(name, id, value) {
       const target = elements.get(id); assert.ok(target);
@@ -239,6 +318,42 @@ async function domBridgeHarness(prepare = () => {}) {
     expire() { assert.equal(timers.size, 1); const timer = [...timers.values()][0]; assert.equal(timer.milliseconds, 5000); timer.callback(); },
     close() { windowListeners.get('pagehide')(); },
   };
+}
+
+test('preview restores its own control after frame focus without a Worker event', async () => {
+  const h = await domBridgeHarness();
+  h.focusControl('packet');
+  const before = h.messages.length;
+  h.leaveFrame(); h.returnFrame(); h.flushAnnouncements();
+  assert.equal(h.activeControl(), h.elements.get('packet'));
+  assert.equal(h.focusCalls.length, 1);
+  assert.equal(h.focusCalls[0].options.preventScroll, true);
+  assert.equal(h.messages.length, before);
+});
+
+test('preview focus restoration neither autofocuses nor replaces a new focused control', async () => {
+  const h = await domBridgeHarness();
+  h.returnFrame(); h.flushAnnouncements();
+  assert.equal(h.focusCalls.length, 0);
+  h.focusControl('packet'); h.leaveFrame(); h.returnFrame();
+  h.focusControl('check-packet'); h.flushAnnouncements();
+  assert.equal(h.activeControl(), h.elements.get('check-packet'));
+  assert.equal(h.focusCalls.length, 0);
+});
+
+for (const unavailable of ['detached', 'disabled', 'hidden', 'inert', 'invisible']) {
+  test('preview does not restore focus to a ' + unavailable + ' control', async () => {
+    const h = await domBridgeHarness();
+    const target = h.elements.get('packet');
+    h.focusControl('packet'); h.leaveFrame();
+    if (unavailable === 'detached') target.isConnected = false;
+    if (unavailable === 'disabled') target.disabled = true;
+    if (unavailable === 'hidden') target.hidden = true;
+    if (unavailable === 'inert') target.setAttribute('inert', '');
+    if (unavailable === 'invisible') target.style.visibility = 'hidden';
+    h.returnFrame(); h.flushAnnouncements();
+    assert.equal(h.focusCalls.length, 0);
+  });
 }
 
 test('renderer gives anonymous outputs names and one pre-existing announcement channel', async () => {
@@ -279,8 +394,87 @@ test('renderer preserves supplied output names and reports historical input decl
     assert.equal(bridge.elements.get('packet').dataset.inputFormat, format);
     assert.equal(bridge.created.find(el=>el.tagName==='DD').textContent, expected);
     assert.equal(bridge.elements.get('result').getAttribute('aria-label'), 'Packet outcome');
-    assert.equal(bridge.elements.get('result').beforeNodes.length, 0);
+    assert.equal(bridge.elements.get('result').beforeNodes.length, 1);
+    assert.equal(bridge.elements.get('result').beforeNodes[0].hidden, true);
   }
+});
+
+test('renderer exposes aria-only and hidden output names as visible captions', async () => {
+  for (const labelSource of ['aria-label', 'hidden reference', 'CSS-hidden reference']) {
+    const bridge = await domBridgeHarness((elements, Element) => {
+      const output = elements.get('result');
+      if (labelSource === 'aria-label') output.setAttribute('aria-label', 'Packet outcome');
+      else {
+        const label = new Element('result-label'); label.textContent = 'Packet outcome';
+        if (labelSource === 'hidden reference') label.hidden = true;
+        else label.style.display = 'none';
+        elements.set(label.id, label); output.setAttribute('aria-labelledby', label.id);
+      }
+    });
+    const output = bridge.elements.get('result');
+    assert.equal(output.getAttribute('aria-label'), 'Packet outcome');
+    assert.equal(output.beforeNodes.length, 1);
+    assert.equal(output.beforeNodes[0].textContent, 'Packet outcome');
+    assert.equal(output.beforeNodes[0].getAttribute('aria-hidden'), 'true');
+    assert.equal(output.beforeNodes[0].getAttribute('data-nebius-output-label'), '');
+    bridge.reply([{ id: 'result', hidden: true }]);
+    assert.equal(output.beforeNodes[0].hidden, true);
+  }
+});
+
+test('renderer reuses a matching visible native output label without duplicating it', async () => {
+  for (const ariaName of [null, 'Packet outcome', 'Different accessible outcome']) {
+    const bridge = await domBridgeHarness((elements, Element) => {
+      const label = new Element('result-label'); label.textContent = 'Packet outcome';
+      const output = elements.get('result'); output.labels = [label];
+      if (ariaName) output.setAttribute('aria-label', ariaName);
+    });
+    const output = bridge.elements.get('result');
+    assert.equal(output.getAttribute('aria-label'), ariaName || 'Packet outcome');
+    assert.equal(output.beforeNodes.length, 1);
+    assert.equal(output.beforeNodes[0].hidden, ariaName !== 'Different accessible outcome');
+  }
+});
+
+test('renderer provides captions for clipped, tiny, offscreen and transparent naming elements', async () => {
+  for (const presentation of ['clipped', 'tiny', 'offscreen', 'transparent']) {
+    const bridge = await domBridgeHarness((elements, Element) => {
+      const label = new Element('result-label'); label.textContent = 'Packet outcome';
+      if (presentation === 'clipped') label.style.clipPath = 'inset(50%)';
+      if (presentation === 'tiny') label.box = { width: 1, height: 1, left: 10, top: 10, right: 11, bottom: 11 };
+      if (presentation === 'offscreen') label.box = { width: 100, height: 20, left: -9999, top: 10, right: -9899, bottom: 30 };
+      if (presentation === 'transparent') label.style.opacity = '0';
+      elements.set(label.id, label); elements.get('result').setAttribute('aria-labelledby', label.id);
+    });
+    assert.equal(bridge.elements.get('result').beforeNodes[0].hidden, false, presentation);
+    assert.equal(bridge.elements.get('result').beforeNodes[0].style.display, 'block');
+    assert.equal(bridge.elements.get('result').beforeNodes[0].style.displayPriority, 'important');
+  }
+});
+
+test('renderer hands visible captions over when a naming element is hidden and restored', async () => {
+  const bridge = await domBridgeHarness((elements, Element) => {
+    const label = new Element('result-label'); label.textContent = 'Packet outcome';
+    elements.set(label.id, label); elements.get('result').setAttribute('aria-labelledby', label.id);
+  });
+  const caption = bridge.elements.get('result').beforeNodes[0];
+  assert.equal(caption.hidden, true);
+  bridge.reply([{ id: 'result-label', hidden: true }]);
+  assert.equal(caption.hidden, false); assert.equal(caption.style.display, 'block');
+  bridge.emit('click', 'check-packet');
+  bridge.reply([{ id: 'result-label', hidden: false }]);
+  assert.equal(caption.hidden, true); assert.equal(caption.style.display, 'none');
+  assert.equal(bridge.elements.get('result').beforeNodes.length, 1);
+});
+
+test('renderer supplies one portable default style layer without changing authored files', async () => {
+  const original = structuredClone(files);
+  const preview = await renderRunPreview(files);
+  assert.deepEqual(files, original);
+  assert.equal(preview.html.split('@layer nebius-preview-base').length - 1, 1);
+  assert.match(preview.html, /data-example-for\]:hover/u);
+  assert.match(preview.csp, /connect-src 'none'/u);
+  assert.match(preview.csp, /font-src 'none'/u);
 });
 
 test('result announcements use complete patch batches and repeat unchanged results', async () => {
@@ -509,7 +703,7 @@ test('DOM bridge reports ready after patches and ignores unsolicited idle replie
 function parentPreviewHarness() {
   const source = readFileSync(new URL('../svelte-frontend/src/routes/review/NebiusRunReview.svelte', import.meta.url), 'utf8');
   const start = source.indexOf('function stopPreviewListener()');
-  const end = source.indexOf('async function refreshResult()', start);
+  const end = source.indexOf('function retainActionFocus(', start);
   assert.ok(start >= 0 && end > start);
   const functions = source.slice(start, end).replace(': HTMLIFrameElement', '').replace(': MessageEvent', '');
   const listeners = new Set(), timers = new Map(); let timerId = 0;

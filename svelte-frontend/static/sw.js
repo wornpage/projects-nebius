@@ -1,7 +1,7 @@
-// CACHE_NAME is the stable family anchor retained by the static artifact
-// contract. The production build replaces the source generation and build-asset
-// markers below after Svelte has emitted its final client bundle. That makes a
-// cache generation change whenever the worker, shell, or compiled assets change.
+// Preserve this historical cache family so activation can remove only obsolete
+// caches created by earlier versions of this app. The current generation is
+// rebuilt when the worker, shell, or compiled assets change. The saved-link
+// redirect remains precached so previously shared URLs still work offline.
 const CACHE_NAME = 'projects-webmcp-v2';
 const CACHE_GENERATION = 'source-dev'; // __PROJECTS_SW_CACHE_GENERATION__
 const ACTIVE_CACHE_NAME = `${CACHE_NAME}-${CACHE_GENERATION}`;
@@ -20,8 +20,9 @@ const PRECACHE = Object.freeze([
 	'/manifest.json',
 	'/data/demo-packs.json',
 	'/assets/demo.css',
+	'/assets/theme.css',
+	'/assets/theme.js',
 	'/assets/landing.css',
-	'/assets/landing.js',
 	'/assets/favicon.png',
 	'/assets/favicon.svg',
 	'/assets/icon-192.svg',
@@ -37,8 +38,9 @@ const NETWORK_FIRST_PATHS = new Set([
 	'/manifest.json',
 	'/data/demo-packs.json',
 	'/assets/demo.css',
-	'/assets/landing.css',
-	'/assets/landing.js'
+	'/assets/theme.css',
+	'/assets/theme.js',
+	'/assets/landing.css'
 ]);
 
 function isCacheable(response) {
@@ -54,7 +56,11 @@ async function activeCache() {
 }
 
 async function fetchAndCache(request) {
-	const response = await fetch(request);
+	let response = await fetch(request);
+	const url = new URL(request.url);
+	if (response.status === 404 && /^\/_app(?:-[a-z0-9]+)?\/immutable\//u.test(url.pathname)) {
+		response = await fetch(new Request(request, { cache: 'reload' }));
+	}
 	if (isCacheable(response)) {
 		try {
 			const cache = await activeCache();
@@ -67,7 +73,8 @@ async function fetchAndCache(request) {
 async function cachedOrOfflineFallback(request) {
 	const cache = await activeCache();
 	const cached = await cache.match(request);
-	if (cached) return cached;
+	if (cached && isCacheable(cached)) return cached;
+	if (cached) await cache.delete(request);
 	if (request.mode === 'navigate') {
 		// Static route shells do not vary by query; the hydrated page reads the
 		// current URL to select work. A fresh task link must load its own shell.
@@ -75,8 +82,8 @@ async function cachedOrOfflineFallback(request) {
 		routeUrl.search = '';
 		const routeShell = await cache.match(routeUrl.href);
 		if (routeShell) return routeShell;
-		const guide = await cache.match('/webmcp-challenge');
-		if (guide) return guide;
+		const savedLinkRedirect = await cache.match('/webmcp-challenge');
+		if (savedLinkRedirect) return savedLinkRedirect;
 	}
 	return Response.error();
 }
@@ -110,7 +117,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('message', (event) => {
-	if (event.data?.type === 'SKIP_WAITING') void self.skipWaiting();
+	if (event.data?.type === 'SKIP_WAITING') event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('fetch', (event) => {
@@ -122,6 +129,11 @@ self.addEventListener('fetch', (event) => {
 		return;
 	}
 
-	event.respondWith(activeCache().then((cache) => cache.match(event.request)).then((cached) => cached || fetchAndCache(event.request)
-		.catch(() => cachedOrOfflineFallback(event.request))));
+	event.respondWith((async () => {
+		const cache = await activeCache();
+		const cached = await cache.match(event.request);
+		if (cached && isCacheable(cached)) return cached;
+		if (cached) await cache.delete(event.request);
+		return fetchAndCache(event.request).catch(() => cachedOrOfflineFallback(event.request));
+	})());
 });

@@ -6,13 +6,13 @@ import { handleNebiusApi } from '../worker/nebius-api.mjs';
 import { reserveDailyCall } from '../worker/nebius-budget.mjs';
 import { suggestWithNebius, validateSuggestion, TOKEN_FACTORY_URL } from '../worker/nebius-provider.mjs';
 import { projectTask, validateTask, validateSuggestionText, PROMPT_VERSION } from '../svelte-frontend/src/lib/nebius-contract.mjs';
-import { REVIEW_VERSION } from '../svelte-frontend/src/lib/nebius-review-contract.mjs';
+import { REVIEW_VERSION, validateReviewOutput } from '../svelte-frontend/src/lib/nebius-review-contract.mjs';
 const model = 'nvidia/synthetic-model';
 const pack = { title: 'Plan the handoff', purpose: 'Coordinate work', nextStep: 'Draft a date proposal.', blocker: 'No deadline', doneWhen: 'Owner approves the plan' };
 const state = { pack, context: [], currentStatus: 'blocked', update: '' };
 const proposal = () => ({ changes: { nextStep: 'Ask the owner to confirm the deadline.' }, reason: 'The deadline is missing.', basis: ['purpose', 'blocker'], missingInformation: ['Confirmed deadline'] });
 const output = () => ({ model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(proposal()) } }], usage: { prompt_tokens: 30, completion_tokens: 20 } });
-const reviewOutput = () => ({ model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({ checks: [{ id: 'c1', assessment: 'partial', reason: 'A proposal is present but approval is missing.', quote: 'Owner sent a proposed date.' }], consistency: { assessment: 'consistent', reason: 'The supplied text does not conflict.' } }) } }], usage: { prompt_tokens: 45, completion_tokens: 30 } });
+const reviewOutput = () => ({ model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({ checks: [{ id: 'c1', assessment: 'partial', reason: 'A proposal is present but approval is missing.', quote: 'Owner sent a proposed date.' }], comparison: { assessment: 'unclear', reason: 'No separate observation is supplied for comparison.' } }) } }], usage: { prompt_tokens: 45, completion_tokens: 30 } });
 function harness(t) {
   const h = { calls: 0, reservations: 0 };
   h.env = { NEBIUS_ENABLED: 'true', NEBIUS_ALLOWED_ORIGIN: 'https://app.test', NEBIUS_MODEL_ROUTINE: model, NEBIUS_MODEL_REASONING: model, NEBIUS_API_KEY: 'synthetic-key', NEBIUS_DAILY_CALL_LIMIT: '2',
@@ -43,6 +43,39 @@ test('review sends selected criteria and evidence once, returning advisory findi
   assert.equal(h.calls, 1); assert.equal(h.reservations, 1);
   const sent = JSON.parse(h.sent.options.body);
   assert.deepEqual(JSON.parse(sent.messages[1].content), { pack, criteria: request.review.criteria, evidence: request.review.evidence });
+  // These check the actual request instructions, not a claim about live model quality.
+  assert.match(sent.messages[0].content, /work as written with observed behavior/);
+  assert.match(sent.messages[0].content, /regardless of the number of selected criteria/);
+  assert.match(sent.messages[0].content, /Omitting an observed required prerequisite/);
+  assert.match(sent.messages[0].content, /Missing information alone does not establish a mismatch/);
+  assert.match(sent.messages[0].content, /Do not infer alignment from criterion count/);
+  assert.match(sent.messages[0].content, /The comparison is mismatched/);
+  assert.match(sent.messages[0].content, /must agree with discrepancies identified in the criterion findings/);
+  assert.equal(sent.max_tokens, 1200);
+  assert.deepEqual(sent.response_format, { type: 'json_object' });
+});
+
+for (const oldVersion of ['nebius-review.v1', 'nebius-review.v2']) test(`review v3 rejects a stale ${oldVersion} preview before reserving a call`, async t => {
+  const h = harness(t);
+  assert.equal(REVIEW_VERSION, 'nebius-review.v3');
+  const request = { consent: true, pack, review: { criteria: [{ id: 'c1', text: pack.doneWhen }], evidence: 'Owner sent a proposed date.' }, requestedModel: model, promptVersion: oldVersion };
+  const response = await h.send('POST', request, {}, 'review-evidence'), body = await response.json();
+  assert.equal(response.status, 409); assert.equal(body.code, 'model_changed');
+  assert.equal(h.calls, 0); assert.equal(h.reservations, 0);
+});
+
+test('review v3 comparison has one active schema and rejects the historical consistency shape', () => {
+  const input = { pack, criteria: [{ id: 'c1', text: pack.doneWhen }], evidence: 'Owner sent a proposed date.' };
+  const checks = [{ id: 'c1', assessment: 'partial', reason: 'Approval is missing.', quote: input.evidence }];
+  for (const assessment of ['aligned', 'mismatched', 'unclear']) {
+    const result = validateReviewOutput({ checks, comparison: { assessment, reason: 'Comparison of supplied work and observations.' } }, input);
+    assert.equal(result.comparison.assessment, assessment); assert.equal(result.selectedCount, 1); assert.equal(result.exhaustive, false);
+    assert.equal(Object.hasOwn(result, 'consistency'), false);
+  }
+  const historical = { assessment: 'consistent', reason: 'Historical response.' };
+  assert.throws(() => validateReviewOutput({ checks, consistency: historical }, input));
+  assert.throws(() => validateReviewOutput({ checks, comparison: historical }, input));
+  assert.throws(() => validateReviewOutput({ checks, comparison: { assessment: 'unclear', reason: 'Missing comparison.' }, consistency: historical }, input));
 });
 test('review refuses altered criteria, missing consent and unsupported quotes before a task write', async t => {
   const h = harness(t);
@@ -51,7 +84,7 @@ test('review refuses altered criteria, missing consent and unsupported quotes be
     assert.equal((await h.send('POST', body, {}, 'review-evidence')).status, 400);
   }
   assert.equal(h.calls, 0); assert.equal(h.reservations, 0);
-  t.mock.method(globalThis, 'fetch', async (url, options) => { h.calls++; h.sent = { url, options }; const raw = reviewOutput(); raw.choices[0].message.content = JSON.stringify({ checks: [{ id: 'c1', assessment: 'supported', reason: 'Claimed', quote: 'NOT_IN_EVIDENCE' }], consistency: { assessment: 'consistent', reason: 'Fine.' } }); return Response.json(raw); });
+  t.mock.method(globalThis, 'fetch', async (url, options) => { h.calls++; h.sent = { url, options }; const raw = reviewOutput(); raw.choices[0].message.content = JSON.stringify({ checks: [{ id: 'c1', assessment: 'supported', reason: 'Claimed', quote: 'NOT_IN_EVIDENCE' }], comparison: { assessment: 'unclear', reason: 'No comparison.' } }); return Response.json(raw); });
   assert.equal((await h.send('POST', base, {}, 'review-evidence')).status, 502);
 });
 test('consented request sends one bounded projection to the fixed Token Factory endpoint', async t => {

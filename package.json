@@ -1,33 +1,37 @@
 {
-  "name": "projects-webmcp-extension",
+  "name": "projects-nebius",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Wornpage Projects demo with a preserved WebMCP baseline and a Nebius Token Factory edition.",
+  "description": "Private Nebius edition of Wornpage Projects: Work, Task and reviewed tools.",
   "scripts": {
-    "build:nebius": "node scripts/build-nebius.mjs",
-    "dev:nebius": "npm run build:nebius && wrangler dev --config wrangler.nebius.jsonc --ip 127.0.0.1 --port 8787",
-    "test:nebius": "node --test tests/nebius-api.test.mjs tests/nebius-client.test.mjs tests/nebius-plan.test.mjs tests/nebius-project-state.test.mjs tests/nebius-plan-client.test.mjs tests/nebius-replan.test.mjs tests/nebius-replan-state.test.mjs tests/nebius-replan-client.test.mjs tests/nebius-routing.test.mjs tests/nebius-project-starters.test.mjs tests/nebius-project-progress.test.mjs tests/nebius-project-completion.test.mjs tests/nebius-sandbox.test.mjs tests/nebius-run-provider.test.mjs tests/nebius-run-state.test.mjs tests/nebius-execution-client.test.mjs tests/nebius-tool-traversal.test.mjs",
-    "test:nebius:browser": "node scripts/nebius-browser-smoke.mjs",
-    "test:nebius:projects": "node scripts/nebius-project-browser-smoke.mjs",
-    "test:nebius:portability": "node scripts/portability-browser-smoke.mjs --nebius",
-    "test:nebius:offline": "node scripts/offline-browser-smoke.mjs --nebius",
-    "test:nebius:runtime": "node scripts/nebius-runtime-smoke.mjs",
-    "verify:nebius": "npm run test:manifest && npm run test:nebius && npm run check && npm run build:nebius && wrangler deploy --dry-run --config wrangler.nebius.jsonc --outdir dist/nebius-worker && npm run test:nebius:runtime",
-    "build": "npm --prefix svelte-frontend run build",
-    "build:pages": "npm --prefix svelte-frontend ci --ignore-scripts && npm run build",
+    "build": "node scripts/build-svelte-frontend.mjs",
+    "build:release": "node scripts/build-svelte-frontend.mjs --require-social-origin",
     "check": "npm --prefix svelte-frontend run check",
+    "test:nebius:rehearsal": "node --test tests/nebius-project-rehearsal.test.mjs && node scripts/nebius-project-rehearsal-smoke.mjs",
+    "test:nebius:recovery-flow": "node scripts/nebius-recovery-project-flow-smoke.mjs",
+    "test:nebius:reconciliation": "node --test tests/nebius-aggregated-diagnostics.test.mjs tests/nebius-authoring-contract.test.mjs tests/nebius-checks-diagnostics.test.mjs tests/nebius-deferred-focus.test.mjs tests/nebius-record-read-compat.test.mjs",
+    "test:nebius:flow-review": "node scripts/nebius-evidence-format-smoke.mjs && node scripts/nebius-project-evidence-smoke.mjs",
+    "preview": "node scripts/private-recovery-preview.mjs",
+    "dev": "npm run build && wrangler dev --config wrangler.nebius.jsonc --ip 127.0.0.1 --port 8787",
+    "test": "node --test tests/nebius-generation-stream.test.mjs tests/nebius-output-requirements.test.mjs tests/nebius-api.test.mjs tests/nebius-client.test.mjs tests/nebius-plan.test.mjs tests/nebius-plan-grounding-contract.test.mjs tests/nebius-project-state.test.mjs tests/nebius-plan-client.test.mjs tests/nebius-replan.test.mjs tests/nebius-replan-state.test.mjs tests/nebius-replan-client.test.mjs tests/nebius-routing.test.mjs tests/nebius-project-starters.test.mjs tests/nebius-project-progress.test.mjs tests/nebius-project-completion.test.mjs tests/nebius-sandbox.test.mjs tests/nebius-run-provider.test.mjs tests/nebius-structured-json.test.mjs tests/nebius-run-state.test.mjs tests/nebius-execution-client.test.mjs tests/nebius-task-review.test.mjs tests/nebius-request-diff.test.mjs tests/nebius-navigation.test.mjs tests/nebius-command-navigation.test.mjs tests/nebius-command-surface.test.mjs tests/nebius-appearance.test.mjs tests/nebius-tool-traversal.test.mjs tests/nebius-recorded-example.test.mjs tests/nebius-timeline.test.mjs tests/nebius-recovery-simulator.test.mjs tests/nebius-recovery-example.test.mjs tests/nebius-recovery-browser-cases.test.mjs tests/nebius-recovery-qualification.test.mjs tests/nebius-bundled-validator.test.mjs tests/nebius-build-reproducibility.test.mjs tests/nebius-private-preview.test.mjs tests/nebius-dependency-lock.test.mjs tests/nebius-intake-state.test.mjs tests/nebius-build-info.test.mjs tests/nebius-source-budget.test.mjs tests/nebius-framing-feedback.test.mjs tests/nebius-standalone-framing.test.mjs tests/nebius-license-notices.test.mjs tests/nebius-social-image.test.mjs tests/nebius-orphan-draft-backup.test.mjs",
     "manifest:write": "node scripts/generate-public-manifest.mjs --write",
-    "preflight:recording": "node scripts/webmcp-recording-preflight.mjs",
-    "test:manifest": "node scripts/generate-public-manifest.mjs",
-    "test:social-card": "node scripts/social-card-smoke.mjs",
-    "test:artifact": "node --test scripts/webmcp-recording-preflight-contract.test.mjs scripts/static-artifact-contract.test.mjs",
-    "test:browser": "node scripts/calibrate-work-first-recording.mjs && node scripts/work-interaction-polish-smoke.mjs && node scripts/webmcp-header-responsive-smoke.mjs && node scripts/offline-browser-smoke.mjs && node scripts/portability-browser-smoke.mjs",
-    "test:webmcp": "node scripts/run-webmcp-contracts.mjs",
-    "verify": "npm run test:manifest && npm run check && npm run test:webmcp && npm run build && npm run test:social-card && npm run test:artifact",
+    "manifest:check": "node scripts/generate-public-manifest.mjs",
+    "verify": "npm run manifest:check && npm test && npm run test:nebius:reconciliation && npm run test:shared && npm run check && npm run build && npm run test:static && wrangler deploy --dry-run --config wrangler.nebius.jsonc --outdir dist/nebius-worker && npm run test:nebius:runtime",
+    "test:nebius:browser": "node scripts/nebius-browser-smoke.mjs",
+    "test:nebius:shell": "node scripts/nebius-shell-browser-smoke.mjs",
+    "test:nebius:projects": "node scripts/nebius-project-browser-smoke.mjs",
+    "test:nebius:portability": "node scripts/portability-browser-smoke.mjs",
+    "test:nebius:offline": "node scripts/offline-browser-smoke.mjs",
+    "test:nebius:runtime": "node scripts/nebius-runtime-smoke.mjs",
+    "test:nebius:lifecycle": "node scripts/nebius-run-lifecycle-smoke.mjs",
+    "test:nebius:landing": "node scripts/nebius-runtime-smoke.mjs --landing-browser",
     "test:nebius:tool": "node --test tests/nebius-tool-traversal.test.mjs",
-    "test:nebius:tool-preview": "node scripts/nebius-tool-preview-smoke.mjs"
+    "test:nebius:tool-preview": "node scripts/nebius-tool-preview-smoke.mjs",
+    "test:nebius:recovery-preview": "node scripts/nebius-recovery-browser-check.mjs",
+    "test:static": "node --test scripts/static-artifact-contract.test.mjs",
+    "test:shared": "node --test tests/challenge-brand-affordance-webmcp-contract.test.mjs tests/focus-pulse-webmcp-contract.test.mjs tests/full-border-webmcp-contract.test.mjs tests/handoff-session-webmcp-contract.test.mjs tests/next-webmcp-page-contract.test.mjs tests/public-manifest-webmcp-contract.test.mjs tests/state-integrity-webmcp-contract.test.mjs tests/toast-lifecycle-webmcp-contract.test.mjs tests/work-webmcp-page-contract.test.mjs tests/work-webmcp-seeded-regression.test.mjs"
   },
   "engines": {
     "node": ">=24"
@@ -35,6 +39,9 @@
   "devDependencies": {
     "parse5": "8.0.1",
     "playwright-core": "1.62.1",
-    "wrangler": "4.147.0"
+    "wrangler": "4.149.0"
+  },
+  "dependencies": {
+    "acorn": "8.19.0"
   }
 }

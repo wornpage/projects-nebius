@@ -1,4 +1,4 @@
-import { validatePlanInput, validateProjectPlan } from './nebius-plan-contract.mjs';
+import { validatePlanInput, validateAuthoredProjectPlan } from './nebius-plan-contract.mjs';
 
 function freeze(value) {
   for (const child of Object.values(value)) if (child && typeof child === 'object') freeze(child);
@@ -7,6 +7,21 @@ function freeze(value) {
 
 // Human-written examples describe proposed work; they contain no observed results.
 export const PROJECT_STARTERS = freeze([
+  {
+    id: 'project-recovery', label: 'Project recovery',
+    brief: 'Build an interactive project recovery simulator. Start with five tasks and their dependencies, delay a delivery and compare a proposed one-day recovery. Show baseline and projected schedules together, with clear numbers and an accessible timeline. Use elapsed days and state the scheduling assumptions. This is a proposed build; the authored offline reference is not evidence of Nemotron generation.',
+    plan: { title: 'Build a project recovery simulator', summary: 'Turn a delay into a visible dependency impact and compare a proposed recovery before changing the project.',
+      tasks: [
+        { id: 'build-simulator', title: 'Build the project recovery simulator', purpose: 'Build a browser simulator for 1–8 tasks with exact id, title, integer duration (1–30 days), and dependsOn fields. Schedule from day 0 by dependencies; independent tasks run in parallel. Reject cycles, duplicate or unknown IDs and invalid numbers. A delay adds duration; recovery subtracts duration from a selected task, never below 1. Show baseline, delayed and recovery finish plus days recovered. Use a declared timeline output for baseline/scenario bars and visible time ranges. Provide Baseline, Delay delivery and Recover one day examples, editable JSON and adjustment controls. Recalculate on valid edits and clear old results on errors. These are estimates without resource or calendar constraints.',
+          nextStep: 'Review the requirements and examples in Build tool. Authorize a bounded Nemotron build only when ready.',
+          doneWhen: 'Seed tasks: brief1; delivery3 after brief; prepare2 after brief; assemble2 after delivery and prepare; review1 after assemble. Baseline finishes at day7. Delaying delivery2 finishes at day9. With that delay, recovering1 from assemble finishes at day8: 1 day recovered, 1 day still delayed. Delaying prepare1 leaves finish7; delaying prepare2 gives finish8. Inputs plan-json JSON, delay-task text, delay-days text, recover-task text, recover-days text. The timeline uses one consistent elapsed-day scale and labels baseline vs scenario. Cover valid changes, noncritical delay, malformed JSON, missing refs, cycles, invalid durations and impossible recovery. Compare independent cases against actual generated code in the real preview; never claim the authored reference as a model result.',
+          dependsOn: null, executionInputs: [{ id: 'plan-json', format: 'json' }, { id: 'delay-task', format: 'text' }, { id: 'delay-days', format: 'text' }, { id: 'recover-task', format: 'text' }, { id: 'recover-days', format: 'text' }],
+          executionOutputs: [{ id: 'baseline-finish', format: 'text' }, { id: 'delayed-finish', format: 'text' }, { id: 'recovered-finish', format: 'text' }, { id: 'recovered-days', format: 'text' }, { id: 'impact', format: 'text' }, { id: 'error', format: 'text' }, { id: 'schedule', format: 'timeline' }] },
+        { id: 'review-simulator', title: 'Review the simulator and its assumptions', purpose: 'Check whether the generated tool explains which dependencies move and whether a proposed recovery actually improves the finish.',
+          nextStep: 'Try baseline, delay and recovery, then change a noncritical task and compare the actual schedule against independent expected results.',
+          doneWhen: 'Independent cases pass in the actual rendered tool. Invalid edits remove old results, keyboard controls work at narrow and desktop widths, and the downloaded tool gives the same answers. Record remaining limitations for a human decision.', dependsOn: 'build-simulator' }
+      ], missingInformation: ['Does Nemotron produce a correct simulator within the bounded build?', 'Do the independent cases and real preview support the result?', 'Are the parallel-work and elapsed-day assumptions appropriate for the intended project?'] }
+  },
   {
     id: 'release-packet-checker', label: 'Release-packet checker',
     brief: 'Build a small browser tool for checking supplied release packets. Give it an incomplete synthetic packet and a corrected packet, with visibly different outputs. Use the first task to generate the files and run isolated checks, then review the actual tool. Readiness here means ready for human review; no release is approved or deployed by the tool.',
@@ -51,10 +66,10 @@ export const PROJECT_STARTERS = freeze([
         { id: 'review-handoff', title: 'Review the package with the recipient', purpose: 'Record whether the package meets expectations and what remains unresolved.', nextStep: 'Review the package against the agreed acceptance criteria with the recipient.', doneWhen: 'The review records recipient feedback, unresolved gaps and the acceptance decision still required.', dependsOn: 'assemble-package' }
       ], missingInformation: ['Who is the recipient and which deliverables are expected?', 'What instructions and access requirements apply?', 'What criteria and decision process will establish acceptance?'] }
   }
-].map(starter => ({ id: starter.id, label: starter.label, brief: validatePlanInput({ brief: starter.brief }).brief, plan: validateProjectPlan(starter.plan) })));
+].map(starter => ({ id: starter.id, label: starter.label, brief: validatePlanInput({ brief: starter.brief }).brief, plan: validateAuthoredProjectPlan(starter.plan) })));
 
 export function getProjectStarter(id) {
   const starter = PROJECT_STARTERS.find(item => item.id === id);
   if (!starter) throw new TypeError('Unknown project starter.');
-  return { id: starter.id, label: starter.label, brief: validatePlanInput({ brief: starter.brief }).brief, plan: validateProjectPlan(starter.plan) };
+  return { id: starter.id, label: starter.label, brief: validatePlanInput({ brief: starter.brief }).brief, plan: validateAuthoredProjectPlan(starter.plan) };
 }

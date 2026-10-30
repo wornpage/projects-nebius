@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { PROJECT_STARTERS, getProjectStarter } from '../svelte-frontend/src/lib/nebius-project-starters.mjs';
-import { validatePlanInput, validateProjectPlan } from '../svelte-frontend/src/lib/nebius-plan-contract.mjs';
+import { validatePlanInput, validateAuthoredProjectPlan } from '../svelte-frontend/src/lib/nebius-plan-contract.mjs';
 
 test('human-written starters have useful validated plans and explicit open questions', () => {
-  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.id), ['release-packet-checker', 'website-release', 'workshop', 'customer-handoff']);
-  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.label), ['Release-packet checker', 'Website release', 'Workshop', 'Customer handoff']);
+  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.id), ['project-recovery', 'release-packet-checker', 'website-release', 'workshop', 'customer-handoff']);
+  assert.deepEqual(PROJECT_STARTERS.map(starter => starter.label), ['Project recovery', 'Release-packet checker', 'Website release', 'Workshop', 'Customer handoff']);
   for (const starter of PROJECT_STARTERS) {
     assert.deepEqual(Object.keys(starter).sort(), ['brief', 'id', 'label', 'plan']);
     assert.equal(validatePlanInput({ brief: starter.brief }).brief, starter.brief);
-    assert.deepEqual(validateProjectPlan(starter.plan), starter.plan);
-    const taskCount = starter.id === 'release-packet-checker' ? 2 : 3;
+    assert.deepEqual(validateAuthoredProjectPlan(starter.plan), starter.plan);
+    const taskCount = ['release-packet-checker', 'project-recovery'].includes(starter.id) ? 2 : 3;
     assert.equal(starter.plan.tasks.length, taskCount);
     assert.equal(new Set(starter.plan.tasks.map(task => task.id)).size, taskCount);
     assert.equal(starter.plan.tasks[0].dependsOn, null);
@@ -89,4 +89,16 @@ test('starter data has only pure validation dependencies and no state or provide
   assert.deepEqual(imports, ['./nebius-plan-contract.mjs']);
   assert.doesNotMatch(source, /\b(?:fetch|localStorage|sessionStorage|navigator|window|approveProjectPlan|demoState)\b/u);
   assert.doesNotMatch(source, /(?:https?:\/\/|\/api\/nebius|NEBIUS_MODEL)/u);
+});
+
+test('recovery starter provides task-owned output minima without colliding with its inputs', () => {
+  const task = getProjectStarter('project-recovery').plan.tasks[0];
+  assert.deepEqual(task.executionOutputs, [
+    { id: 'baseline-finish', format: 'text' }, { id: 'delayed-finish', format: 'text' },
+    { id: 'recovered-finish', format: 'text' }, { id: 'recovered-days', format: 'text' },
+    { id: 'impact', format: 'text' }, { id: 'error', format: 'text' }, { id: 'schedule', format: 'timeline' }
+  ]);
+  assert.ok(task.executionOutputs.every(output => !task.executionInputs.some(input => input.id === output.id)));
+  task.executionOutputs[0].id = 'changed';
+  assert.equal(getProjectStarter('project-recovery').plan.tasks[0].executionOutputs[0].id, 'baseline-finish');
 });

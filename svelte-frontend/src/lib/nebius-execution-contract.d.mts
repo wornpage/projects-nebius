@@ -1,16 +1,25 @@
 import type { NebiusTask, NebiusContextItem } from './nebius-contract.mjs';
-export const RUN_VERSION: 'browser-tool.v2';
+export const RUN_VERSION: 'browser-tool.v3';
 export const RUN_RECORD_FORMAT: 'run-diagnostics.v3';
 export const TOOL_INPUT_LIMITS: Readonly<{ items: 8; id: 80 }>;
 export type ToolInputRequirement = { id: string; format: 'text' | 'json' };
 export function validateToolInputRequirements(value: unknown): ToolInputRequirement[] | null;
+export const TOOL_OUTPUT_LIMITS: Readonly<{ items: 12; id: 80 }>;
+export type ToolOutputRequirement = { id: string; format: 'text' | 'timeline' };
+export function validateToolOutputRequirements(value: unknown): ToolOutputRequirement[] | null;
+export type ToolRequirements = { requiredInputFormats: ToolInputRequirement[] | null; requiredOutputs: ToolOutputRequirement[] | null };
+export function validateToolRequirements(inputs: unknown, outputs: unknown): ToolRequirements;
+export function runToolRequirements(value: RunInput | RunRecord): ToolRequirements;
 export const RUN_EVIDENCE_LIMITS: Readonly<{ responseBytes: 65536; recordBytes: 491520 }>;
 export function runJsonBytes(value: unknown): number;
-export const RUN_LIMITS: Readonly<{ maxModelCalls: 2; maxSandboxRuns: 2; maxOutputTokens: 8000; sandboxSeconds: 30; runSeconds: 600; maxFileBytes: 32768; maxTotalFileBytes: 65536 }>;
+export const RUN_RECORD_LIMITS: Readonly<{ maxModelCalls: 3; maxSandboxRuns: 3 }>;
+export const RUN_LIMITS: Readonly<{ maxModelCalls: 2; maxSandboxRuns: 2; maxOutputTokens: 32000; sandboxSeconds: 30; runSeconds: 600; maxFileBytes: 32768; maxTotalFileBytes: 65536 }>;
+export const RUN_MODEL_TIMEOUT_MS: 240000;
 export type RunStatus = 'queued' | 'generating' | 'checking' | 'repairing' | 'cancelling' | 'ready' | 'failed' | 'cancelled' | 'uncertain';
 export type RunFile = { path: 'index.html' | 'app.js' | 'checks.cjs'; content: string };
 type RunTaskSnapshot = { packId: string; pack: NebiusTask; currentStatus: 'draft' | 'active'; context: NebiusContextItem[]; requestedModel: string };
-type RunFormatSnapshot = { version: typeof RUN_VERSION; requiredInputFormats: ToolInputRequirement[] | null } | { version: 'browser-tool.v1' };
+type RunFormatSnapshot = { version: typeof RUN_VERSION; requiredInputFormats: ToolInputRequirement[] | null; requiredOutputs: ToolOutputRequirement[] | null }
+  | { version: 'browser-tool.v2'; requiredInputFormats: ToolInputRequirement[] | null } | { version: 'browser-tool.v1' };
 export type RunInput = RunTaskSnapshot & RunFormatSnapshot & { consent: true };
 export type RunCheck = { attempt: number; operationId: string; checkpointId: string | null; exitCode: number; stdout: string; stderr: string; sourceDigest: string };
 export type RunFailureStage = 'configuration' | 'generation' | 'response' | 'tool_files' | 'tool_page' | 'tool_worker' | 'tool_checks' | 'preview' | 'sandbox' | 'orchestration';

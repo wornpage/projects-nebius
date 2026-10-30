@@ -1,4 +1,4 @@
-// @ts-nocheck -- plain ESM shared by browser state and WebMCP contracts.
+// @ts-nocheck -- plain ESM shared by browser-state validation.
 
 export const WORK_TITLE_MAX_LENGTH = 200;
 

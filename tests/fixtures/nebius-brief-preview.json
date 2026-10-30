@@ -1,0 +1,77 @@
+{
+  "projects": [
+    {
+      "id": "brief-preview-project",
+      "title": "Private brief previews · offline fixture",
+      "summary": "Read-only presentation checks. No model requests or saved production work.",
+      "brief": "Review Purpose and Completion criteria previews.",
+      "source": "manual",
+      "createdAt": "2026-10-25T00:00:00.000Z"
+    }
+  ],
+  "selectedProjectId": "brief-preview-project",
+  "selectedId": "brief-long",
+  "pendingNextActionDrafts": [],
+  "packs": [
+    {
+      "id": "brief-long",
+      "projectId": "brief-preview-project",
+      "title": "Long brief · offline UI example",
+      "status": "active",
+      "type": "task",
+      "blocker": "None",
+      "next": "Open",
+      "nextStep": "Return complete index.html, app.js and checks.cjs; put each filename on its opening code fence. Checks must call validate and handleMessage and fail on wrong results.",
+      "purpose": "Build an accessible five-task simulator. Graph: Brief1 day; Delivery after Brief; Preparation after Brief; Assembly after both; Review1 day after Assembly. Start day0; start=max predecessor finishes. Five numeric type=text inputs: delay0-10, target1-40, Delivery/Preparation/Assembly durations1-30; choice select: none/expedite/help/both. All inputs declare text format. Original baseline uses entered durations, zero delay and no recovery. Delay extends Delivery. Expedite removes up to2 delay days only: effective Delivery=entered Delivery+max(0,delay-2). Help removes1 Assembly day, minimum1. Compare four options, finish, target gap, days saved versus no action, controlling predecessor and original/selected timelines. Suggest fewest interventions meeting target, then earliest finish; if none meet, earliest finish then fewest interventions. Break exact ties in order none,expedite,help,both. Calculated choice does not establish supplier/staffing feasibility.",
+      "doneWhen": "Defaults delivery3/preparation2/assembly2,delay2,target7: original7; none9,expedite7,help8,both6. At target6,expedite misses1;both meets. With delay0/default durations: none7,expedite7,help6,both6;target7 suggests none,target6 suggests help. Preparation bottleneck delivery2/preparation4/assembly2,delay0,target8: none8,expedite8,help7,both7;suggest none. Reject blank,fractional,out-of-range and malformed inputs; invalid edits clear prior outputs. Reset restores original durations,delay0,none,target7. Provide delivery-delay and preparation-bottleneck example loaders replacing all six inputs. Meaningful Node assertions must exercise actual calculation/handleMessage, numeric cases, invalid input,reset/loaders and stale clearing. Required outputs stay coherent; keyboard/mobile controls work. Supplier/staffing feasibility stays unconfirmed; never approve real changes. Sandbox check <=30s and independent browser cases must pass before success is claimed."
+    },
+    {
+      "id": "brief-short",
+      "projectId": "brief-preview-project",
+      "title": "Short brief · offline UI example",
+      "status": "active",
+      "type": "task",
+      "blocker": "None",
+      "next": "Open",
+      "nextStep": "Read this complete next step.",
+      "purpose": "A short goal.",
+      "doneWhen": "A person checks the result."
+    },
+    {
+      "id": "brief-lines",
+      "projectId": "brief-preview-project",
+      "title": "Explicit lines · offline UI example",
+      "status": "active",
+      "type": "task",
+      "blocker": "None",
+      "next": "Open",
+      "nextStep": "Keep this next-step instruction visible in full while the other fields use previews. Keep this next-step instruction visible in full while the other fields use previews. Keep this next-step instruction visible in full while the other fields use previews. Keep this next-step instruction visible in full while the other fields use previews. Keep this next-step instruction visible in full while the other fields use previews.",
+      "purpose": "Line one.\nLine two.\nLine three.\nLine four.",
+      "doneWhen": "Criterion one.\nCriterion two.\nCriterion three."
+    },
+    {
+      "id": "brief-responsive",
+      "projectId": "brief-preview-project",
+      "title": "Responsive brief · offline UI example",
+      "status": "active",
+      "type": "task",
+      "blocker": "None",
+      "next": "Open",
+      "nextStep": "Read the full saved instructions before deciding what to do.",
+      "purpose": "Compare the saved request with the supplied work. Keep the complete description available when someone needs the details, while presenting a compact overview that is easy to scan on both a phone and a desktop screen.",
+      "doneWhen": "Compare the saved request with the supplied work. Keep the complete description available when someone needs the details, while presenting a compact overview that is easy to scan on both a phone and a desktop screen."
+    },
+    {
+      "id": "brief-literal",
+      "projectId": "brief-preview-project",
+      "title": "Literal text · offline UI example",
+      "status": "active",
+      "type": "task",
+      "blocker": "None",
+      "next": "Open",
+      "nextStep": "Keep <b>literal</b> syntax and 📝 visible.",
+      "purpose": "Literal <b>text</b> must stay text, not markup. 📝\nSecond line keeps  two spaces.\n\n第四行 stays readable.\nFinal instruction remains part of the saved request.",
+      "doneWhen": "Literal <b>text</b> must stay text, not markup. 📝\nSecond line keeps  two spaces.\n\n第四行 stays readable.\nFinal instruction remains part of the saved request."
+    }
+  ]
+}

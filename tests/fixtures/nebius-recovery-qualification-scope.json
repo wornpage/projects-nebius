@@ -1,0 +1,27 @@
+{
+  "version": "recovery-task-scope.v1",
+  "sourceRequestSha256": "b66c92911c4151f6a0dfb7b60c0ac93118a9dcb93ef25015c7da9332c7a0f43c",
+  "semanticScopeSha256": "ace8ff47d00781324938397f87eb450442fcf2da2362c4a6f8e5359f564a7078",
+  "pack": {
+    "title": "Build the project recovery simulator",
+    "purpose": "Build a browser simulator for 1–8 tasks with exact id, title, integer duration (1–30 days), and dependsOn fields. Schedule from day 0 by dependencies; independent tasks run in parallel. Reject cycles, duplicate or unknown IDs and invalid numbers. A delay adds duration; recovery subtracts duration from a selected task, never below 1. Show baseline, delayed and recovery finish plus days recovered. Use a declared timeline output for baseline/scenario bars and visible time ranges. Provide Baseline, Delay delivery and Recover one day examples, editable JSON and adjustment controls. Recalculate on valid edits and clear old results on errors. These are estimates without resource or calendar constraints.",
+    "nextStep": "Review the requirements and examples in Build tool. Authorize a bounded Nemotron build only when ready.",
+    "blocker": "",
+    "doneWhen": "Seed tasks: brief1; delivery3 after brief; prepare2 after brief; assemble2 after delivery and prepare; review1 after assemble. Baseline finishes at day7. Delaying delivery2 finishes at day9. With that delay, recovering1 from assemble finishes at day8: 1 day recovered, 1 day still delayed. Delaying prepare1 leaves finish7; delaying prepare2 gives finish8. Inputs plan-json JSON, delay-task text, delay-days text, recover-task text, recover-days text. The timeline uses one consistent elapsed-day scale and labels baseline vs scenario. Cover valid changes, noncritical delay, malformed JSON, missing refs, cycles, invalid durations and impossible recovery. Compare independent cases against actual generated code in the real preview; never claim the authored reference as a model result."
+  },
+  "context": [
+    {
+      "kind": "note",
+      "text": "Build fresh source from this task. No authored implementation or held-out test corpus is supplied. Required controls: plan-json (JSON), delay-task, delay-days, recover-task, recover-days (text). Use output IDs baseline-finish, delayed-finish, recovered-finish, recovered-days, schedule, impact and error. Mark schedule as output data-output-format=\"timeline\". Output finish and recovered-day metrics as N day or N days. Provide Baseline, Delay delivery +2 days and Recover one day buttons. Use IDs brief, delivery, prepare, assemble, review for the seed plan. A valid comparison must update all metrics and the chart; invalid input must clear old results and explain the error. Keep code and styling compact enough for the fixed output limit. The simulator is a hypothetical elapsed-day projection, never a claim about real completed work."
+    },
+    {
+      "kind": "note",
+      "text": "Plan JSON has exactly {tasks}. Each of 1–8 dense tasks has exactly id, title, duration, dependsOn. IDs are unique and match ^[A-Za-z][A-Za-z0-9_-]{0,79}$; reject constructor, prototype and __proto__. Titles are trimmed nonblank plain text, 1–100 characters, without markup, controls or bidi characters. Durations are integers 1–30. Dependencies are dense arrays of unique known IDs; reject self-dependencies, dangling IDs and cycles. Delay/recovery days are integers 0–30. A positive adjustment requires a known task ID; an empty ID is allowed only for zero days. Apply delay first, then subtract recovery, including when both target the same task. Reject a resulting duration below 1; never clamp. Baseline, delayed and recovered schedules must each finish within 90 days. Days recovered equals delayed finish minus recovered finish. Baseline button sets zero adjustments; Delay delivery sets delivery+2 and no recovery; Recover one day sets delivery+2 then assemble-1."
+    },
+    {
+      "kind": "source",
+      "text": "Synthetic seed data, not an observed result: {\"tasks\":[{\"id\":\"brief\",\"title\":\"Confirm brief\",\"duration\":1,\"dependsOn\":[]},{\"id\":\"delivery\",\"title\":\"Delivery\",\"duration\":3,\"dependsOn\":[\"brief\"]},{\"id\":\"prepare\",\"title\":\"Prepare workspace\",\"duration\":2,\"dependsOn\":[\"brief\"]},{\"id\":\"assemble\",\"title\":\"Assembly\",\"duration\":2,\"dependsOn\":[\"delivery\",\"prepare\"]},{\"id\":\"review\",\"title\":\"Review\",\"duration\":1,\"dependsOn\":[\"assemble\"]}]}"
+    }
+  ],
+  "currentStatus": "draft"
+}

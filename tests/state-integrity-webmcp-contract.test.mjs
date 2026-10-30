@@ -14,10 +14,7 @@ import {
 	withExclusiveStateStorageLock
 } from '../svelte-frontend/src/lib/browser-state-envelope.mjs';
 import { normalizeText } from '../svelte-frontend/src/lib/workflow-rules.mjs';
-import {
-	createWorkDraftsTool,
-	workDraftInput
-} from '../svelte-frontend/src/routes/work/work-webmcp.mjs';
+
 
 const assertState = (value) => {
 	assert.ok(value && typeof value === 'object' && Array.isArray(value.packs));
@@ -48,22 +45,12 @@ function deterministicLockManager() {
 	};
 }
 
-function draftReceipt(input) {
-	return {
-		created: input.drafts.map((draft, index) => ({ id: `unicode-${index}`, title: draft.title, status: 'draft' })),
-		workspaceBefore: input.expectedWorkspaceCount,
-		workspaceAfter: input.expectedWorkspaceCount + input.drafts.length,
-		workspaceChanged: true,
-		requiresHumanStart: true,
-		focus: { id: 'work-webmcp-activity', focused: true, focusVisible: true, inViewport: true, pulsed: true }
-	};
-}
 
-test('canonical title validation stores the same NFC Unicode value that WebMCP validates', async () => {
+
+test('canonical title validation preserves Unicode boundaries', async () => {
 	const combining = 'Cafe\u0301';
 	const canonical = 'Caf\u00e9';
 	assert.equal(normalizeWorkTitle(combining), canonical);
-	assert.equal(workDraftInput({ expectedWorkspaceCount: 0, drafts: [{ title: combining }] }).drafts[0].title, canonical);
 	assert.equal(normalizeWorkTitle('Ship 🚀'), 'Ship 🚀');
 	assert.equal(normalizeWorkTitle('Review 🇺🇸 launch'), 'Review 🇺🇸 launch');
 
@@ -73,32 +60,9 @@ test('canonical title validation stores the same NFC Unicode value that WebMCP v
 	assert.equal(normalizeText(exactBoundary, WORK_TITLE_MAX_LENGTH), exactBoundary);
 	assert.equal(normalizeBoundedText(`${'a'.repeat(200)}🚀`, WORK_TITLE_MAX_LENGTH), null);
 
-	let commits = 0;
-	const tool = createWorkDraftsTool(async (input) => {
-		commits += 1;
-		return draftReceipt(input);
-	});
-	const receipt = await tool.execute({ expectedWorkspaceCount: 0, drafts: [{ title: exactBoundary }] });
-	assert.equal(receipt.created[0].title, exactBoundary);
-	await assert.rejects(
-		tool.execute({ expectedWorkspaceCount: 1, drafts: [{ title: `${'a'.repeat(200)}🚀` }] }),
-		TypeError
-	);
-	assert.equal(commits, 1, 'the overlong title is rejected before the persistence callback');
 });
 
-test('NFC-equivalent WebMCP titles collide before any draft transaction', async () => {
-	let commits = 0;
-	const tool = createWorkDraftsTool(async (input) => {
-		commits += 1;
-		return draftReceipt(input);
-	});
-	await assert.rejects(tool.execute({
-		expectedWorkspaceCount: 0,
-		drafts: [{ title: 'Cafe\u0301' }, { title: 'Caf\u00e9' }]
-	}), /titles must be unique/u);
-	assert.equal(commits, 0);
-});
+
 
 test('legacy raw DemoState hydrates once into the strict v1 revision envelope without data loss', () => {
 	const legacy = {
@@ -175,6 +139,15 @@ test('explicit revisions rotate on success and a stale tab cannot overwrite the 
 	assert.deepEqual(third.state, stateC);
 });
 
+test('a stale writer cannot erase retained historical approvals', () => {
+	const orphan = { workId: 'missing', choice: 'Focus', mode: 'preset', evidenceNote: 'Previous note', evidence: [], originFingerprint: 'old', source: 'webmcp' };
+	const state = { packs: [{ id: 'active', title: 'Current task', status: 'active' }], pendingNextActionDrafts: [orphan] };
+	const newer = { schemaVersion: DEMO_STATE_SCHEMA_VERSION, revision: 'newer-tab', state };
+	const bytes = JSON.stringify(newer);
+	assert.throws(() => nextStateEnvelope({ serialized: bytes, expectedRevision: 'older-tab', state: { ...state, pendingNextActionDrafts: [] }, assertState, migrateLegacyState, createRevision: () => 'new-revision' }), /revision conflict/u);
+	assert.deepEqual(readStateEnvelope(bytes, { assertState, migrateLegacyState, createRevision: () => 'unused' }).envelope, newer);
+});
+
 test('persisted-state decoder rejects malformed records instead of deferring failures to rendering', () => {
 	const source = readFileSync(new URL('../svelte-frontend/src/lib/demo-client.ts', import.meta.url), 'utf8');
 	assert.match(source, /optionalTextLimits[\s\S]*?VALID_PACK_STATUSES\.has\(pack\.status\)[\s\S]*?parseDateOnly\(pack\.due\)[\s\S]*?pack\.reactions[\s\S]*?unresolved dependency/u);
@@ -201,9 +174,10 @@ test('workspace portability previews before explicit merge or replace', () => {
 	const client = readFileSync(new URL('../svelte-frontend/src/lib/demo-client.ts', import.meta.url), 'utf8');
 	assert.match(client, /exportWorkspaceState[\s\S]*?previewWorkspaceImport[\s\S]*?importWorkspaceState[\s\S]*?mode: WorkspaceImportMode/u);
 	assert.match(client, /delete copy\.status[\s\S]*?copy\.actionReceipt = null/u);
-	assert.match(client, /collisionIds[\s\S]*?orphaned pending approval[\s\S]*?draft\.manualOrder = imported\.manualOrder/u);
-	const guide = readFileSync(new URL('../svelte-frontend/src/routes/webmcp-challenge/+page.svelte', import.meta.url), 'utf8');
-	assert.match(guide, /Prepare export[\s\S]*?Download export[\s\S]*?Import export[\s\S]*?Preview:[\s\S]*?Merge[\s\S]*?Replace/u);
+	assert.match(client, /function assertSafePendingApprovalMerge[\s\S]*?currentTargets[\s\S]*?Cannot merge pending approvals[\s\S]*?Cannot merge a pending approval[\s\S]*?Cannot merge work that would attach to a missing pending approval reference/u);
+	assert.match(client, /draft\.manualOrder = imported\.manualOrder[\s\S]*?\} else \{\s*assertSafePendingApprovalMerge\(draft, imported\);[\s\S]*?draft\.packs\.push/u);
+	const work = readFileSync(new URL('../svelte-frontend/src/routes/work/+page.svelte', import.meta.url), 'utf8');
+	assert.match(work, /Prepare backup[\s\S]*?Download backup[\s\S]*?Import backup[\s\S]*?Preview:[\s\S]*?Merge[\s\S]*?Replace/u);
 });
 
 test('exclusive migration interleaving cannot overwrite a queued normal write or deadlock', { timeout: 1_000 }, async () => {

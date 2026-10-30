@@ -11,7 +11,7 @@ const here = (relative: string) => fileURLToPath(new URL(relative, import.meta.u
 // Dev and preview serve the same canonical root assets that the production
 // aggregate contains. Production prerendering receives that aggregate through
 // PROJECTS_SVELTE_ASSET_DIR in scripts/build-svelte-frontend.mjs.
-const repoRootLanding = here('../landing.html');
+const repoRootLanding = here('../nebius-landing.html');
 const repoRootAssets = here('../assets');
 const repoRootManifest = here('../manifest.json');
 const repoRootData = here('../data');
@@ -38,12 +38,12 @@ function repoAssetsMiddleware(
 		res.end('Bad request');
 		return;
 	}
-	const isLanding = pathname === '/' || pathname === '/landing.html';
+	const isLanding = pathname === '/' || pathname === '/landing.html' || pathname === '/landing';
 	const isManifest = pathname === '/manifest.json';
 	const isData = pathname === '/data/demo-packs.json';
 	if (!isLanding && !isManifest && !pathname.startsWith('/assets/') && !isData) return next();
 	const root = isData ? repoRootData : repoRootAssets;
-	const rel = isManifest || isLanding ? '' : isData ? 'demo-packs.json' : pathname.slice('/assets/'.length);
+	const rel = isManifest || isLanding ? '' : isData ? 'nebius-demo-packs.json' : pathname.slice('/assets/'.length);
 	const target = isLanding ? repoRootLanding : isManifest ? repoRootManifest : resolve(normalize(join(root, rel)));
 	const relativeTarget = isManifest || isLanding ? '' : relative(root, target);
 	const insideRoot = isManifest || isLanding || (relativeTarget !== '..' && !relativeTarget.startsWith(`..${sep}`) && !isAbsolute(relativeTarget));
@@ -63,8 +63,8 @@ function repoAssetsMiddleware(
 }
 
 export default defineConfig({
-	define: { __NEBIUS_EDITION__: JSON.stringify(process.env.PROJECTS_NEBIUS_EDITION === 'true') },
-	cacheDir: 'node_modules/.vite',
+	define: { __NEBIUS_EDITION__: true },
+	cacheDir: here('../dist/vite-cache'),
 	build: {
 		rolldownOptions: {
 			checks: { pluginTimings: false }

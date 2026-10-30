@@ -1,16 +1,15 @@
-import { PROMPT_VERSION, isRecord, validateTask, validateSelectedContext, validateCurrentStatus, validateUpdate } from '../svelte-frontend/src/lib/nebius-contract.mjs';
+import { PROMPT_VERSION, isRecord, providerFailureDetails, validateTask, validateSelectedContext, validateCurrentStatus, validateUpdate } from '../svelte-frontend/src/lib/nebius-contract.mjs';
 import { REVIEW_VERSION, validateReviewInput } from '../svelte-frontend/src/lib/nebius-review-contract.mjs';
-import { PLAN_VERSION, validatePlanInput } from '../svelte-frontend/src/lib/nebius-plan-contract.mjs';
+import { PLAN_VERSION, validatePlanInput, validatePlanningResult } from '../svelte-frontend/src/lib/nebius-plan-contract.mjs';
 import { REPLAN_VERSION, validateReplanInput } from '../svelte-frontend/src/lib/nebius-replan-contract.mjs';
 import { OPERATION_PROFILES } from '../svelte-frontend/src/lib/nebius-routing-contract.mjs';
 import { InferenceError, nebiusConfiguration, suggestWithNebius, reviewWithNebius, planWithNebius, replanWithNebius } from './nebius-provider.mjs';
 
 const fail = (status, code, message) => { throw new InferenceError(status, code, message); };
-// Only replan needs a larger cap: a complete 8-task snapshot + update can
-// exceed 49 KiB. The maximum canonical JSON body is 161159 bytes, including
-// JSON.stringify's six-byte lone-surrogate escapes at every text position.
-// Replan alone uses 160 KiB (163840 bytes); other operations keep 49 KiB.
-export const REPLAN_REQUEST_LIMIT = 163840;
+// Replan includes the complete 8-task snapshot. Its larger, independent cap
+// accommodates 4,000-character criteria, including JSON escape expansion.
+// Other operations retain their existing 49 KiB limit.
+export const REPLAN_REQUEST_LIMIT = 524288;
 async function readBody(request, limit = 49152) {
   if (!request.body) fail(400, 'invalid_request', 'Send a task preview.');
   const reader = request.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
@@ -34,6 +33,7 @@ async function readBody(request, limit = 49152) {
 // preview; it does not claim to authenticate or own the browser's saved state.
 export async function handleNebiusApi(request, env) {
   const requestId = crypto.randomUUID();
+  let planningExpected = null;
   const json = (value, status = 200) => Response.json({ requestId, ...value }, {
     status, headers: { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' },
   });
@@ -73,6 +73,7 @@ export async function handleNebiusApi(request, env) {
     if (!Number.isSafeInteger(dailyLimit) || dailyLimit > 10000 || typeof env.NEBIUS_IP_RATE_LIMITER?.limit !== 'function'
       || !env.NEBIUS_BUDGET) fail(503, 'nebius_unavailable', 'Suggestion limits are not configured.');
     if (configRequest) return json({ available: true, operation, ...OPERATION_PROFILES[operation], requestedModel: config.model,
+      ...(operation === 'plan-project' ? { groundingModel: config.model } : {}),
       promptVersion: PROMPT_VERSION, reviewVersion: REVIEW_VERSION, planVersion: PLAN_VERSION, replanVersion: REPLAN_VERSION });
     if (url.search || (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase() !== 'application/json') {
       fail(400, 'invalid_request', 'Send a JSON preview without query parameters.');
@@ -106,14 +107,27 @@ export async function handleNebiusApi(request, env) {
     }
     catch { fail(400, 'invalid_request', 'The task preview is invalid or exceeds its field limits.'); }
     const budget = env.NEBIUS_BUDGET.get(env.NEBIUS_BUDGET.idFromName('token-factory-daily'));
+    let result;
+    if (planRequest) {
+      planningExpected = { requestId, brief: state.brief, model: config.model };
+      result = await planWithNebius(config, state, { requestId, signal: request.signal,
+        reserveCall: () => budget.reserve(dailyLimit) });
+      return json(result);
+    }
     const reserved = await budget.reserve(dailyLimit);
     if (reserved === false) fail(429, 'daily_limit', 'The demo has reached its daily generation limit.');
     if (reserved !== true) fail(503, 'nebius_unavailable', 'The daily limit is unavailable.');
-    const result = suggestionRequest ? await suggestWithNebius(config, state)
-      : replanRequest ? await replanWithNebius(config, state) : planRequest ? await planWithNebius(config, state) : await reviewWithNebius(config, state);
+    result = suggestionRequest ? await suggestWithNebius(config, state)
+      : replanRequest ? await replanWithNebius(config, state) : await reviewWithNebius(config, state);
     return json({ ...result, requestedModel: config.model, promptVersion, applied: false });
   } catch (error) {
-    if (error instanceof InferenceError) return json({ code: error.code, error: error.message }, error.status);
+    if (error instanceof InferenceError) {
+      if (error.planningResult && planningExpected) {
+        const planningResult = await validatePlanningResult(error.planningResult, planningExpected);
+        return json({ code: error.code, error: error.message, ...planningResult }, error.status);
+      }
+      return json({ code: error.code, error: error.message, ...(providerFailureDetails(error) ?? {}) }, error.status);
+    }
     return json({ code: 'nebius_unavailable', error: 'Suggestions are unavailable. No task was changed.' }, 503);
   }
 }

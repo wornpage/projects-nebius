@@ -1,50 +1,86 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, setContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { demoState, demoStateError, displayToast, pendingNextActionDrafts, refreshDemoState, resetDemoSampleState, toasts } from '$lib/demo-client';
-	import { pendingDraftNavigation } from '$lib/pending-next-action.mjs';
+	import { pendingDraftCountFor, pendingDraftHasDuplicateEvidence, pendingDraftNavigation, pendingDraftReferencesAvailable } from '$lib/pending-next-action.mjs';
+	import { canSetNextAction } from '$lib/demo-workflow';
 	import WornToast from '$lib/components/WornToast.svelte';
-	import WebMcpHandoffRail from '$lib/WebMcpHandoffRail.svelte';
-	import WebMcpStatus from '$lib/WebMcpStatus.svelte';
-	import { WornButton, WornDialog } from '$lib/components';
+	import ThemePicker from '$lib/components/ThemePicker.svelte';
+	import NebiusNavigate from '$lib/components/NebiusNavigate.svelte';
 	import PendingApprovalsCenter from '$lib/PendingApprovalsCenter.svelte';
-
-	type RoutePath = '/webmcp-challenge' | '/priority' | '/work' | '/review' | '/next';
-	type RouteItem = {
-		href: RoutePath;
-		label: string;
-		description?: string;
-	};
-
-	const ROUTES: readonly RouteItem[] = [
-		{ href: '/work', label: 'Work' },
-		{ href: '/webmcp-challenge', label: 'Guide' },
-		{ href: '/priority', label: 'Priority', description: __NEBIUS_EDITION__ ? 'Find work that needs attention.' : 'Standalone recommendation view' },
-		{ href: '/review', label: 'Review', description: __NEBIUS_EDITION__ ? 'Browse blockers and missing task details.' : 'Full evidence queue' },
-		{ href: '/next', label: __NEBIUS_EDITION__ ? 'Next step' : 'Next', description: 'Full next-action editor' }
-	];
-	const TOOL_ROUTES = ROUTES.filter((item) =>
-		item.href === '/priority' || item.href === '/review' || (!__NEBIUS_EDITION__ && item.href === '/next')
-	);
+	import { TASK_LOCATION_CONTEXT, type TaskLocation } from '$lib/nebius-shell-navigation.mjs';
+	import { projectNavigation } from '$lib/nebius-command-navigation.mjs';
+	import { COMMANDS_CONTEXT, type CommandsHost, type WorkCommandContribution } from '$lib/nebius-command-context';
+	import { WornButton } from '$lib/components';
 
 	let { children }: { children: any } = $props();
 	let pathname = $derived($page.url.pathname);
-	let routeLabel = $derived(ROUTES.find((item) => item.href === pathname)?.label ?? 'WebMCP demo');
-	let activeToolRoute = $derived(TOOL_ROUTES.find((item) => item.href === pathname) ?? null);
+	let routeLabel = $derived(pathname === '/work' ? 'Work' : pathname === '/next' ? 'Task' :
+		pathname === '/recovery-rehearsal' ? 'Recovery Simulator' : pathname === '/grounding-rehearsal' ? 'Grounding rehearsal' : 'Projects');
 	let pendingApprovals = $derived(pendingNextActionDrafts($demoState));
-	let pendingNavigation = $derived(pendingDraftNavigation({ pendingNextActionDrafts: pendingApprovals }));
+	let resumableApprovals = $derived.by(() => {
+		const packs = $demoState?.packs ?? [];
+		return pendingApprovals.filter(draft => {
+			const target = packs.find(pack => pack.id === draft.workId);
+			return Boolean(target && canSetNextAction(target) && pendingDraftCountFor({ pendingNextActionDrafts: pendingApprovals }, draft.workId) === 1 && !pendingDraftHasDuplicateEvidence(draft) && pendingDraftReferencesAvailable({ packs }, draft));
+		});
+	});
+	let pendingNavigation = $derived(pendingDraftNavigation({ pendingNextActionDrafts: resumableApprovals }));
 	let pendingResumeHref = $derived(pendingNavigation.resumeHref);
+	let approvalsOpen = $state(false);
+	let shellMounted = $state(false);
+	let taskLocation = $state<TaskLocation | null>(null);
+	setContext(TASK_LOCATION_CONTEXT, (location: TaskLocation | null) => { taskLocation = location; });
+	let selectedTaskId = $derived(shellMounted ? $page.url.searchParams.get('pack') : null);
+	let navigationView = $derived(pathname === '/next' && taskLocation?.id === selectedTaskId
+		? taskLocation.view : shellMounted ? $page.url.searchParams.get('view') ?? 'brief' : 'brief');
+	let navigationTaskHref = $derived(pathname === '/next' && selectedTaskId
+		? `${pathname}${$page.url.search}` : pendingNavigation.count > 0 ? pendingResumeHref : '/next');
+	let navigationTaskTitle = $derived($demoState?.packs?.find((pack) => pack.id === selectedTaskId)?.title ?? 'Task');
+	let compactNavigation = $state(false);
+	let commandMenu = $state<{ open: () => void } | null>(null);
+	let workCommands = $state<WorkCommandContribution[]>([]);
+	let commandOwner: symbol | null = null;
+	let lastWorkOrder = $state<{ scopeKey: string; orderedIds: string[] } | null>(null);
+	setContext<CommandsHost>(COMMANDS_CONTEXT, {
+		open: () => commandMenu?.open(),
+		publish: (owner, contribution) => {
+			if (contribution) {
+				commandOwner = owner;
+				workCommands = contribution.commands;
+				lastWorkOrder = { scopeKey: contribution.scopeKey, orderedIds: contribution.orderedIds };
+			} else if (owner === commandOwner) {
+				commandOwner = null;
+				workCommands = [];
+			}
+		}
+	});
+	let navigationProject = $derived.by(() => {
+		const options = {
+			packs: $demoState?.packs ?? [], projects: $demoState?.projects ?? [],
+			selectedProjectId: $demoState?.selectedProjectId ?? null,
+			currentTaskId: pathname === '/next' ? selectedTaskId ?? taskLocation?.id ?? null : $demoState?.selectedId ?? null,
+			pathname
+		};
+		const model = projectNavigation(options);
+		return lastWorkOrder && (lastWorkOrder.scopeKey === model.scopeKey || lastWorkOrder.scopeKey === 'all')
+			? projectNavigation({ ...options, orderedIds: lastWorkOrder.orderedIds }) : model;
+	});
 	let recoveryBusy = $state(false);
 	let recoveryError = $state('');
-	let pendingCenterOpen = $state(false);
-	let toolsOpen = $state(false);
-	let toolsTrigger: HTMLButtonElement | null = $state(null);
 	let online = $state(true);
-	let updateAvailable = $state(false);
 	let waitingWorker = $state<ServiceWorker | null>(null);
+	let requestedWorker = $state<ServiceWorker | null>(null);
+	let updateAvailable = $derived(waitingWorker !== null || requestedWorker !== null);
+	let reconcileUpdate: (() => void) | null = null;
 	let quarantined = $derived((($demoState?.recoveryQuarantine ?? []) as Array<{ id: string; reason: string }>));
 
 	onMount(() => {
+		shellMounted = true;
+		const compactQuery = window.matchMedia('(max-width: 700px)');
+		const syncCompactNavigation = () => (compactNavigation = compactQuery.matches);
+		syncCompactNavigation();
+		compactQuery.addEventListener('change', syncCompactNavigation);
 		// The shared workspace shell hydrates the one browser-local state owner.
 		// Guide only derives and renders that state; it owns no fetch or storage path.
 		void refreshDemoState({ reuseRecent: true });
@@ -52,25 +88,69 @@
 		const setOnline = () => (online = navigator.onLine);
 		window.addEventListener('online', setOnline);
 		window.addEventListener('offline', setOnline);
+		let mounted = true;
+		let registration: ServiceWorkerRegistration | null = null;
+		const workerListeners = new Map<ServiceWorker, () => void>();
+		const watchWorker = (worker: ServiceWorker | null | undefined) => {
+			if (!worker || workerListeners.has(worker)) return;
+			const changed = () => syncUpdate();
+			workerListeners.set(worker, changed);
+			worker.addEventListener('statechange', changed);
+		};
+		const syncUpdate = () => {
+			if (!mounted) return;
+			watchWorker(registration?.installing);
+			watchWorker(registration?.waiting);
+			if (requestedWorker?.state === 'redundant') requestedWorker = null;
+			const waiting = registration?.waiting;
+			waitingWorker = waiting?.state === 'installed' && waiting !== navigator.serviceWorker.controller ? waiting : null;
+			// A different tab may activate the update. Only the tab that requested
+			// this exact worker reloads, after activation and control both settle.
+			if (requestedWorker && navigator.serviceWorker.controller === requestedWorker && requestedWorker.state === 'activated') {
+				requestedWorker = null;
+				waitingWorker = null;
+				location.reload();
+			}
+			for (const [worker, listener] of workerListeners) {
+				if (worker.state === 'activated' || worker.state === 'redundant') {
+					worker.removeEventListener('statechange', listener);
+					workerListeners.delete(worker);
+				}
+			}
+		};
 		if ('serviceWorker' in navigator) {
-			void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((registration) => {
-				if (registration.waiting) { waitingWorker = registration.waiting; updateAvailable = true; }
-				registration.addEventListener('updatefound', () => {
-					const worker = registration.installing;
-					worker?.addEventListener('statechange', () => {
-						if (worker.state === 'installed' && navigator.serviceWorker.controller) { waitingWorker = worker; updateAvailable = true; }
-					});
-				});
+			reconcileUpdate = syncUpdate;
+			navigator.serviceWorker.addEventListener('controllerchange', syncUpdate);
+			void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((registered) => {
+				if (!mounted) return;
+				registration = registered;
+				registration.addEventListener('updatefound', syncUpdate);
+				syncUpdate();
 			}).catch(() => {});
 		}
 		return () => {
+			compactQuery.removeEventListener('change', syncCompactNavigation);
+			mounted = false;
+			reconcileUpdate = null;
+			requestedWorker = null;
+			waitingWorker = null;
+			if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('controllerchange', syncUpdate);
+			registration?.removeEventListener('updatefound', syncUpdate);
+			for (const [worker, listener] of workerListeners) worker.removeEventListener('statechange', listener);
+			workerListeners.clear();
 			window.removeEventListener('online', setOnline);
 			window.removeEventListener('offline', setOnline);
 		};
 	});
 
-	function restoreToolsFocus() {
-		requestAnimationFrame(() => toolsTrigger?.focus({ preventScroll: true }));
+
+	function openShellCommands(event: KeyboardEvent) {
+		if (!__NEBIUS_EDITION__ || pathname === '/work' || event.defaultPrevented || event.repeat ||
+			!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'k') return;
+		const target = event.target as HTMLElement;
+		if (target?.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('[aria-modal="true"], dialog[open]')) return;
+		event.preventDefault();
+		commandMenu?.open();
 	}
 
 	function dismissToast(id: string) {
@@ -78,8 +158,11 @@
 	}
 
 	function reloadForUpdate() {
-		if (waitingWorker) waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-		location.reload();
+		const worker = waitingWorker;
+		if (!worker || requestedWorker) return;
+		requestedWorker = worker;
+		reconcileUpdate?.();
+		if (requestedWorker === worker && worker.state === 'installed') worker.postMessage({ type: 'SKIP_WAITING' });
 	}
 
 	async function recoverWorkspace() {
@@ -97,7 +180,16 @@
 	}
 </script>
 
-<div class="challenge-shell">
+<svelte:head>
+	{#if __NEBIUS_EDITION__}
+		<link rel="stylesheet" href="/assets/theme.css" />
+		<script src="/assets/theme.js"></script>
+	{/if}
+</svelte:head>
+
+<svelte:window onkeydown={openShellCommands} />
+
+<div class="challenge-shell" class:ui-lab-shell={__NEBIUS_EDITION__} class:workspace-polish={__NEBIUS_EDITION__ && (pathname === '/work' || pathname === '/next')}>
 	<a class="challenge-skip" href="#challenge-main">Skip to current page</a>
 
 	<header class="challenge-shell-nav">
@@ -108,10 +200,10 @@
 			aria-label="Wornpage Projects landing page"
 		>
 			<span>Wornpage Projects</span>
-			<small>{__NEBIUS_EDITION__ ? 'Nebius edition' : 'WebMCP edition'}</small>
+			<small>Nebius edition</small>
 		</a>
 
-		<nav aria-label="Projects application navigation">
+		<nav aria-label="Projects application navigation" class:compact-primary-navigation={__NEBIUS_EDITION__}>
 			<a
 				class="challenge-nav-control challenge-work-link"
 				href="/work"
@@ -119,47 +211,27 @@
 				aria-current={pathname === '/work' ? 'page' : undefined}
 			>Work</a>
 			{#if __NEBIUS_EDITION__}
-				<a class="challenge-nav-control" href="/next" aria-current={pathname === '/next' ? 'page' : undefined}>Next step</a>
+				<a class="challenge-nav-control" href={pendingNavigation.count > 0 ? pendingResumeHref : '/next'} data-nav-label="Task" aria-label={pendingNavigation.count > 0 ? `Task, resume ${pendingNavigation.count} pending approval${pendingNavigation.count === 1 ? '' : 's'}` : 'Task'} aria-current={pathname === '/next' ? 'page' : undefined}>Task</a>
 			{/if}
-			{#if pendingNavigation.count > 0}
-				<a
-					class="challenge-nav-control pending-approval-link"
-					href={pendingResumeHref}
-					data-nav-label={`Pending ${pendingNavigation.count}`}
-					aria-label={`Resume ${pendingNavigation.count} pending approval${pendingNavigation.count === 1 ? '' : 's'}`}
-					onclick={(event) => { event.preventDefault(); pendingCenterOpen = true; }}
-				>Pending {pendingNavigation.count}</a>
-			{/if}
-			<a
-				class="challenge-nav-control"
-				href="/webmcp-challenge"
-				data-nav-label="Guide"
-				aria-current={pathname === '/webmcp-challenge' ? 'page' : undefined}
-			>Guide</a>
-			<button
-				class="challenge-nav-control tools-trigger"
-				class:contains-current-route={Boolean(activeToolRoute)}
-				type="button"
-				data-tools-trigger
-				data-nav-label="Tools"
-				data-route-active={activeToolRoute ? 'true' : undefined}
-				aria-haspopup="dialog"
-				aria-expanded={toolsOpen}
-				aria-controls="workflow-tools-panel"
-				aria-label={activeToolRoute ? `Tools, ${activeToolRoute.label} is the current view` : 'Tools'}
-				bind:this={toolsTrigger}
-				onclick={() => (toolsOpen = true)}
-			>
-				<span>Tools</span>
-				{#if activeToolRoute}<small aria-hidden="true">{activeToolRoute.label}</small>{/if}
-			</button>
 		</nav>
 
-		{#if !__NEBIUS_EDITION__}<WebMcpStatus />{/if}
-		{#if updateAvailable}<WornButton class="offline-status" size="sm" type="button" onclick={reloadForUpdate}>Reload to update</WornButton>{:else if !online}<span class="offline-status" role="status" aria-live="polite">Offline mode — local workspace remains available.</span>{/if}
+		{#if __NEBIUS_EDITION__}
+		<div class="challenge-utilities">
+			{#if pendingApprovals.length > 0}
+				<WornButton size="sm" type="button" onclick={() => (approvalsOpen = true)}>Pending approvals ({pendingApprovals.length})</WornButton>
+			{/if}
+			<div class="challenge-navigate-control" class:task-command-trigger={pathname !== '/work'}>
+				<NebiusNavigate bind:this={commandMenu} navigation={navigationProject} commands={pathname === '/work' ? workCommands : []} taskHref={navigationTaskHref} taskTitle={navigationTaskTitle} {pathname} currentView={navigationView} triggerLabel={compactNavigation ? 'Navigate' : 'Commands'} triggerVisible={compactNavigation || pathname !== '/work'} />
+			</div>
+			<div class="challenge-theme-control"><ThemePicker /></div>
+		</div>
+		{/if}
+		{#if updateAvailable}<WornButton class="offline-status" size="sm" type="button" onclick={reloadForUpdate} disabled={requestedWorker !== null}>{requestedWorker ? 'Updating…' : 'Reload to update'}</WornButton>{:else if !online}<span class="offline-status" role="status" aria-live="polite">Offline mode — local workspace remains available.</span>{/if}
 	</header>
+	{#if pendingApprovals.length > 0}
+		<PendingApprovalsCenter bind:open={approvalsOpen} drafts={pendingApprovals} packs={$demoState?.packs ?? []} />
+	{/if}
 
-	{#if !__NEBIUS_EDITION__}<WebMcpHandoffRail />{/if}
 
 	{#if $demoStateError}
 		<section class="demo-recovery" role="alert" aria-label="Workspace recovery">
@@ -175,7 +247,7 @@
 		</section>
 	{/if}
 
-	<div class="demo-toast-container">
+	<div class="demo-toast-container" class:nebius-toast-container={__NEBIUS_EDITION__}>
 		{#each $toasts as toast (toast.id)}
 			<WornToast {toast} ondismiss={() => dismissToast(toast.id)} />
 		{/each}
@@ -185,28 +257,6 @@
 		{@render children()}
 	</main>
 
-	<PendingApprovalsCenter bind:open={pendingCenterOpen} drafts={pendingApprovals} packs={($demoState?.packs ?? []) as any} />
-
-	<WornDialog bind:open={toolsOpen} title="Tools" size="sm" onclose={restoreToolsFocus}>
-		<div id="workflow-tools-panel" class="workflow-tools-panel" data-workflow-tools-panel>
-			<p class="workflow-tools-intro">{__NEBIUS_EDITION__ ? 'Find tasks that need attention. Open a task’s Next step to edit it or review evidence with Nebius.' : 'Optional focused views support Work: narrow evidence, prepare a handoff, then return for the human decision.'}</p>
-			<nav class="workflow-tools-list" aria-label="Project tools">
-				{#each TOOL_ROUTES as item (item.href)}
-					<a
-						class="workflow-tools-link"
-						href={item.href}
-						data-workflow-tool-link
-						data-tool-label={item.label}
-						aria-current={pathname === item.href ? 'page' : undefined}
-						onclick={() => (toolsOpen = false)}
-					>
-						<strong>{item.label}</strong>
-						<span>{item.description}</span>
-					</a>
-				{/each}
-			</nav>
-		</div>
-	</WornDialog>
 </div>
 
 <style>
@@ -264,6 +314,15 @@
 		padding: var(--worn-space-2) var(--worn-space-3);
 	}
 
+	.challenge-theme-control { flex: 0 0 auto; min-width: 0; }
+	.challenge-utilities { display: flex; align-items: center; gap: 8px; min-width: 0; }
+	.challenge-navigate-control { display: contents; }
+	.challenge-navigate-control.task-command-trigger { display: block; }
+	.challenge-navigate-control :global(.nebius-navigate-trigger) {
+		min-height: 44px; border: 1px solid var(--worn-field-border); border-radius: var(--worn-radius);
+		padding: .5rem .75rem; background: var(--worn-surface); color: var(--worn-text); font: inherit; font-size: .875rem; cursor: pointer;
+	}
+
 	.challenge-brand {
 		color: var(--worn-text);
 		display: grid;
@@ -290,6 +349,11 @@
 		font-weight: 560;
 	}
 
+	.ui-lab-shell .challenge-brand small {
+		font-family: var(--font-family-sans);
+		font-size: .75rem;
+	}
+
 	.challenge-shell-nav nav {
 		align-items: center;
 		display: flex;
@@ -300,8 +364,7 @@
 		min-width: 0;
 	}
 
-	/* Tablet and compact layouts retain one deliberate application row:
-	   Work, Pending when present, Guide, and the secondary Tools surface. */
+	/* Tablet and compact layouts retain one deliberate application row. */
 	@media (max-width: 900px) and (min-width: 701px) {
 		.challenge-shell-nav {
 			display: grid;
@@ -309,7 +372,7 @@
 			grid-template-columns: minmax(0, 1fr) auto;
 			padding: var(--worn-space-2);
 		}
-		.challenge-shell-nav :global(.webmcp-status-pill) { grid-column: 2; grid-row: 1; }
+		.challenge-utilities { grid-column: 2; grid-row: 1; }
 		.challenge-shell-nav nav { gap: var(--worn-space-1); grid-column: 1 / -1; justify-content: stretch; }
 		.challenge-shell-nav .challenge-nav-control { flex: 1 1 0; font-size: var(--worn-text-xs); justify-content: center; min-height: var(--worn-target-min); padding-inline: var(--worn-space-2); }
 		.challenge-brand { min-height: var(--worn-target-min); padding-inline: var(--worn-space-2); }
@@ -350,86 +413,31 @@
 		font-weight: 800;
 	}
 
-	.pending-approval-link {
-		border-color: color-mix(in srgb, var(--worn-warning-text) 35%, var(--worn-border));
-	}
 
-	.tools-trigger {
-		flex-direction: column;
-		gap: var(--worn-space-1);
-	}
 
-	.tools-trigger small {
-		color: inherit;
-		font-family: var(--font-typewriter);
-		font-size: 9px;
-		font-weight: 750;
-		line-height: 1;
-		max-inline-size: 100%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 
-	.challenge-nav-control[aria-current='page'],
-	.tools-trigger[data-route-active='true'] {
+	.challenge-nav-control[aria-current='page'] {
 		background: var(--worn-selected-bg);
 		border-color: var(--worn-border-strong);
 		box-shadow: inset 0 -2px 0 var(--worn-accent);
 		color: var(--worn-selected-fg);
 		translate: 0 -1px;
 	}
-
-	.workflow-tools-panel {
-		display: grid;
-		gap: var(--worn-space-4);
-		max-inline-size: 100%;
-		min-inline-size: 0;
+	.challenge-nav-control[aria-current='page'] {
+		text-decoration-line: underline;
+		text-decoration-thickness: 2px;
+		text-underline-offset: .25em;
 	}
 
-	.workflow-tools-intro {
-		color: var(--worn-text-secondary);
-		font-size: var(--worn-text-md);
-		line-height: 1.5;
-		margin: 0;
-	}
 
-	.workflow-tools-list {
-		display: grid;
-		gap: var(--worn-space-2);
-	}
 
-	.workflow-tools-link {
-		background: color-mix(in srgb, var(--worn-surface) 92%, var(--worn-bg));
-		border: 1px solid color-mix(in srgb, var(--worn-border) 72%, transparent);
-		border-radius: var(--worn-radius);
-		color: var(--worn-text);
-		display: grid;
-		gap: var(--worn-space-1);
-		min-width: 0;
-		padding: var(--worn-space-3) var(--worn-space-4);
-		text-decoration: none;
-	}
 
-	.workflow-tools-link strong {
-		font-size: var(--worn-text-lg);
-	}
 
-	.workflow-tools-link span {
-		color: var(--worn-text-secondary);
-		font-size: var(--worn-text-sm);
-		line-height: 1.4;
-	}
 
-	.workflow-tools-link[aria-current='page'] {
-		background: var(--worn-selected-bg);
-		border-color: var(--worn-border-strong);
-		box-shadow: inset 0 -2px 0 var(--worn-accent);
-	}
+
 
 	.challenge-brand:focus-visible,
-	.challenge-nav-control:focus-visible,
-	.workflow-tools-link:focus-visible {
+	.challenge-nav-control:focus-visible {
 		outline: 2px solid var(--challenge-focus-mint);
 		outline-offset: 2px;
 	}
@@ -450,6 +458,14 @@
 		animation: challenge-route-arrive 380ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 		transform-origin: top center;
 	}
+	.workspace-polish .challenge-route > :global(.demo-panel) {
+		animation: workspace-arrive 120ms ease-out both;
+		transform-origin: initial;
+	}
+	@keyframes workspace-arrive {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
 
 	.challenge-route :global(.worn-receipt) {
 		box-shadow: var(--worn-shadow-sm);
@@ -465,9 +481,6 @@
 		padding-block: var(--worn-space-2);
 	}
 
-	.challenge-route :global([data-webmcp-receipt]) {
-		animation: challenge-receipt-arrive 440ms cubic-bezier(0.16, 1, 0.3, 1) both;
-	}
 
 	@keyframes challenge-nav-arrive {
 		from {
@@ -491,20 +504,6 @@
 		}
 	}
 
-	@keyframes challenge-receipt-arrive {
-		0% {
-			opacity: 0;
-			translate: 0 -12px;
-		}
-		72% {
-			opacity: 1;
-			translate: 0 2px;
-		}
-		100% {
-			opacity: 1;
-			translate: 0 0;
-		}
-	}
 
 	.demo-toast-container {
 		display: grid;
@@ -518,6 +517,12 @@
 	}
 
 	.demo-toast-container > :global(*) {
+		pointer-events: auto;
+	}
+	.demo-toast-container.nebius-toast-container > :global(*) {
+		pointer-events: none;
+	}
+	.nebius-toast-container :global(button) {
 		pointer-events: auto;
 	}
 
@@ -568,8 +573,7 @@
 
 	@media (hover: hover) and (pointer: fine) {
 		.challenge-brand:hover,
-		.challenge-nav-control:hover,
-		.workflow-tools-link:hover {
+		.challenge-nav-control:hover {
 			background: var(--worn-hover-bg);
 			color: var(--worn-text);
 		}
@@ -588,7 +592,10 @@
 			grid-template-columns: minmax(0, 1fr) auto;
 		}
 		.challenge-brand { grid-column: 1; grid-row: 1; }
-		.challenge-shell-nav :global(.webmcp-status-pill) { grid-column: 2; grid-row: 1; }
+		.challenge-utilities { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; }
+		.challenge-theme-control { max-inline-size: 100%; }
+		.challenge-shell-nav:has(.challenge-navigate-control) .challenge-brand { grid-column: 1 / -1; }
+		.challenge-navigate-control { display: block; min-width: 0; }
 
 		.challenge-shell-nav nav {
 			display: flex;
@@ -605,6 +612,7 @@
 			justify-content: center;
 			padding-inline: var(--worn-space-1);
 		}
+		.challenge-shell-nav nav.compact-primary-navigation { display: none; }
 
 		.challenge-route :global(.worn-receipt) {
 			margin-block: var(--worn-space-3) var(--worn-space-4);
@@ -619,7 +627,7 @@
 
 		.challenge-shell-nav,
 		.challenge-route > :global(.demo-panel),
-		.challenge-route :global([data-webmcp-receipt]) {
+		.workspace-polish .challenge-route > :global(.demo-panel) {
 			animation: none;
 		}
 
@@ -627,8 +635,7 @@
 			transform: none;
 		}
 
-		.challenge-nav-control,
-		.workflow-tools-link {
+		.challenge-nav-control {
 			transition: none;
 		}
 
@@ -641,12 +648,6 @@
 	@media (max-width: 360px) {
 		.challenge-brand small {
 			display: none;
-		}
-		.challenge-shell-nav :global(.webmcp-status-pill) {
-			grid-column: 1 / -1;
-			grid-row: 2;
-			justify-content: center;
-			justify-self: stretch;
 		}
 		.challenge-shell-nav nav {
 			grid-row: 3;

@@ -16,6 +16,6 @@
 		/>
 	{/if}
 	<div class="demo-quick-actions">
-		<WornButton href="/webmcp-challenge">Open the guide</WornButton>
+		<WornButton href="/landing.html#help">Open help</WornButton>
 	</div>
 </WornPage>

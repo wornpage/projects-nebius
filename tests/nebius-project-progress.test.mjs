@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { projectProgress } from '../svelte-frontend/src/lib/nebius-project-progress.mjs';
 
 test('empty project is not complete', () => {
@@ -30,4 +31,24 @@ test('stable total reconciles done, open remaining and archived unfinished witho
   assert.equal(actual.done, 1, 'progress percentage never substitutes for Done status');
   assert.equal(actual.allDone, false);
   assert.deepEqual(packs, before);
+});
+
+test('visible project summary retains full-scope progress while Details contains its breakdown', () => {
+  const source = readFileSync(new URL('../svelte-frontend/src/routes/work/NebiusProjectWorkspace.svelte', import.meta.url), 'utf8');
+  assert.match(source, /let scoped = \$derived\(\(\$demoState\?\.packs \?\? \[\]\)\.filter\(pack => !selectedProjectId \|\| pack\.projectId === selectedProjectId\)\);/u);
+  assert.match(source, /let progress = \$derived\(projectProgress\(scoped\)\);/u);
+  const details = source.match(/<details class="project-details" data-project-details>[\s\S]*?<\/details>/u)?.[0] ?? '';
+  assert.ok(details, 'Native details starts collapsed without an open binding');
+  const summary = details.match(/<summary>[\s\S]*?<\/summary>/u)?.[0] ?? '';
+  const completion = source.slice(source.indexOf('<div data-project-completion>'), source.indexOf('<details class="project-details"'));
+  assert.match(completion, /progress\.done\}\/\{progress\.total\} tasks marked done · includes archived/u);
+  assert.match(completion, /<WornProgress value=\{progress\.done\} max=\{progress\.total\}/u);
+  assert.match(summary, /\{scoped\.length\} workspace \{scoped\.length === 1 \? 'task' : 'tasks'\} · includes archived/u);
+  assert.match(summary, /<summary>Details/u);
+  for (const marker of ['data-project-progress', 'data-project-all-done', 'data-project-overview', 'class="scope-note"', 'aria-label="Project next work"']) assert.ok(details.includes(marker), marker);
+  assert.match(details, /including archived, before list filters/u);
+  assert.match(source, /<WornButton data-new-project/u);
+  assert.match(source, /data-new-project variant=\{scoped\.length === 0 \? 'primary' : undefined\}/u);
+  const goal = source.indexOf('data-project-goal');
+  assert(goal >= 0 && goal < source.indexOf('<details class="project-details"'), 'Project goal remains available before the collapsed details');
 });
