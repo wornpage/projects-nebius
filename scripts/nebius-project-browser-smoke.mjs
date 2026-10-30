@@ -148,6 +148,53 @@ async function revealProjectDetails(page) {
   await page.locator('#project-scope').waitFor();
   await revealControl(page.locator('[data-project-overview]'));
 }
+async function checkArrivalFocusOwnership(page) {
+  const storageState = await page.context().storageState();
+  const target = new URL(page.url()).searchParams.get('focus');
+  assert(target, 'the completed-project journey supplies an arrival target');
+  const before = await readState(page), callsBefore = requests.length;
+  for (const intent of ['keyboard', 'focus', 'pointer', 'key-only', 'untouched']) {
+    const context = await browser.newContext({ viewport: page.viewportSize(), storageState, serviceWorkers: 'block' });
+    await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    const probe = await context.newPage(); probe.setDefaultTimeout(10000);
+    try {
+      const time = new Date('2026-10-30T00:00:00Z');
+      await probe.clock.install({ time });
+      await probe.clock.pauseAt(new Date(time.getTime() + 1000));
+      await probe.goto(page.url());
+      const summary = probe.locator('[data-project-details] > summary');
+      await summary.waitFor({ state: 'attached' });
+      await probe.locator(`[data-work-item][data-pack-id='${target}']`).waitFor({ state: 'attached' });
+      if (intent === 'keyboard' || intent === 'focus') {
+        await summary.focus();
+        if (intent === 'keyboard') {
+          await probe.keyboard.press('Tab');
+          await probe.keyboard.press('Shift+Tab');
+          assert.equal(await summary.evaluate(element => element === document.activeElement), true);
+        }
+      } else if (intent === 'pointer') {
+        await probe.mouse.click(5, 5);
+      } else if (intent === 'key-only') {
+        assert.equal(await probe.evaluate(() => document.activeElement === document.body), true);
+        await probe.keyboard.press('Shift');
+        assert.equal(await probe.evaluate(() => document.activeElement === document.body), true, 'modifier intent does not itself move focus');
+      }
+      // Advance the complete 100ms arrival + five 80ms retry window, not wall time.
+      await probe.clock.runFor(700);
+      if (intent === 'keyboard' || intent === 'focus') {
+        assert.equal(await summary.evaluate(element => element === document.activeElement), true, `${intent} focus wins over a deferred arrival`);
+        await probe.keyboard.press('Enter');
+        assert.equal(await probe.locator('[data-project-details]').evaluate(element => element.open), true, 'Enter opens the retained Details focus');
+        assert.equal(await probe.locator('[data-project-overview]').isVisible(), true);
+      } else {
+        assert.equal(await probe.evaluate(id => document.activeElement?.getAttribute('data-pack-id') === id, target), intent === 'untouched', `${intent} arrival focus behavior`);
+      }
+      assert.deepEqual((await readState(probe)).packs, before.packs, 'arrival focus preserves saved work');
+    } finally { await context.close(); }
+  }
+  assert.equal(requests.length, callsBefore, 'arrival focus checks make no inference calls');
+  assert.deepEqual(await readState(page), before, 'isolated focus checks preserve the original journey');
+}
 async function checkButtonCopySpacing(page) {
   const pairs = await page.evaluate(() => {
     const pairs = [], seen = new Set();
@@ -628,6 +675,7 @@ try {
         assert.equal((await readState(page)).packs.find(item => item.id === journeyTasks[0]).status, 'done');
       }
     }
+    await checkArrivalFocusOwnership(page);
     await page.reload(); await revealProjectDetails(page);
     const finished = await readState(page);
     assert.equal(finished.packs.filter(item => item.projectId === journeyId && item.status === 'done').length, 3);
@@ -716,7 +764,7 @@ try {
     await page.getByText('Changes applied.', { exact: true }).waitFor();
     assert.equal((await readState(page)).packs.find(item => item.id === secondTask.id).status, 'active', 'a person can explicitly resolve the remaining blocker');
     assert.deepEqual(errors, []); assert.deepEqual(external, []);
-    results.push({ width, height, quickAddGeometry, newProjectFocus: true, manualSummaryPrefilled: true, reasonsPrefilled: true, clearBlockersDraftOnly: true, blockerReviewDiff: true, manualWithoutInference: true, generatedPlanNoWrite: true, approvalAtomic: true, cyclesRefused: true, dependencyReload: true, projectScope: true, explicitFocus: true, exportImport: true, reviewedReplan: true, manualReplanOffline: true, quickAddPreservesDraft: true, concurrentApprovalRefused: true, examplePlans: 3, examplesNoInference: true, exampleApprovalReload: true, completedProjectJourney: true, freshReplanAfterCompletion: true, nextTaskLinks: true, independentBlockerPreserved: true, approvedReasonReload: true, manualCriteriaVisible: true, explicitBlockerResolution: true, rehearsalNoInference: true, overflow: false });
+    results.push({ width, height, quickAddGeometry, newProjectFocus: true, manualSummaryPrefilled: true, reasonsPrefilled: true, clearBlockersDraftOnly: true, blockerReviewDiff: true, manualWithoutInference: true, generatedPlanNoWrite: true, approvalAtomic: true, cyclesRefused: true, dependencyReload: true, projectScope: true, explicitFocus: true, exportImport: true, reviewedReplan: true, manualReplanOffline: true, quickAddPreservesDraft: true, concurrentApprovalRefused: true, examplePlans: 3, examplesNoInference: true, exampleApprovalReload: true, completedProjectJourney: true, arrivalFocusOwnershipCases: 5, freshReplanAfterCompletion: true, nextTaskLinks: true, independentBlockerPreserved: true, approvedReasonReload: true, manualCriteriaVisible: true, explicitBlockerResolution: true, rehearsalNoInference: true, overflow: false });
     await context.close();
     Object.assign(results[results.length - 1], await checkLandingEntry(width));
     Object.assign(results[results.length - 1], await checkGroundingButtons(width));
