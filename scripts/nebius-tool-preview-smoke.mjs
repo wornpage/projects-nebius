@@ -18,9 +18,17 @@ const report = {
 let server, browser, parentPosts = 0;
 const record = (name, detail = {}) => report.checks.push({ name, passed: true, ...detail });
 const failure = error => error instanceof Error ? { name: error.name, message: error.message.slice(0, 800) } : { message: String(error).slice(0, 800) };
+const progress = (stage, name, detail = {}, error) => console.log(JSON.stringify({
+  stage, name, width: detail.width, category: detail.category,
+  at: new Date().toISOString(), ...(error ? { errorType: ["AssertionError", "TimeoutError", "TypeError", "SyntaxError", "Error"].includes(error?.name) ? error.name : "Error" } : {}),
+}));
 const observe = async (name, detail, check) => {
-  try { await check(); record(name, detail); }
-  catch (error) { report.checks.push({ name, passed: false, ...detail, error: failure(error) }); }
+  progress("start", name, detail);
+  try { await check(); record(name, detail); progress("pass", name, detail); }
+  catch (error) {
+    report.checks.push({ name, passed: false, ...detail, error: failure(error) });
+    progress("fail", name, detail, error);
+  }
 };
 
 // Reveal mounted sections through the same native buttons used by a person.
@@ -1568,9 +1576,12 @@ addEventListener('message', event => {
   if (!report.passed) process.exitCode = 1;
 } catch (error) {
   report.error = failure(error);
+  progress("error", "preview suite", {}, error);
   process.exitCode = 1;
 } finally {
+  progress("cleanup", "browser");
   await browser?.close();
+  progress("cleanup", "test server");
   if (server?.listening) await new Promise(resolve => server.close(resolve));
   const packets = report.checks.filter(check => check.category === 'packet');
   report.packetSummary = { expected: report.expectedPacketChecks, recorded: packets.length, observed: packets.filter(check => check.observed).length, passed: packets.filter(check => check.passed).length, failed: packets.filter(check => !check.passed).length };
